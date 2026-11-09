@@ -47,10 +47,25 @@ struct HttpResponse {
     bool ok() const { return error.empty() && status >= 200 && status < 300; }
 };
 
+// Incremental response body (internet radio, large files). read(): >0 bytes, 0 = end, <0 = error.
+class HttpStream {
+public:
+    virtual ~HttpStream() = default;
+    virtual long read(void *buf, size_t len) = 0;
+    virtual int status() const = 0;
+    virtual std::string contentType() const = 0;
+};
+
 class HttpClient {
 public:
     virtual ~HttpClient() = default;
     virtual HttpResponse get(const HttpRequest &req) = 0;
+    // Opens a GET and returns after the headers (status 2xx), or nullptr with *error set.
+    virtual std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error)
+    {
+        if (error) *error = "streaming nao suportado por " + name();
+        return nullptr;
+    }
     virtual bool supportsHttps() const = 0;
     virtual std::string name() const = 0;
 };

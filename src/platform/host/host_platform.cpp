@@ -184,6 +184,73 @@ HttpResponse HostHttp::get(const HttpRequest &req)
     return r;
 }
 
+// Streaming GET (internet radio): reads only the headers, then hands out the body incrementally.
+// Accepts "ICY 200 OK" status lines (SHOUTcast v1). Chunked transfer is not supported here.
+namespace {
+class HostStream : public HttpStream {
+public:
+    int fd = -1, code = 0;
+    std::string ctype, pending;
+    ~HostStream() override { if (fd >= 0) close(fd); }
+    long read(void *buf, size_t len) override
+    {
+        if (!pending.empty()) {
+            size_t n = std::min(len, pending.size());
+            std::memcpy(buf, pending.data(), n);
+            pending.erase(0, n);
+            return long(n);
+        }
+        ssize_t n = recv(fd, buf, len, 0);
+        return n < 0 ? -1 : long(n);
+    }
+    int status() const override { return code; }
+    std::string contentType() const override { return ctype; }
+};
+}  // namespace
+
+std::unique_ptr<HttpStream> HostHttp::openStream(const HttpRequest &req, std::string *error)
+{
+    auto fail = [&](const char *m) { if (error) *error = m; return std::unique_ptr<HttpStream>(); };
+    Url u = parseUrl(req.url);
+    if (!u.valid) return fail("URL invalida");
+    if (u.scheme != "http") return fail("https nao suportado no cliente de teste");
+    addrinfo hints{}, *res = nullptr;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(u.host.c_str(), std::to_string(u.port).c_str(), &hints, &res) != 0 || !res) return fail("DNS falhou");
+    std::unique_ptr<HostStream> st(new HostStream);
+    st->fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    timeval tv{req.timeoutMs / 1000, (req.timeoutMs % 1000) * 1000};
+    setsockopt(st->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    bool ok = st->fd >= 0 && connect(st->fd, res->ai_addr, res->ai_addrlen) == 0;
+    freeaddrinfo(res);
+    if (!ok) return fail("conexao recusada");
+    std::string q = "GET " + u.path + (u.query.empty() ? "" : "?" + u.query) + " HTTP/1.1\r\nHost: " + u.host +
+                    "\r\nConnection: close\r\nUser-Agent: MoonlightHB/0.1\r\n";
+    for (const auto &h : req.headers) q += h.first + ": " + h.second + "\r\n";
+    q += "\r\n";
+    send(st->fd, q.data(), q.size(), 0);
+    std::string head;
+    char c[4096];
+    while (head.find("\r\n\r\n") == std::string::npos) {
+        ssize_t n = recv(st->fd, c, sizeof c, 0);
+        if (n <= 0) return fail("sem resposta");
+        head.append(c, size_t(n));
+        if (head.size() > 64 * 1024) return fail("cabecalho grande demais");
+    }
+    size_t he = head.find("\r\n\r\n");
+    st->pending = head.substr(he + 4);
+    head.resize(he);
+    if (head.compare(0, 5, "HTTP/") != 0 && head.compare(0, 4, "ICY ") != 0) return fail("resposta invalida");
+    st->code = std::atoi(head.c_str() + head.find(' ') + 1);
+    std::string low = head;
+    for (auto &ch : low) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    size_t ct = low.find("content-type:");
+    if (ct != std::string::npos) st->ctype = head.substr(ct + 13, low.find("\r\n", ct) - ct - 13);
+    if (low.find("transfer-encoding: chunked") != std::string::npos) return fail("chunked nao suportado");
+    if (st->code < 200 || st->code >= 300) return fail("servidor respondeu erro");
+    return std::unique_ptr<HttpStream>(st.release());
+}
+
 // ---------------------------------------------------------------- audio
 namespace {
 class HostAudioOut : public AudioOut {

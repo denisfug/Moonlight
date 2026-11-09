@@ -42,6 +42,18 @@ public:
 
 std::unique_ptr<AudioOut> makeAudioOut();
 
+class Http : public HttpClient {
+public:
+    bool init(std::string *err);
+    HttpResponse get(const HttpRequest &req) override;
+    std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error) override;
+    bool supportsHttps() const override { return true; }
+    std::string name() const override { return "ps4-sceHttp"; }
+
+private:
+    int ctx_ = -1;
+};
+
 class Ps4Platform : public Platform {
 public:
     bool init(std::string *err);
@@ -50,7 +62,7 @@ public:
     Input &input() override { return pad_; }
     FileSystem &fs() override { return files_; }
     std::unique_ptr<AudioOut> makeAudioOut() override { return ps4::makeAudioOut(); }
-    HttpClient *http() override { return nullptr; }   // sceHttp/sceSsl client: pending (docs/ROADMAP.md)
+    HttpClient *http() override { return httpOk_ ? &http_ : nullptr; }
     std::string dataDir() const override { return "/data/moonlight"; }
     std::string assetDir() const override { return "/app0/assets"; }
     std::vector<std::string> musicDirs() const override;
@@ -64,6 +76,8 @@ private:
     VideoOut video_;
     Pad pad_;
     Files files_;
+    Http http_;
+    bool httpOk_ = false;
     bool jailbroken_ = false;
 };
 

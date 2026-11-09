@@ -16,6 +16,9 @@ bool Ps4Platform::init(std::string *err)
 {
     if (!video_.init(err)) return false;
     if (!pad_.init(err)) notify("Moonlight HB: " + *err + " (continuando)");
+    std::string netErr;
+    httpOk_ = http_.init(&netErr);
+    if (!httpOk_) notify("Moonlight HB: internet indisponivel (" + netErr + ")");
     return true;
 }
 

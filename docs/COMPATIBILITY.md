@@ -13,7 +13,8 @@ Nada deste projeto foi testado no PS4 ainda.
 | Arquivos via libkernel + Getdents | sim | sim (POSIX) | não | Mesmo código-base que funcionou no DevHub. |
 | GoldHEN `sys_sdk_jailbreak` (USB/`/data`) | sim (se `GOLDHEN_SDK`) | — | não | Chamado só depois de carregar as fontes de `/app0` (depois do jailbreak `/app0` fica inacessível — achado de testes anteriores). |
 | Threads (`scePthreadCreate`) | sim | std::thread | não | |
-| Rede HTTP/HTTPS | **não implementada** | http local | não | No PS4 `http()` retorna `nullptr` e a UI avisa. Próximo passo: `sceHttp` + `sceSsl`. |
+| Rede HTTP/HTTPS (libSceNet/Ssl/Http) | sim | http local | não | Ordem de inicialização do exemplo oficial `net_http`, mas **sem** o callback do exemplo que aceita qualquer certificado. Se a inicialização falhar o app avisa e segue sem internet. Não sabemos ainda se continua funcionando depois do `sys_sdk_jailbreak`. |
+| Rádios (Radio Browser + MP3 ao vivo) | sim | sim | não | Só estações MP3 (minimp3); AAC/HLS ficam de fora. Streams de rádio aceitam `http://` (só áudio é decodificado); a API do diretório exige HTTPS. Servidores SHOUTcast antigos respondem `ICY 200`; no PC aceitamos, no PS4 depende do sceHttp. |
 | Vídeo | **não implementado** | — | não | Ver `MEDIA_ENGINE.md`. |
 | SDL2 | não usado | — | — | Não disponível no toolchain construído do código-fonte. |
 | FreeType do sistema | não usado | — | — | stb_truetype no lugar. |

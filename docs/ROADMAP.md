@@ -40,9 +40,19 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | Parse manifest/catalog/meta/stream/subtitles | sim | — |
 | SourceManager + persistência + segurança | sim | — |
 | Servidor HTTP local de teste | sim | — |
-| **Cliente HTTP/HTTPS do PS4 (sceHttp/sceSsl)** | — | **próxima tarefa de rede** |
+| Cliente HTTP/HTTPS do PS4 (sceHttp/sceSsl) | — | ver Fase 3b |
 | Requisições em segundo plano (thread) | não | não |
 | Imagens de pôster (stb_image + rede) | não | não |
+
+## Fase 3b — Internet no PS4 e Rádios (01.01)
+
+| Item | Compila PS4 | PC | PS4 |
+|---|---|---|---|
+| Cliente HTTP/HTTPS do PS4 (libSceNet/Ssl/Http, verificação de certificado do sistema ligada) | sim | — | **pendente** |
+| Streaming HTTP incremental (`HttpStream`) | sim | sim (servidor local real) | pendente |
+| Rádios: diretório Radio Browser (só MP3), abas por gênero/país, busca, favoritas | sim | sim (fixtures + servidor local) | pendente |
+| AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |
+| Rádio durante jogos (plugin com internet) | — | — | **não iniciado** |
 
 ## Fase 4 — Reprodução
 
@@ -59,5 +69,6 @@ Pendentes. Precisam do resultado do primeiro teste no console.
 
 ## Próxima tarefa recomendada
 
-1. Instalar `Moonlight-HB_01.00.pkg` no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
-2. Com isso validado: cliente `sceHttp` (Fase 3) e prova de vídeo com `sceAvPlayer` (Fase 4).
+1. Instalar `Moonlight-HB_01.01.pkg` no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
+   A aba Rádios lista estações (= internet + HTTPS funcionando)? Uma rádio toca?
+2. Com isso validado: internet dentro do plugin GoldHEN (rádio durante o jogo) e prova de vídeo com `sceAvPlayer`.

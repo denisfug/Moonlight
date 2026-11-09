@@ -26,10 +26,11 @@ src/addons      protocolo Stremio (protocol.*) + SourceManager
 src/library     favoritos / histórico / progresso
 src/music       biblioteca MP3, ID3, fila
 src/live        parser M3U
+src/radio       diretório Radio Browser, estações, favoritas
 src/player      MediaPlayer, AudioPlayer (MP3), VideoPlayer (indisponível), mp3_core (C)
 src/ui          Canvas (software), Font (stb_truetype), widgets, teclado, InputMap, tema
 src/app         App (shell/navegação/overlays) + telas (screens_*.cpp) + demo_data
-src/platform    platform.hpp | host/ (PC) | ps4/{video,controller,audio,filesystem} + ps4_platform
+src/platform    platform.hpp | host/ (PC) | ps4/{video,controller,audio,filesystem,network} + ps4_platform
 tests/          testes (framework próprio em test.hpp) + fixtures (addon de demonstração, M3U, MP3 de teste)
 toolchain/      build-libcxx.sh, overlay/math.h
 tools/          make_pkg.sh, make_icon.py, run_live_test.sh
@@ -54,6 +55,6 @@ Ver tabela em README.md. libc++ é gerada em `toolchain/libcxx` (não versionada
 ## Implementado / pendente / limitações
 
 Fonte da verdade: `docs/ROADMAP.md`. Resumo: UI completa com dados de demonstração, música MP3 local,
-fontes Stremio (PC), biblioteca e M3U funcionam no PC. Pendentes: primeiro teste no PS4, cliente HTTP no PS4
-(`sceHttp`/`sceSsl`), motor de vídeo (`docs/MEDIA_ENGINE.md`), imagens de pôster, requisições em thread.
+fontes Stremio (PC), biblioteca e M3U funcionam no PC. Pendentes: primeiro teste no PS4 (inclusive a internet via
+`sceHttp`/`sceSsl`, já implementada), rádio dentro do plugin, motor de vídeo (`docs/MEDIA_ENGINE.md`), imagens de pôster, requisições em thread.
 Limitação conhecida: o PS4 fecha o app quando um jogo abre, então a música do app não toca durante jogos.

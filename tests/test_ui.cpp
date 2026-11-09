@@ -116,6 +116,8 @@ TEST(app_navigation_headless)
     CHECK(h.app.sidebarFocused());
     h.press(BtnDown);                       // sidebar: Musica
     CHECK(h.app.section() == Section::Music);
+    h.press(BtnDown);                       // Radios
+    CHECK(h.app.section() == Section::Radio);
     h.press(BtnDown);
     h.press(BtnDown);                       // Series
     CHECK(h.app.section() == Section::Series);

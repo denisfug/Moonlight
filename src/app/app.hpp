@@ -12,6 +12,7 @@
 #include "music/music.hpp"
 #include "platform/platform.hpp"
 #include "player/player.hpp"
+#include "radio/radio.hpp"
 #include "storage/store.hpp"
 #include "ui/canvas.hpp"
 #include "ui/font.hpp"
@@ -42,7 +43,7 @@ protected:
     App &app;
 };
 
-enum class Section { Home, Music, Movies, Series, Live, Library, Sources, Settings, Count };
+enum class Section { Home, Music, Radio, Movies, Series, Live, Library, Sources, Settings, Count };
 
 struct Settings {
     bool animations = true;
@@ -68,6 +69,9 @@ public:
     music::MusicLibrary music;
     music::Queue queue;
     AudioPlayer audio;
+    radio::RadioBrowser radio;
+    radio::Favorites radioFavorites;
+    radio::Station station;   // station being played when audio.live()
     Settings settings;
     ui::Fonts fonts;
     ui::Keyboard keyboard;
@@ -92,6 +96,7 @@ public:
     // music helpers shared by screens
     void playTracks(const std::vector<size_t> &tracks, size_t start);
     void togglePause();
+    void playStation(const radio::Station &s);
     void skip(int dir);
     void saveSettings();
     void rescanMusic();
@@ -143,6 +148,7 @@ std::unique_ptr<Screen> makeHome(App &);
 std::unique_ptr<Screen> makeCatalog(App &, const std::string &type);
 std::unique_ptr<Screen> makeDetail(App &, const std::string &type, const std::string &id, const std::string &name);
 std::unique_ptr<Screen> makeMusic(App &);
+std::unique_ptr<Screen> makeRadio(App &);
 std::unique_ptr<Screen> makeLive(App &);
 std::unique_ptr<Screen> makeLibrary(App &);
 std::unique_ptr<Screen> makeSources(App &);

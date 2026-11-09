@@ -50,6 +50,7 @@ private:
 class HostHttp : public HttpClient {
 public:
     HttpResponse get(const HttpRequest &req) override;
+    std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error) override;
     bool supportsHttps() const override { return false; }
     std::string name() const override { return "host-http"; }
 };

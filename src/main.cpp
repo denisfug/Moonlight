@@ -57,6 +57,7 @@ int main(int argc, char **argv)
     ml::App app(platform);
     std::string err;
     if (!app.init(&err)) { std::fprintf(stderr, "init failed: %s\n", err.c_str()); return 1; }
+    if (const char *r = std::getenv("ML_RADIO_URL")) app.radio.servers = {r};   // local test directory
     std::string outdir = argv[3];
     char *script = strdup(argv[4]);
     auto runFrames = [&](int n) { for (int i = 0; i < n; i++) { app.frame(); platform.sleepMs(16); } };

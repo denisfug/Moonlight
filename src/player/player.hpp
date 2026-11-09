@@ -33,6 +33,11 @@ public:
     explicit AudioPlayer(Platform &p) : platform_(p) {}
     ~AudioPlayer() override;
     bool open(const std::string &path, std::string *error) override;   // local file path
+    // Live MP3 stream (internet radio). The connection is made by the playback thread when play()
+    // is called; failures end in PlayState::Error with lastError().
+    bool openStream(const std::string &url, HttpClient *http, std::string *error);
+    bool live() const { return live_; }
+    std::string lastError() const { return state_.load() == PlayState::Error ? lastError_ : std::string(); }
     void play() override;
     void pause() override;
     void stop() override;
@@ -51,6 +56,9 @@ private:
     Platform &platform_;
     std::string data_;
     int64_t durationMs_ = 0;
+    bool live_ = false;
+    std::string streamUrl_, lastError_;
+    HttpClient *http_ = nullptr;
     std::atomic<PlayState> state_{PlayState::Idle};
     std::atomic<int64_t> positionMs_{0};
     std::atomic<int64_t> seekTo_{-1};

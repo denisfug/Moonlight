@@ -18,6 +18,7 @@ namespace {
 struct NavItem { Section s; Icon icon; const char *label; };
 const NavItem kNav[] = {
     {Section::Home, Icon::Home, "Inicio"},       {Section::Music, Icon::Music, "Musica"},
+    {Section::Radio, Icon::Live, "Radios"},
     {Section::Movies, Icon::Film, "Filmes"},     {Section::Series, Icon::Series, "Series"},
     {Section::Live, Icon::Live, "Canais"},       {Section::Library, Icon::Library, "Biblioteca"},
     {Section::Sources, Icon::Sources, "Fontes"}, {Section::Settings, Icon::Settings, "Configuracoes"},
@@ -25,7 +26,8 @@ const NavItem kNav[] = {
 }  // namespace
 
 App::App(Platform &p)
-    : platform(p), store(p.fs(), p.dataDir()), library(store), sources(store, p.http()), audio(p)
+    : platform(p), store(p.fs(), p.dataDir()), library(store), sources(store, p.http()), audio(p),
+      radio(p.http()), radioFavorites(store)
 {
 }
 
@@ -49,6 +51,7 @@ bool App::init(std::string *error)
     loadSettings();
     library.load();
     sources.load();
+    radioFavorites.load();
     rescanMusic();
     loadChannels();
     audio.setVolume(settings.volume);
@@ -56,6 +59,7 @@ bool App::init(std::string *error)
     roots_.resize(size_t(Section::Count));
     roots_[size_t(Section::Home)] = makeHome(*this);
     roots_[size_t(Section::Music)] = makeMusic(*this);
+    roots_[size_t(Section::Radio)] = makeRadio(*this);
     roots_[size_t(Section::Movies)] = makeCatalog(*this, "movie");
     roots_[size_t(Section::Series)] = makeCatalog(*this, "series");
     roots_[size_t(Section::Live)] = makeLive(*this);
@@ -183,8 +187,19 @@ void App::playTracks(const std::vector<size_t> &tracks, size_t start)
     audio.play();
 }
 
+void App::playStation(const radio::Station &s)
+{
+    std::string err;
+    station = s;
+    if (!audio.openStream(s.url, platform.http(), &err)) { toast("Radio: " + err); return; }
+    audio.play();
+    radio.countClick(s.uuid);
+    toast("Conectando em " + s.name + "...");
+}
+
 void App::togglePause()
 {
+    if (audio.live() && audio.state() == PlayState::Error) { playStation(station); return; }
     if (audio.state() == PlayState::Playing) audio.pause();
     else if (audio.state() == PlayState::Paused || audio.state() == PlayState::Ready || audio.state() == PlayState::Ended) audio.play();
     dirty();
@@ -192,7 +207,7 @@ void App::togglePause()
 
 void App::skip(int dir)
 {
-    if (queue.empty()) return;
+    if (queue.empty() || audio.live()) return;
     if (dir > 0) queue.next(true);
     else {
         if (audio.getPosition() > 4000) { audio.seek(0); return; }
@@ -224,7 +239,9 @@ bool App::frame()
 
     // music: auto-advance at end of track, redraw while the position changes
     PlayState st = audio.state();
-    if (st == PlayState::Ended && lastAudioState_ == PlayState::Playing) {
+    if (st == PlayState::Error && lastAudioState_ != PlayState::Error && audio.live())
+        toast(station.name + ": " + audio.lastError());
+    if (st == PlayState::Ended && lastAudioState_ == PlayState::Playing && !audio.live()) {
         if (queue.next(false)) {
             size_t t = queue.current();
             std::string err;
@@ -331,7 +348,15 @@ void App::drawSidebar(Canvas &c)
     }
     // now playing mini status
     size_t t = queue.current();
-    if ((audio.state() == PlayState::Playing || audio.state() == PlayState::Paused) && t < music.tracks().size()) {
+    bool liveOn = audio.live() && (audio.state() == PlayState::Playing || audio.state() == PlayState::Paused);
+    if (liveOn) {
+        Rect r{20, theme::H - 150, theme::SidebarW - 40, 112};
+        c.fillRoundRect(r.x, r.y, r.w, r.h, 18, theme::Surface);
+        drawIcon(c, audio.state() == PlayState::Playing ? Icon::Live : Icon::Pause, float(r.x + 34), float(r.y + 38), 24, theme::Glow);
+        fonts.bold->draw(c, r.x + 62, r.y + 18, 20, fonts.bold->ellipsize(20, station.name, r.w - 76), theme::Text);
+        fonts.regular->draw(c, r.x + 62, r.y + 46, 17, "AO VIVO  -  " + std::to_string(station.bitrate) + " kbps", theme::TextDim);
+        c.fillRoundRect(r.x + 18, r.y + 86, r.w - 36, 6, 3, theme::Violet);
+    } else if ((audio.state() == PlayState::Playing || audio.state() == PlayState::Paused) && t < music.tracks().size()) {
         Rect r{20, theme::H - 150, theme::SidebarW - 40, 112};
         c.fillRoundRect(r.x, r.y, r.w, r.h, 18, theme::Surface);
         drawIcon(c, audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(r.x + 34), float(r.y + 38), 24, theme::Glow);
