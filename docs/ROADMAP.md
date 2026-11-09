@@ -54,6 +54,19 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |
 | Rádio durante jogos (plugin com internet) | — | — | **não iniciado** |
 
+## Fase 3c — Servidor de música próprio (01.02)
+
+Navidrome/Gonic/Airsonic (protocolo Subsonic, documentação OpenSubsonic Apache-2.0). Ideia vinda do
+PixelPlayer (licença proprietária: nenhum código dele foi usado).
+
+| Item | Compila PS4 | PC | PS4 |
+|---|---|---|---|
+| MD5 próprio (vetores RFC 1321 + exemplo da doc Subsonic) | sim | sim | — |
+| Login por token (senha nunca salva), ping, playlists, mix aleatório, busca | sim | sim (fixtures + servidor local) | pendente |
+| Streaming com transcodificação para MP3 (`format=mp3`), fim de faixa avança a fila | sim | sim | pendente |
+| Configuração pelo teclado na tela (Configurações) | sim | sim | pendente |
+| Seek em faixas do servidor | não | não | — |
+
 ## Fase 4 — Reprodução
 
 | Item | PC | PS4 |
@@ -69,6 +82,6 @@ Pendentes. Precisam do resultado do primeiro teste no console.
 
 ## Próxima tarefa recomendada
 
-1. Instalar `Moonlight-HB_01.01.pkg` no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
+1. Instalar `Moonlight-HB_01.02.pkg` no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
    A aba Rádios lista estações (= internet + HTTPS funcionando)? Uma rádio toca?
 2. Com isso validado: internet dentro do plugin GoldHEN (rádio durante o jogo) e prova de vídeo com `sceAvPlayer`.

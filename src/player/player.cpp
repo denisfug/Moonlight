@@ -12,13 +12,13 @@ AudioPlayer::~AudioPlayer() { stop(); }
 void AudioPlayer::joinThread()
 {
     quit_ = true;
-    // A live stream can be blocked in a network read (timeout 4 s), so wait a little longer for it.
-    int tries = live_ ? 1000 : 400;
+    // A network stream can be blocked in a read (timeout 4 s), so wait a little longer for it.
+    int tries = remote_ ? 1000 : 400;
     for (int i = 0; i < tries && threadRunning_.load(); i++) platform_.sleepMs(5);
     quit_ = false;
 }
 
-bool AudioPlayer::openStream(const std::string &url, HttpClient *http, std::string *error)
+bool AudioPlayer::openStream(const std::string &url, HttpClient *http, std::string *error, bool live, int64_t durationMs)
 {
     stop();
     data_.clear();
@@ -28,10 +28,11 @@ bool AudioPlayer::openStream(const std::string &url, HttpClient *http, std::stri
     if (!u.valid) { if (error) *error = "endereco da radio invalido"; state_ = PlayState::Error; return false; }
     if (!http) { if (error) *error = "rede indisponivel nesta plataforma"; state_ = PlayState::Error; return false; }
     if (u.scheme == "https" && !http->supportsHttps()) { if (error) *error = "HTTPS indisponivel"; state_ = PlayState::Error; return false; }
-    live_ = true;
+    live_ = live;
+    remote_ = true;
     streamUrl_ = u.str();
     http_ = http;
-    durationMs_ = 0;
+    durationMs_ = live ? 0 : durationMs;
     positionMs_ = 0;
     seekTo_ = -1;
     framesOut_ = 0;
@@ -45,6 +46,7 @@ bool AudioPlayer::open(const std::string &path, std::string *error)
     stop();
     data_.clear();
     live_ = false;
+    remote_ = false;
     if (!platform_.fs().readFile(path, data_, kMaxFileBytes) || data_.empty()) {
         if (error) *error = "nao foi possivel ler o arquivo";
         state_ = PlayState::Error;
@@ -94,7 +96,7 @@ void AudioPlayer::stop()
 
 void AudioPlayer::seek(int64_t ms)
 {
-    if (live_) return;
+    if (remote_) return;   // streams play from the start (no seeking yet)
     if (ms < 0) ms = 0;
     if (durationMs_ > 0 && ms > durationMs_) ms = durationMs_;
     seekTo_ = ms;
@@ -137,14 +139,14 @@ void AudioPlayer::run()
         return;
     }
     std::unique_ptr<HttpStream> stream;
-    if (live_) {
+    if (remote_) {
         HttpRequest req;
         req.url = streamUrl_;
         req.timeoutMs = 4000;   // per read: a station that stalls this long counts as dropped
         std::string err;
         stream = http_->openStream(req, &err);
         if (!stream) {
-            lastError_ = "nao conectou na radio: " + err;
+            lastError_ = (live_ ? "nao conectou na radio: " : "nao conectou no servidor: ") + err;
             state_ = PlayState::Error;
             out->close();
             pc_destroy(dec);
@@ -158,7 +160,7 @@ void AudioPlayer::run()
     MemReader rd{&data_, 0};
     uint64_t framesAtBase = 0;   // output frames since the last (re)start
     int64_t baseMs = 0;
-    bool started = live_;   // live streams start at the current point, never seek
+    bool started = remote_;   // streams start where the server begins sending, never seek
 
     while (!quit_.load()) {
         int64_t want = seekTo_.exchange(-1);

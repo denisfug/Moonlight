@@ -199,6 +199,24 @@ void MusicLibrary::addDemo()
     }
 }
 
+std::vector<size_t> MusicLibrary::addRemote(const std::string &name, const std::vector<Track> &tracks, bool asPlaylist)
+{
+    std::vector<size_t> idx;
+    for (const auto &t : tracks) {
+        idx.push_back(tracks_.size());
+        tracks_.push_back(t);
+        tracks_.back().remote = true;
+    }
+    if (asPlaylist && !idx.empty()) playlists_.push_back({name, "server", idx});
+    return idx;
+}
+
+void MusicLibrary::removeRemote()
+{
+    playlists_.erase(std::remove_if(playlists_.begin(), playlists_.end(), [](const Playlist &p) { return p.source == "server"; }),
+                     playlists_.end());
+}
+
 std::vector<size_t> MusicLibrary::search(const std::string &query) const
 {
     std::vector<size_t> r;

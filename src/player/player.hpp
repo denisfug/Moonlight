@@ -35,7 +35,9 @@ public:
     bool open(const std::string &path, std::string *error) override;   // local file path
     // Live MP3 stream (internet radio). The connection is made by the playback thread when play()
     // is called; failures end in PlayState::Error with lastError().
-    bool openStream(const std::string &url, HttpClient *http, std::string *error);
+    // live=false: a finite file served over HTTP (music server): ends normally, durationMs from metadata.
+    bool openStream(const std::string &url, HttpClient *http, std::string *error, bool live = true, int64_t durationMs = 0);
+    bool remote() const { return remote_; }
     bool live() const { return live_; }
     std::string lastError() const { return state_.load() == PlayState::Error ? lastError_ : std::string(); }
     void play() override;
@@ -56,7 +58,7 @@ private:
     Platform &platform_;
     std::string data_;
     int64_t durationMs_ = 0;
-    bool live_ = false;
+    bool live_ = false, remote_ = false;
     std::string streamUrl_, lastError_;
     HttpClient *http_ = nullptr;
     std::atomic<PlayState> state_{PlayState::Idle};

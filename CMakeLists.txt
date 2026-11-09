@@ -7,7 +7,7 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.01")
+set(ML_VERSION "01.02")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
@@ -16,12 +16,14 @@ add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
 add_library(ml_core STATIC
     src/core/json.cpp
     src/core/net.cpp
+    src/core/md5.cpp
     src/storage/store.cpp
     src/addons/protocol.cpp
     src/addons/source_manager.cpp
     src/library/library.cpp
     src/live/m3u.cpp
     src/music/music.cpp
+    src/music/subsonic.cpp
     src/radio/radio.cpp
     src/player/player.cpp
     src/player/mp3_core.c
@@ -79,7 +81,7 @@ else()
     target_compile_definitions(moonlight_host PRIVATE ML_PLATFORM_HOST ML_VERSION="${ML_VERSION}")
 
     add_executable(moonlight_tests
-        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_ui.cpp)
+        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_ui.cpp)
     target_include_directories(moonlight_tests PRIVATE tests)
     target_link_libraries(moonlight_tests PRIVATE ml_ui ml_host)
     enable_testing()

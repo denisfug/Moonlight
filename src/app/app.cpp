@@ -52,6 +52,7 @@ bool App::init(std::string *error)
     library.load();
     sources.load();
     radioFavorites.load();
+    server = subsonic::loadConfig(store);
     rescanMusic();
     loadChannels();
     audio.setVolume(settings.volume);
@@ -95,6 +96,7 @@ void App::rescanMusic()
     std::vector<std::string> dirs = platform.musicDirs();
     music.scan(platform.fs(), dirs);
     if (settings.showDemo) music.addDemo();
+    serverStatus.clear();   // server playlists are fetched again by the Music screen
 }
 
 void App::loadChannels()
@@ -183,8 +185,82 @@ void App::playTracks(const std::vector<size_t> &tracks, size_t start)
         return;
     }
     std::string err;
-    if (!audio.open(tr.path, &err)) { toast("Nao foi possivel tocar: " + err); return; }
-    audio.play();
+    if (!startTrack(t, &err)) toast("Nao foi possivel tocar: " + err);
+}
+
+bool App::startTrack(size_t t, std::string *err)
+{
+    if (t >= music.tracks().size() || music.tracks()[t].demo) { if (err) *err = "faixa sem audio"; return false; }
+    const music::Track &tr = music.tracks()[t];
+    bool ok;
+    if (tr.remote) {
+        subsonic::Client cl(platform.http(), server);
+        ok = audio.openStream(cl.streamUrl(tr.path), platform.http(), err, false, tr.durationMs);
+    } else {
+        ok = audio.open(tr.path, err);
+    }
+    if (ok) audio.play();
+    return ok;
+}
+
+std::string App::loadServerMusic()
+{
+    music.removeRemote();
+    if (!server.configured()) { serverStatus.clear(); return ""; }
+    subsonic::Client cl(platform.http(), server);
+    auto toTracks = [](const std::vector<subsonic::Song> &songs) {
+        std::vector<music::Track> v;
+        for (const auto &s : songs) {
+            music::Track t;
+            t.path = s.id;
+            t.title = s.title;
+            t.artist = s.artist.empty() ? "Artista desconhecido" : s.artist;
+            t.album = s.album;
+            t.durationMs = int64_t(s.durationSec) * 1000;
+            v.push_back(t);
+        }
+        return v;
+    };
+    std::vector<subsonic::Playlist> pls;
+    std::string e = cl.playlists(pls);
+    if (!e.empty()) { serverStatus = "erro: " + e; return e; }
+    int loaded = 0;
+    for (const auto &p : pls) {
+        if (loaded >= 30) break;   // keeps the first load short; more on demand later
+        std::vector<subsonic::Song> songs;
+        if (cl.playlist(p.id, songs).empty() && !songs.empty()) { music.addRemote(p.name, toTracks(songs), true); loaded++; }
+    }
+    std::vector<subsonic::Song> mix;
+    if (cl.randomSongs(60, mix).empty() && !mix.empty()) music.addRemote("Mix aleatorio (servidor)", toTracks(mix), true);
+    serverStatus = "conectado: " + std::to_string(loaded) + " playlists";
+    return "";
+}
+
+std::vector<size_t> App::searchServer(const std::string &q, std::string *err)
+{
+    if (!server.configured()) return {};
+    subsonic::Client cl(platform.http(), server);
+    std::vector<subsonic::Song> songs;
+    std::string e = cl.search(q, songs);
+    if (!e.empty()) { if (err) *err = e; return {}; }
+    std::vector<music::Track> tracks;
+    for (const auto &s : songs) {
+        music::Track t;
+        t.path = s.id;
+        t.title = s.title;
+        t.artist = s.artist;
+        t.album = s.album;
+        t.durationMs = int64_t(s.durationSec) * 1000;
+        tracks.push_back(t);
+    }
+    return music.addRemote("", tracks, false);
+}
+
+void App::setServer(const subsonic::Config &c)
+{
+    server = c;
+    subsonic::saveConfig(store, c);
+    serverStatus.clear();
 }
 
 void App::playStation(const radio::Station &s)
@@ -222,7 +298,7 @@ void App::skip(int dir)
     size_t t = queue.current();
     if (t >= music.tracks().size() || music.tracks()[t].demo) return;
     std::string err;
-    if (audio.open(music.tracks()[t].path, &err)) audio.play();
+    if (!startTrack(t, &err)) toast("Nao foi possivel tocar: " + err);
     dirty();
 }
 
@@ -245,7 +321,7 @@ bool App::frame()
         if (queue.next(false)) {
             size_t t = queue.current();
             std::string err;
-            if (t < music.tracks().size() && !music.tracks()[t].demo && audio.open(music.tracks()[t].path, &err)) audio.play();
+            if (t < music.tracks().size() && !music.tracks()[t].demo) startTrack(t, &err);
         }
     }
     lastAudioState_ = st;
@@ -418,7 +494,9 @@ void App::draw(Canvas &c)
     c.fillRect(theme::SidebarW, theme::H - 72, theme::W - theme::SidebarW, 1, theme::Line);
     Hints h = sidebarFocus_ ? Hints{{BtnUp | BtnDown | BtnLeft | BtnRight, "Navegar"}, {BtnCross, "Entrar"}}
                             : current().hints();
-    if (!sidebarFocus_ && stack_.empty()) h.push_back({BtnL2 | BtnR2, "Secao"});
+    bool usesL2R2 = false;
+    for (const auto &x : h) if (x.first & (BtnL2 | BtnR2)) usesL2R2 = true;
+    if (!sidebarFocus_ && stack_.empty() && !usesL2R2) h.push_back({BtnL2 | BtnR2, "Secao"});
     drawHints(c, fonts, h, theme::W - theme::Margin, theme::H - 54);
     if (!sidebarFocus_ || true) fonts.regular->draw(c, theme::SidebarW + theme::Margin, theme::H - 50, 20, current().title(), theme::TextMute);
     if (!toast_.text.empty()) {

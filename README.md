@@ -5,7 +5,7 @@ numa interface própria para TV, navegável só pelo DualShock 4. Fontes de cont
 [protocolo de add-ons do Stremio](https://stremio.github.io/stremio-addon-sdk/protocol.html) e devem ser
 **serviços e servidores que você está autorizado a usar**. Não há contorno de DRM nem motor P2P.
 
-> Estado: **versão 01.01 de desenvolvimento.** Compila e gera PKG; testado no PC; **ainda não testado no PS4.**
+> Estado: **versão 01.02 de desenvolvimento.** Compila e gera PKG; testado no PC; **ainda não testado no PS4.**
 > Vídeo ainda não reproduz. A internet no console (rádios, fontes) foi implementada mas não testada. Detalhes em [`docs/ROADMAP.md`](docs/ROADMAP.md)
 > e [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
@@ -15,6 +15,8 @@ numa interface própria para TV, navegável só pelo DualShock 4. Fontes de cont
   Biblioteca, Fontes, Configurações. Foco visível, rolagem suave, teclado na tela.
 - Catálogo de demonstração (títulos inventados, capas geradas).
 - Rádios: diretório comunitário Radio Browser (grátis, sem anúncio do app), só estações MP3, por país/gênero, busca e favoritas.
+- Servidor de música próprio (Navidrome e outros compatíveis com Subsonic): suas músicas do PC pelo Wi-Fi,
+  playlists, mix aleatório e busca. Configure em Configurações.
 - Música: MP3 do HD (`/data/moonlight/music/<playlist>/`) ou pendrive (`Music/<playlist>/`), tags ID3,
   fila, aleatório, repetir, volume, busca.
 - Fontes: adicionar por URL de `manifest.json`, ativar/desativar, atualizar, remover, catálogos, busca,

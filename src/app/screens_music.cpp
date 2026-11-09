@@ -18,6 +18,8 @@ public:
 
     void onEnter() override
     {
+        // the user's music server is loaded once per app start (after a "loading" frame)
+        if (app.server.configured() && app.serverStatus.empty()) { serverPending_ = true; drawnLoading_ = false; }
         if (pl_ >= int(lists())) pl_ = 0;
     }
 
@@ -70,6 +72,12 @@ public:
             app.openKeyboard("Buscar musica", search_, false, [this](const std::string &q) {
                 search_ = q;
                 results_ = app.music.search(q);
+                if (!q.empty() && app.server.configured()) {
+                    std::string e;
+                    auto remote = app.searchServer(q, &e);
+                    results_.insert(results_.end(), remote.begin(), remote.end());
+                    if (!e.empty()) app.toast("Busca no servidor: " + e);
+                }
                 pl_ = 0;
                 tr_ = 0;
                 zone_ = search_.empty() ? 0 : 1;
@@ -94,20 +102,29 @@ public:
 
     void update(float dt) override
     {
+        if (serverPending_ && drawnLoading_) {
+            serverPending_ = false;
+            std::string e = app.loadServerMusic();
+            if (!e.empty()) app.toast("Servidor de musica: " + e);
+            if (pl_ >= int(lists())) pl_ = 0;
+            app.dirty();
+        }
         float target = float(std::max(0, tr_ - 5) * 74);
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
         anim_ = std::fabs(target - scroll_) > 0.5f;
         scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
     }
-    bool animating() const override { return anim_; }
+    bool animating() const override { return anim_ || serverPending_; }
 
     void draw(Canvas &c, Rect area) override
     {
-        size_t realTracks = 0;
-        for (const auto &t : app.music.tracks()) if (!t.demo) realTracks++;
-        drawSectionHeader(app, c, area, "Musica",
-                          realTracks ? std::to_string(realTracks) + " faixas no HD/pendrive"
-                                     : "Sem MP3 ainda: copie para " + app.platform.dataDir() + "/music/<playlist>/  (mostrando demonstracao)");
+        size_t localTracks = 0;
+        for (const auto &t : app.music.tracks()) if (!t.demo && !t.remote) localTracks++;
+        std::string sub = localTracks ? std::to_string(localTracks) + " faixas no HD/pendrive" : "Nenhum MP3 local";
+        if (serverPending_) { sub += "  -  conectando ao servidor..."; drawnLoading_ = true; }
+        else if (app.server.configured()) sub += "  -  servidor " + app.serverStatus;
+        else sub += "  -  configure seu servidor (Navidrome) em Configuracoes";
+        drawSectionHeader(app, c, area, "Musica", sub);
         int x = area.x + theme::Margin, top = 176, bottomPanel = 170;
         int listH = area.h - top - bottomPanel - 20;
         // playlists column
@@ -145,6 +162,7 @@ public:
             app.fonts.regular->draw(c, r.x + 66, r.y + 38, 18, app.fonts.regular->ellipsize(18, t.artist, r.w / 2 - 80), theme::TextDim);
             app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 22, 19, app.fonts.regular->ellipsize(19, t.album, r.w / 2 - 140), theme::TextMute);
             if (t.demo) app.fonts.bold->draw(c, r.right() - 104, r.y + 22, 16, "DEMO", theme::Warn);
+            else if (t.remote) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, t.durationMs > 0 ? formatTime(t.durationMs) : "rede", theme::TextMute);
         }
         c.popClip();
         drawNowPlaying(c, {x, area.bottom() - bottomPanel, area.right() - theme::Margin - x, bottomPanel - 16});
@@ -159,7 +177,7 @@ public:
 private:
     int pl_ = 0, tr_ = 0, zone_ = 0;
     float scroll_ = 0;
-    bool anim_ = false;
+    bool anim_ = false, serverPending_ = false, drawnLoading_ = false;
     std::string search_;
     std::vector<size_t> results_;
 

@@ -13,6 +13,7 @@
 #include "platform/platform.hpp"
 #include "player/player.hpp"
 #include "radio/radio.hpp"
+#include "music/subsonic.hpp"
 #include "storage/store.hpp"
 #include "ui/canvas.hpp"
 #include "ui/font.hpp"
@@ -72,6 +73,8 @@ public:
     radio::RadioBrowser radio;
     radio::Favorites radioFavorites;
     radio::Station station;   // station being played when audio.live()
+    subsonic::Config server;  // user's music server (Navidrome etc.)
+    std::string serverStatus; // "" = not loaded yet
     Settings settings;
     ui::Fonts fonts;
     ui::Keyboard keyboard;
@@ -97,6 +100,10 @@ public:
     void playTracks(const std::vector<size_t> &tracks, size_t start);
     void togglePause();
     void playStation(const radio::Station &s);
+    bool startTrack(size_t t, std::string *err);   // local file or server song
+    std::string loadServerMusic();                 // playlists + random mix from the server (blocking)
+    std::vector<size_t> searchServer(const std::string &q, std::string *err);
+    void setServer(const subsonic::Config &c);
     void skip(int dir);
     void saveSettings();
     void rescanMusic();

@@ -24,7 +24,7 @@ src/core        JSON, URL/política de rede, contrato HttpClient
 src/storage     JsonStore (escrita atômica)
 src/addons      protocolo Stremio (protocol.*) + SourceManager
 src/library     favoritos / histórico / progresso
-src/music       biblioteca MP3, ID3, fila
+src/music       biblioteca MP3, ID3, fila, cliente Subsonic/Navidrome (subsonic.*)
 src/live        parser M3U
 src/radio       diretório Radio Browser, estações, favoritas
 src/player      MediaPlayer, AudioPlayer (MP3), VideoPlayer (indisponível), mp3_core (C)

@@ -329,7 +329,7 @@ public:
 
     bool handle(uint32_t p) override
     {
-        const int n = 4;
+        const int n = 5;
         if (p & BtnUp) { if (sel_ > 0) sel_--; return true; }
         if (p & BtnDown) { if (sel_ + 1 < n) sel_++; return true; }
         if (p & BtnCross) {
@@ -348,7 +348,8 @@ public:
                 app.toast(std::to_string(real) + " faixas encontradas");
                 break;
             }
-            case 3:
+            case 3: configureServer(); break;
+            case 4:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -362,6 +363,8 @@ public:
 
     void draw(Canvas &c, Rect area) override
     {
+        serverDesc_ = app.server.configured() ? app.server.user + " em " + app.server.url + "  (X para trocar)"
+                                              : "Suas musicas do PC pelo Wi-Fi. X para configurar.";
         drawSectionHeader(app, c, area, "Configuracoes", "Dados em " + app.platform.dataDir());
         int x = area.x + theme::Margin, y = 186, w = 1000;
         struct Item { const char *title, *desc; int toggle; };
@@ -369,9 +372,10 @@ public:
             {"Animacoes", "Rolagem suave e transicoes entre telas.", app.settings.animations ? 1 : 0},
             {"Conteudo de demonstracao", "Mostra filmes, series, canais e playlists ficticios enquanto nao ha fontes reais.", app.settings.showDemo ? 1 : 0},
             {"Procurar musicas de novo", "Rele /data/moonlight/music e /mnt/usb0/Music.", -1},
+            {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
-        for (int i = 0; i < 4; i++, y += 120) {
+        for (int i = 0; i < 5; i++, y += 120) {
             Rect r{x, y, w, 104};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
             app.fonts.bold->draw(c, r.x + 30, r.y + 18, 27, items[i].title, theme::Text);
@@ -390,6 +394,30 @@ public:
 
 private:
     int sel_ = 0;
+    std::string serverDesc_, newUrl_, newUser_;
+
+    // URL -> user -> password, then a ping before saving. The password is turned into a salted token
+    // (Subsonic protocol) and discarded; it is never written to disk or logged.
+    void configureServer()
+    {
+        App *a = &app;
+        SettingsScreen *self = this;
+        app.openKeyboard("Endereco do servidor (ex: http://192.168.15.10:4533)", app.server.url.empty() ? "http://" : app.server.url, true,
+                         [a, self](const std::string &url) {
+            self->newUrl_ = url;
+            a->openKeyboard("Usuario do servidor", a->server.user, false, [a, self](const std::string &user) {
+                self->newUser_ = user;
+                a->openKeyboard("Senha do servidor", "", false, [a, self](const std::string &pass) {
+                    subsonic::Config c = subsonic::makeConfig(self->newUrl_, self->newUser_, pass, a->now());
+                    subsonic::Client cl(a->platform.http(), c);
+                    std::string e = cl.ping();
+                    if (!e.empty()) { a->modal("Servidor de musica", "Nao conectou: " + e); return; }
+                    a->setServer(c);
+                    a->toast("Servidor conectado. Abra Musica para ver suas playlists.");
+                });
+            });
+        });
+    }
 };
 
 }  // namespace

@@ -14,6 +14,8 @@ struct Track {
     std::string title, artist, album;
     uint64_t sizeBytes = 0;
     bool demo = false;   // demonstration entry without an audio file
+    bool remote = false; // streamed from the user's music server (path = server song id)
+    int64_t durationMs = 0;
 };
 
 struct Playlist {
@@ -38,6 +40,9 @@ public:
     // Reads at most 64 KiB of each file for tags. Returns the number of tracks found.
     size_t scan(FileSystem &fs, const std::vector<std::string> &roots);
     void addDemo();   // demonstration playlists (no audio) so the UI can be exercised without files
+    // Adds a playlist of server songs (source "server"); returns the track indices added.
+    std::vector<size_t> addRemote(const std::string &playlistName, const std::vector<Track> &tracks, bool asPlaylist);
+    void removeRemote();   // drops server playlists (tracks stay but become unreachable from playlists)
     const std::vector<Track> &tracks() const { return tracks_; }
     const std::vector<Playlist> &playlists() const { return playlists_; }
     std::vector<size_t> search(const std::string &query) const;   // case-insensitive title/artist/album
