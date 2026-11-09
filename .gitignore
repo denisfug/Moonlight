@@ -1,0 +1,6 @@
+toolchain/libcxx/
+toolchain/.libcxx-work/
+build/
+build-*/
+out/
+*.o
