@@ -52,6 +52,13 @@ public:
                                             std::vector<std::string> *errors = nullptr);
     std::vector<addon::Subtitle> fetchSubtitles(const std::string &type, const std::string &id);
 
+    // Background loading (catalog rows): building the URL reads the source list (UI thread); the fetch
+    // itself touches no shared state and may run on a worker thread.
+    std::string catalogUrl(const CatalogRef &c, const std::vector<std::pair<std::string, std::string>> &extra,
+                           UrlPolicy *policy) const;
+    static std::string fetchCatalogAt(HttpClient *http, const std::string &url, const UrlPolicy &policy,
+                                      std::vector<addon::MetaPreview> &out);
+
     HttpClient *http() const { return http_; }
     UrlPolicy policyFor(const Source &s) const { return UrlPolicy{s.allowPlainHttp}; }
 

@@ -6,6 +6,7 @@
 
 #include "app/app.hpp"
 #include "app/demo_data.hpp"
+#include "app/updater.hpp"
 #include "net/tls.hpp"
 #include "ui/theme.hpp"
 
@@ -357,11 +358,10 @@ private:
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
             while (!line.empty() && line.front() == ' ') line.erase(0, 1);
             if (line.empty() || line[0] == '#') continue;
-            std::string e = app.sources.add(line, false, int64_t(app.now()));
+            std::string e = app.addSourceByUser(line);
             if (e.empty()) added++;
             else if (e.find("ja esta na lista") == std::string::npos) { failed++; lastErr = e; }
         }
-        if (added) app.sourcesVersion++;
         std::string msg = "Arquivo: " + used + "\n" + std::to_string(added) + " fonte(s) adicionada(s)";
         if (failed) msg += ", " + std::to_string(failed) + " com erro (ultimo: " + lastErr + ")";
         app.modal("Importar fontes", msg + ".");
@@ -371,8 +371,8 @@ private:
     {
         App *a = &app;
         app.openKeyboard("Endereco da fonte (.../manifest.json)", "https://", true, [a](const std::string &url) {
-            std::string e = a->sources.add(url, false, int64_t(a->now()));
-            if (e.empty()) { a->sourcesVersion++; a->toast("Fonte adicionada: " + a->sources.sources().back().manifest.name); }
+            std::string e = a->addSourceByUser(url);
+            if (e.empty()) { a->toast("Fonte adicionada: " + a->sources.sources().back().manifest.name); }
             else a->modal("Nao foi possivel adicionar", e);
         });
     }
@@ -386,7 +386,7 @@ public:
 
     bool handle(uint32_t p) override
     {
-        const int n = 8;
+        const int n = 9;
         if (p & BtnUp) { if (sel_ > 0) sel_--; return true; }
         if (p & BtnDown) { if (sel_ + 1 < n) sel_++; return true; }
         if (p & BtnCross) {
@@ -408,8 +408,9 @@ public:
             case 3: configureServer(); break;
             case 4: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
             case 5: toggleRemote(); break;
-            case 6: testInternet(); break;
-            case 7:
+            case 6: updateAction(); break;
+            case 7: testInternet(); break;
+            case 8:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -427,6 +428,7 @@ public:
                                               : "Suas musicas do PC pelo Wi-Fi. X para configurar.";
         remoteDesc_ = app.remote->running() ? "No celular, abra " + app.remote->address() + "  PIN " + app.remote->pin()
                                              : "Use o celular (mesmo Wi-Fi) como controle e teclado. Desligado.";
+        updateDesc_ = describeUpdate();
         drawSectionHeader(app, c, area, "Configuracoes", "Dados em " + app.platform.dataDir());
         int x = area.x + theme::Margin, y = 186, w = 1000;
         struct Item { const char *title, *desc; int toggle; };
@@ -437,17 +439,18 @@ public:
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
             {"Controle pelo celular", remoteDesc_.c_str(), app.settings.remote ? 1 : 0},
+            {"Atualizar o Moonlight", updateDesc_.c_str(), -1},
             {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
-        for (int i = 0; i < 8; i++, y += 100) {
-            Rect r{x, y, w, 90};
+        for (int i = 0; i < 9; i++, y += 90) {
+            Rect r{x, y, w, 82};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
-            app.fonts.bold->draw(c, r.x + 30, r.y + 18, 27, items[i].title, theme::Text);
-            app.fonts.regular->draw(c, r.x + 30, r.y + 58, 20, items[i].desc, theme::TextMute);
+            app.fonts.bold->draw(c, r.x + 30, r.y + 12, 27, items[i].title, theme::Text);
+            app.fonts.regular->draw(c, r.x + 30, r.y + 50, 20, items[i].desc, theme::TextMute);
             if (items[i].toggle >= 0) {
                 bool on = items[i].toggle == 1;
-                int tx = r.right() - 110, ty = r.y + 29;
+                int tx = r.right() - 110, ty = r.y + 22;
                 if (on) c.fillGradient(tx, ty, 76, 38, 19, theme::Violet, theme::Blue, 0);
                 else c.fillRoundRect(tx, ty, 76, 38, 19, theme::SurfaceHi);
                 c.fillCircle(float(on ? tx + 57 : tx + 19), float(ty + 19), 14, theme::Text);
@@ -459,7 +462,64 @@ public:
 
 private:
     int sel_ = 0;
-    std::string serverDesc_, newUrl_, newUser_, remoteDesc_;
+    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_;
+
+    std::string describeUpdate()
+    {
+        Updater::State u = app.updater->state();
+        std::string cur = "Versao " + std::string(ML_VERSION) + ". ";
+        switch (u.phase) {
+        case Updater::Phase::Idle: return cur + "X para procurar versao nova.";
+        case Updater::Phase::Checking: return cur + "Procurando...";
+        case Updater::Phase::UpToDate: return cur + "Voce ja tem a mais nova. X procura de novo.";
+        case Updater::Phase::Available: return "Nova versao " + u.latest + " disponivel! X para baixar.";
+        case Updater::Phase::Downloading: {
+            int pct = u.size > 0 ? int(u.done * 100 / u.size) : 0;
+            return "Baixando " + u.latest + "... " + std::to_string(pct) + "%";
+        }
+        case Updater::Phase::Downloaded: return u.latest + " baixada em " + u.path + ". X para instalar.";
+        case Updater::Phase::Failed: return "Falhou: " + u.error + ". X tenta de novo.";
+        }
+        return cur;
+    }
+
+    void updateAction()
+    {
+        Updater::State u = app.updater->state();
+        switch (u.phase) {
+        case Updater::Phase::Available: app.updater->download(); break;
+        case Updater::Phase::Failed: if (!u.assetUrl.empty()) app.updater->download(); else app.updater->check(); break;
+        case Updater::Phase::Checking:
+        case Updater::Phase::Downloading: app.toast("Aguarde..."); break;
+        case Updater::Phase::Downloaded: install(u.path, false); break;
+        default: app.updater->check(); break;
+        }
+    }
+
+    void install(const std::string &path, bool replace)
+    {
+        std::string e;
+        int r = app.platform.installPackage(path, replace, &e);
+        const std::string manual = "\nVoce tambem pode instalar pelo GoldHEN > Package Installer: o arquivo esta em " + path +
+                                   ". Seus dados (fontes, favoritos) ficam em /data/moonlight e nao se perdem.";
+        if (r == 0) {
+            app.modal("Atualizar o Moonlight", std::string(replace ? "Versao antiga removida e " : "") +
+                          "instalacao iniciada. Acompanhe pela notificacao do PS4; quando terminar, abra o Moonlight de novo." +
+                          (replace ? " O app pode fechar sozinho agora." : ""));
+        } else if (r == 1) {
+            App *a = &app;
+            std::string pth = path;
+            app.modal("Atualizar o Moonlight",
+                      "O PS4 so instala por cima removendo a versao atual primeiro (experimental: se a instalacao falhar, "
+                      "o Moonlight some ate voce instalar o arquivo pelo GoldHEN)." + manual,
+                      {"Remover e instalar", "Eu instalo pelo GoldHEN"}, [this, a, pth](int choice) {
+                          if (choice == 0) install(pth, true);
+                          else a->toast("Arquivo em " + pth);
+                      });
+        } else {
+            app.modal("Atualizar o Moonlight", "A instalacao automatica nao funcionou: " + e + "." + manual);
+        }
+    }
 
     void toggleRemote()
     {

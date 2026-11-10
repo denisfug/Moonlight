@@ -4,6 +4,7 @@
 
 #include "addons/source_manager.hpp"
 #include "platform/host/host_platform.hpp"
+#include "app/catalog_loader.hpp"
 #include "test.hpp"
 
 using namespace ml;
@@ -218,4 +219,37 @@ TEST(sources_live_local_server)
     CHECK(sm.fetchMeta("series", "mls001", md).empty());
     CHECK_EQ(md.videos.size(), size_t(4));
     CHECK_EQ(sm.fetchStreams("movie", "mlm001").size(), size_t(5));
+}
+
+TEST(catalog_rows_live_local_server)
+{
+    const char *base = std::getenv("ML_ADDON_URL");
+    if (!base) { std::printf("(skipped: ML_ADDON_URL not set) "); return; }
+    host::HostFileSystem fs(t::scratch);
+    fs.makeDirs("/src5");
+    JsonStore store(fs, "/src5");
+    host::HostPlatform plat(t::scratch + "/src5p", "");
+    SourceManager sm(store, plat.http());
+    CHECK(sm.add(std::string(base) + "/manifest.json", false, 1).empty());
+    auto refs = sm.browsableCatalogs("movie");
+    CHECK(!refs.empty());
+    if (refs.empty()) return;
+    UrlPolicy pol;
+    std::string all = sm.catalogUrl(refs[0], {}, &pol);
+    std::string drama = sm.catalogUrl(refs[0], {{"genre", "Drama"}}, &pol);
+    CHECK(drama.find("/catalog/movie/ml-top/genre=Drama.json") != std::string::npos);
+    CHECK(sm.catalogUrl(refs[0], {{"year", "2020"}}, &pol).empty());   // filter the catalog does not declare
+    CatalogLoader loader(plat, plat.http());
+    int t1 = loader.request(all, pol), t2 = loader.request(drama, pol);
+    CHECK(t1 > 0 && t2 > 0);
+    std::vector<CatalogLoader::Result> got;
+    for (int i = 0; i < 300 && got.size() < 2; i++) {
+        for (auto &r : loader.take()) got.push_back(std::move(r));
+        plat.sleepMs(10);
+    }
+    CHECK_EQ(got.size(), size_t(2));
+    for (const auto &r : got) {
+        CHECK(r.error.empty());
+        CHECK_EQ(r.metas.size(), r.ticket == t1 ? size_t(2) : size_t(1));
+    }
 }

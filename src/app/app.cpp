@@ -27,7 +27,8 @@ const NavItem kNav[] = {
 
 App::App(Platform &p)
     : platform(p), store(p.fs(), p.dataDir()), library(store), sources(store, p.http()), audio(p),
-      radio(p.http()), radioFavorites(store), images(p, p.http()), remote(new RemoteControl(p))
+      radio(p.http()), radioFavorites(store), images(p, p.http()), remote(new RemoteControl(p)),
+      updater(new Updater(p, "denisfug/Moonlight", ML_VERSION))
 {
 }
 
@@ -80,6 +81,7 @@ bool App::init(std::string *error)
         if (remote->start(&e)) toast("Controle pelo celular: " + remote->address() + "  PIN " + remote->pin());
         else toast("Controle pelo celular nao ligou: " + e);
     }
+    if (platform.name() == "ps4") updater->check();   // quiet unless a new version exists
     return true;
 }
 
@@ -299,6 +301,16 @@ void App::playVideo(const std::string &location, const std::string &title)
     push(makePlayer(*this, std::move(engine), location, title));
 }
 
+std::string App::addSourceByUser(const std::string &url)
+{
+    std::string low = url.substr(0, 7);
+    for (auto &ch : low) ch = char(ch >= 'A' && ch <= 'Z' ? ch + 32 : ch);
+    bool plain = low == "http://";
+    std::string e = sources.add(url, plain, int64_t(now_));
+    if (e.empty()) sourcesVersion++;
+    return e;
+}
+
 void App::togglePause()
 {
     if (audio.live() && audio.state() == PlayState::Error) { playStation(station); return; }
@@ -352,6 +364,15 @@ bool App::frame()
     uint32_t pressed = systemKeyboard_ ? 0 : input_.update(platform.input().read(), now_);
     if (pressed) { handleInput(pressed); dirty(); }
     if (remote->running()) serviceRemote();
+    Updater::State us = updater->state();
+    if (us.phase != lastUpdatePhase_) {
+        if (us.phase == Updater::Phase::Available)
+            toast("Nova versao " + us.latest + " do Moonlight! Configuracoes > Atualizar o Moonlight");
+        if (us.phase == Updater::Phase::Downloaded) toast("Versao " + us.latest + " baixada. Configuracoes > Atualizar para instalar");
+        lastUpdatePhase_ = us.phase;
+        dirty();
+    }
+    if (us.phase == Updater::Phase::Downloading && section_ == Section::Settings) dirty();
 
     // music: auto-advance at end of track, redraw while the position changes
     PlayState st = audio.state();
@@ -407,8 +428,8 @@ void App::serviceRemote()
             }
             break;
         case RemoteControl::Command::Source: {
-            std::string e = sources.add(c.text, false, int64_t(now_));
-            if (e.empty()) { sourcesVersion++; toast("Fonte adicionada pelo celular: " + sources.sources().back().manifest.name); }
+            std::string e = addSourceByUser(c.text);
+            if (e.empty()) { toast("Fonte adicionada pelo celular: " + sources.sources().back().manifest.name); }
             else toast("Fonte do celular nao entrou: " + e);
             break;
         }

@@ -28,14 +28,18 @@ struct ScriptServer {
     std::thread th;
     int port = 0;
 
-    bool start()
+    bool open()
     {
         for (port = 47100 + int(getpid() % 500); port < 47900; ++port) {
             std::string e;
             lis = sockets.listen(port, &e);
             if (lis) break;
         }
-        if (!lis) return false;
+        return lis != nullptr;
+    }
+    bool start() { return (lis || open()) && launch(); }
+    bool launch()
+    {
         th = std::thread([this] {
             size_t i = 0;
             while (!stop && i < replies.size()) {
@@ -335,4 +339,59 @@ TEST(range_reader_random_access)
     CHECK(!rp.seekable());
     CHECK_EQ(rp.readAt(300000, &buf[0], 4000), 4000L);
     CHECK(buf.compare(0, 4000, s.file, 300000, 4000) == 0);
+}
+
+// ---------------------------------------------------------------- updates
+#include "app/updater.hpp"
+
+TEST(updater_versions_and_release_json)
+{
+    CHECK(parseVersion("v01.10") > parseVersion("01.09"));
+    CHECK(parseVersion("01.10") == parseVersion("v1.10"));
+    CHECK(parseVersion("2.00") > parseVersion("01.99"));
+    CHECK_EQ(parseVersion("sem numero"), -1);
+    std::string tag, url, title;
+    int64_t size = 0;
+    CHECK(Updater::parseRelease(R"({"tag_name":"v01.10","name":"Moonlight 01.10","assets":[{"name":"notes.txt","browser_download_url":"https://x/n"},{"name":"Moonlight-HB_01.10.pkg","size":123,"browser_download_url":"https://x/p.pkg"}]})",
+                                &tag, &url, &size, &title).empty());
+    CHECK_EQ(tag, std::string("v01.10"));
+    CHECK_EQ(url, std::string("https://x/p.pkg"));
+    CHECK_EQ(size, int64_t(123));
+    CHECK(!Updater::parseRelease(R"({"tag_name":"v01.10","assets":[]})", &tag, &url, &size, &title).empty());
+}
+
+TEST(updater_check_and_download_local)
+{
+    std::string pkg = std::string("\x7F" "CNT") + std::string(5000, 'p');
+    ScriptServer s;
+    CHECK(s.open());   // port first: the replies below contain it
+    std::string base = s.url("");
+    std::string rel = "{\"tag_name\":\"v99.01\",\"name\":\"teste\",\"assets\":[{\"name\":\"Moonlight-HB_99.01.pkg\",\"size\":" +
+                      std::to_string(pkg.size()) + ",\"browser_download_url\":\"" + base + "/dl/x.pkg\"}]}";
+    s.replies = {
+        "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(rel.size()) + "\r\n\r\n" + rel,
+        "HTTP/1.1 302 Found\r\nLocation: /cdn/x.pkg\r\nContent-Length: 0\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(pkg.size()) + "\r\n\r\n" + pkg,
+    };
+    CHECK(s.launch());
+    host::HostFileSystem(t::scratch + "/upd").makeDirs("/");
+    host::HostPlatform p(t::scratch + "/upd", "");
+    Updater u(p, "denisfug/Moonlight", "01.09");
+    u.apiBase = base;
+    u.check();
+    for (int i = 0; i < 300 && (u.state().phase == Updater::Phase::Checking); i++) p.sleepMs(10);
+    Updater::State st = u.state();
+    CHECK(st.phase == Updater::Phase::Available);
+    CHECK_EQ(st.latest, std::string("99.01"));
+    u.download();
+    for (int i = 0; i < 300 && (u.state().phase == Updater::Phase::Downloading); i++) p.sleepMs(10);
+    st = u.state();
+    CHECK(st.phase == Updater::Phase::Downloaded);
+    if (st.phase != Updater::Phase::Downloaded) std::printf("[%s] ", st.error.c_str());
+    std::string got;
+    CHECK(p.fs().readFile("/data/pkg/Moonlight-HB_99.01.pkg", got, 1 << 20));
+    CHECK(got == pkg);
+    CHECK(s.requests.size() == 3 && s.requests[0].find("GET /repos/denisfug/Moonlight/releases/latest") == 0);
+    std::string e;
+    CHECK_EQ(p.installPackage(st.path, false, &e), -1);   // only on the PS4
 }

@@ -14,6 +14,7 @@
 #include "player/player.hpp"
 #include "radio/radio.hpp"
 #include "app/remote.hpp"
+#include "app/updater.hpp"
 #include "music/subsonic.hpp"
 #include "storage/store.hpp"
 #include "ui/canvas.hpp"
@@ -85,6 +86,7 @@ public:
     ui::ImageLoader images;
     ui::Keyboard keyboard;
     std::unique_ptr<RemoteControl> remote;
+    std::unique_ptr<Updater> updater;
 
     // navigation
     void goSection(Section s, bool focusContent);
@@ -106,6 +108,9 @@ public:
     bool modalOpen() const { return modal_.open; }
     // Demo movies/series only while there is no active source of the user's.
     bool videoDemo() const;
+    // Source the user typed/imported/sent from the phone. An http:// address the user chose himself is
+    // accepted (plain HTTP opt-in for that source); TLS verification for https:// is never relaxed.
+    std::string addSourceByUser(const std::string &url);
     int sourcesVersion = 0;   // bumped when sources change, screens reload their catalogs
 
     // music helpers shared by screens
@@ -160,6 +165,7 @@ private:
     void handleInput(uint32_t pressed);
     void serviceRemote();
     std::string remoteState_;
+    Updater::Phase lastUpdatePhase_ = Updater::Phase::Idle;
     void draw(ui::Canvas &c);
     void drawSidebar(ui::Canvas &c);
     void drawModal(ui::Canvas &c);

@@ -55,6 +55,8 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | Cliente HTTP/HTTPS do PS4 | sim | sim (TLS local) | **01.07/01.08: TLS do sistema falha (0x8095F00C) mesmo com raízes novas. 01.09: HTTP/TLS próprios (Mbed TLS), aguardando teste** |
 | Controle pelo celular (página web na rede local, PIN) | sim | sim | **01.09, aguardando teste** |
 | Vídeo HTTPS via cliente próprio (Range) | sim | Range testado | **01.09, aguardando teste** |
+| Catálogo em fileiras (catálogo/serviço e gênero), carga em segundo plano | sim | sim (servidor local) | **01.10, aguardando teste** |
+| Atualização pelo GitHub Releases | sim | busca/download sim; instalação só PS4 | **01.10, aguardando teste** |
 | Streaming HTTP incremental (`HttpStream`) | sim | sim (servidor local real) | pendente |
 | Rádios: diretório Radio Browser (só MP3), abas por gênero/país, busca, favoritas | sim | sim (fixtures + servidor local) | pendente |
 | AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |

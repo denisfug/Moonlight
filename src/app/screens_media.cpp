@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "app/app.hpp"
+#include "app/catalog_loader.hpp"
 #include "app/demo_data.hpp"
 #include "ui/theme.hpp"
 
@@ -20,10 +21,14 @@ std::string lower(std::string s)
     return s;
 }
 
-// ---------------------------------------------------------------- catalog grid
+// ---------------------------------------------------------------- catalog rows
+// One row per catalog of the user's sources (addons often name them after the streaming service:
+// "Netflix", "Prime Video"...) plus one row per genre when a catalog offers a genre filter.
+// Rows load in the background (CatalogLoader) as they come near the screen.
 class CatalogScreen : public Screen {
 public:
-    CatalogScreen(App &a, std::string type) : Screen(a), type_(std::move(type)) {}
+    CatalogScreen(App &a, std::string type)
+        : Screen(a), type_(std::move(type)), loader_(new CatalogLoader(a.platform, a.platform.http())) {}
     std::string title() const override { return type_ == "movie" ? "Filmes" : "Series"; }
 
     void onEnter() override
@@ -35,135 +40,232 @@ public:
     {
         loaded_ = true;
         seenVersion_ = app.sourcesVersion;
-        all_.clear();
-        notes_.clear();
-        if (app.videoDemo()) all_ = type_ == "movie" ? demo::movies() : demo::series();
-        for (const auto &ref : app.sources.browsableCatalogs(type_)) {
-            std::vector<addon::MetaPreview> metas;
-            std::string e = app.sources.fetchCatalog(ref, metas);
-            if (!e.empty()) { notes_ = app.sources.sources()[ref.source].manifest.name + ": " + e; continue; }
-            all_.insert(all_.end(), metas.begin(), metas.end());
+        loader_->cancelAll();
+        rows_.clear();
+        row_ = 0;
+        scrollY_ = 0;
+        query_.clear();
+        if (app.videoDemo()) {
+            std::vector<addon::MetaPreview> demo = type_ == "movie" ? demo::movies() : demo::series();
+            Row all;
+            all.title = "Destaques";
+            all.sub = "demonstracao";
+            all.items = demo;
+            all.state = Row::Done;
+            rows_.push_back(all);
+            for (const auto &m : demo)
+                for (const auto &g : m.genres) {
+                    auto it = std::find_if(rows_.begin(), rows_.end(), [&](const Row &r) { return r.title == g; });
+                    if (it == rows_.end()) {
+                        Row r;
+                        r.title = g;
+                        r.sub = "demonstracao";
+                        r.state = Row::Done;
+                        rows_.push_back(r);
+                        it = rows_.end() - 1;
+                    }
+                    it->items.push_back(m);
+                }
         }
-        genres_ = {"Todos"};
-        for (const auto &m : all_)
-            for (const auto &g : m.genres)
-                if (std::find(genres_.begin(), genres_.end(), g) == genres_.end()) genres_.push_back(g);
-        filter();
+        size_t enabled = 0;
+        for (const auto &src : app.sources.sources()) if (src.enabled) enabled++;
+        std::vector<CatalogRef> refs = app.sources.browsableCatalogs(type_);
+        std::vector<Row> genreRows;
+        std::vector<size_t> genreDone;   // sources that already gave genre rows
+        for (const auto &ref : refs) {
+            const std::string &srcName = app.sources.sources()[ref.source].manifest.name;
+            Row r;
+            r.title = ref.decl->name.empty() ? ref.decl->id : ref.decl->name;
+            r.sub = enabled > 1 ? srcName : "";
+            r.url = app.sources.catalogUrl(ref, {}, &r.policy);
+            if (!r.url.empty()) rows_.push_back(r);
+            // genre rows from the first catalog of each source that offers a genre filter
+            if (std::find(genreDone.begin(), genreDone.end(), ref.source) != genreDone.end()) continue;
+            for (const auto &ex : ref.decl->extra) {
+                if (ex.name != "genre" || ex.options.empty()) continue;
+                genreDone.push_back(ref.source);
+                for (size_t i = 0; i < ex.options.size() && i < 24; i++) {
+                    Row g;
+                    g.title = ex.options[i];
+                    g.sub = r.title + (enabled > 1 ? " - " + srcName : "");
+                    g.url = app.sources.catalogUrl(ref, {{"genre", ex.options[i]}}, &g.policy);
+                    if (!g.url.empty()) genreRows.push_back(g);
+                }
+                break;
+            }
+        }
+        rows_.insert(rows_.end(), genreRows.begin(), genreRows.end());
+        requestNear();
     }
 
-    void filter()
+    void requestNear()
     {
-        shown_.clear();
-        for (size_t i = 0; i < all_.size(); i++) {
-            const auto &m = all_[i];
-            if (genre_ > 0 && std::find(m.genres.begin(), m.genres.end(), genres_[size_t(genre_)]) == m.genres.end()) continue;
-            if (!query_.empty() && lower(m.name).find(lower(query_)) == std::string::npos) continue;
-            shown_.push_back(i);
+        int from = std::max(0, row_ - 1), to = std::min(int(rows_.size()) - 1, row_ + 3);
+        for (int i = from; i <= to; i++) {
+            Row &r = rows_[size_t(i)];
+            if (r.state != Row::Idle) continue;
+            r.ticket = loader_->request(r.url, r.policy);
+            r.state = r.ticket ? Row::Loading : Row::Failed;
+            if (!r.ticket) r.error = "sem rede";
         }
-        sel_ = 0;
     }
 
     bool handle(uint32_t p) override
     {
-        int n = int(shown_.size());
-        if (p & (BtnL1 | BtnR1)) {
-            int g = int(genres_.size());
-            genre_ = (genre_ + ((p & BtnR1) ? 1 : g - 1)) % g;
-            filter();
-            return true;
-        }
         if (p & BtnTriangle) {
-            app.openKeyboard(type_ == "movie" ? "Buscar filmes" : "Buscar series", query_, false, [this](const std::string &q) {
-                query_ = q;
-                // also ask the user's sources that support search
-                if (!q.empty()) {
-                    std::vector<addon::MetaPreview> found;
-                    if (app.sources.search(type_, q, found).empty())
-                        for (auto &m : found)
-                            if (std::none_of(all_.begin(), all_.end(), [&](const addon::MetaPreview &x) { return x.id == m.id; }))
-                                all_.push_back(m);
-                }
-                filter();
-            });
+            app.openKeyboard(type_ == "movie" ? "Buscar filmes" : "Buscar series", query_, false, [this](const std::string &q) { search(q); });
             return true;
         }
-        if (p & BtnSquare) { if (!query_.empty()) { query_.clear(); filter(); } return true; }
-        if (n == 0) return false;
-        if (p & BtnLeft) { if (sel_ % kCols == 0) return false; sel_--; return true; }
-        if (p & BtnRight) { if (sel_ + 1 < n && sel_ % kCols != kCols - 1) sel_++; return true; }
-        if (p & BtnUp) { if (sel_ >= kCols) sel_ -= kCols; return true; }
-        if (p & BtnDown) { if (sel_ + kCols < n) sel_ += kCols; else if (sel_ / kCols < (n - 1) / kCols) sel_ = n - 1; return true; }
-        if (p & BtnCross) {
-            const auto &m = all_[shown_[size_t(sel_)]];
+        if (p & BtnSquare) {
+            if (!query_.empty() && !rows_.empty() && rows_[0].search) { rows_.erase(rows_.begin()); query_.clear(); row_ = 0; }
+            return true;
+        }
+        if (rows_.empty()) return false;
+        Row &r = rows_[size_t(row_)];
+        int n = int(r.items.size());
+        if (p & BtnUp) { if (row_ > 0) { row_--; requestNear(); } return true; }
+        if (p & BtnDown) { if (row_ + 1 < int(rows_.size())) { row_++; requestNear(); } return true; }
+        if (p & BtnLeft) { if (r.sel == 0) return false; r.sel--; return true; }
+        if (p & BtnRight) { if (r.sel + 1 < n) r.sel++; return true; }
+        if ((p & BtnCross) && n > 0) {
+            const auto &m = r.items[size_t(r.sel)];
             app.push(makeDetail(app, m.type.empty() ? type_ : m.type, m.id, m.name));
+            return true;
+        }
+        if ((p & BtnCross) && r.state == Row::Failed) {   // try a failed row again
+            r.state = Row::Idle;
+            requestNear();
             return true;
         }
         return false;
     }
 
+    void search(const std::string &q)
+    {
+        if (!rows_.empty() && rows_[0].search) rows_.erase(rows_.begin());
+        query_ = q;
+        if (q.empty()) return;
+        Row r;
+        r.title = "Busca: " + q;
+        r.search = true;
+        r.state = Row::Done;
+        std::string lq = lower(q);
+        for (const auto &row : rows_)   // what is already loaded
+            for (const auto &m : row.items)
+                if (lower(m.name).find(lq) != std::string::npos &&
+                    std::none_of(r.items.begin(), r.items.end(), [&](const addon::MetaPreview &x) { return x.id == m.id; }))
+                    r.items.push_back(m);
+        std::vector<addon::MetaPreview> found;   // sources that support search
+        std::string e = app.sources.search(type_, q, found);
+        for (auto &m : found)
+            if (std::none_of(r.items.begin(), r.items.end(), [&](const addon::MetaPreview &x) { return x.id == m.id; })) r.items.push_back(m);
+        if (r.items.empty()) { r.state = Row::Failed; r.error = "nada encontrado"; }
+        rows_.insert(rows_.begin(), r);
+        row_ = 0;
+        scrollY_ = 0;
+    }
+
     void update(float dt) override
     {
-        float target = float(std::max(0, sel_ / kCols - 1) * kRowH);
+        bool got = false;
+        for (auto &res : loader_->take())
+            for (auto &r : rows_)
+                if (r.ticket == res.ticket && r.state == Row::Loading) {
+                    r.items = std::move(res.metas);
+                    r.error = res.error;
+                    r.state = res.error.empty() ? Row::Done : Row::Failed;
+                    got = true;
+                }
+        if (got) app.dirty();
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
-        anim_ = std::fabs(target - scroll_) > 0.5f;
-        scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
+        float ty = float(std::max(0, row_ - 0) * kRowH);
+        anim_ = std::fabs(ty - scrollY_) > 0.5f;
+        scrollY_ = anim_ ? scrollY_ + (ty - scrollY_) * k : ty;
+        for (auto &r : rows_) {
+            float tx = float(std::max(0, r.sel - 2) * kStep);
+            if (std::fabs(tx - r.scrollX) > 0.5f) { r.scrollX += (tx - r.scrollX) * k; anim_ = true; }
+            else r.scrollX = tx;
+        }
     }
-    bool animating() const override { return anim_; }
+    bool animating() const override { return anim_ || loading(); }
+    bool loading() const
+    {
+        for (const auto &r : rows_) if (r.state == Row::Loading) return true;
+        return false;
+    }
 
     void draw(Canvas &c, Rect area) override
     {
-        std::string sub = std::to_string(shown_.size()) + " titulos";
-        if (!query_.empty()) sub += "  -  busca: \"" + query_ + "\"";
-        if (!notes_.empty()) sub += "  -  " + notes_;
+        std::string sub = std::to_string(rows_.size()) + (rows_.size() == 1 ? " lista" : " listas");
+        if (loading()) sub += "  -  carregando...";
         drawSectionHeader(app, c, area, title(), sub);
-        // genre tabs
-        int x = area.x + theme::Margin, y = 176;
-        for (size_t i = 0; i < genres_.size(); i++) {
-            bool on = int(i) == genre_;
-            int w = app.fonts.bold->measure(22, genres_[i]) + 44;
-            if (on) c.fillGradient(x, y, w, 48, 24, theme::Violet, theme::Indigo, 0);
-            else c.fillRoundRect(x, y, w, 48, 24, theme::Surface);
-            (on ? app.fonts.bold : app.fonts.regular)->draw(c, x + 22, y + (48 - app.fonts.bold->lineHeight(22)) / 2, 22, genres_[i], on ? theme::Text : theme::TextDim);
-            x += w + 12;
-        }
-        if (shown_.empty()) {
-            app.fonts.regular->draw(c, area.x + theme::Margin, 300, 28,
-                                    all_.empty() ? "Nenhum titulo. Ative a demonstracao ou adicione uma fonte em Fontes." : "Nada encontrado com esse filtro.",
-                                    theme::TextDim);
+        if (rows_.empty()) {
+            app.fonts.regular->draw(c, area.x + theme::Margin, 260, 28,
+                                    "Nenhum catalogo. Adicione uma fonte em Fontes (ou ative a demonstracao).", theme::TextDim);
             return;
         }
-        const int top = 270;
-        c.pushClip({area.x, top - 30, area.w, area.bottom() - top + 30});
-        for (size_t i = 0; i < shown_.size(); i++) {
-            int col = int(i) % kCols, row = int(i) / kCols;
-            int cx = area.x + theme::Margin + col * (kCardW + 36);
-            int cy = top + row * kRowH - int(scroll_);
-            if (cy > area.bottom() || cy + kRowH < top - 30) continue;
-            const auto &m = all_[shown_[i]];
-            std::string sub = m.releaseInfo + (m.imdbRating.empty() ? "" : "  -  " + m.imdbRating);
-            drawPosterCard(app, c, {cx, cy, kCardW, kCardH}, m.id, m.name, sub, int(i) == sel_ && !app.sidebarFocused(), -1, m.poster);
+        const int top = 176;
+        c.pushClip({area.x, top, area.w, area.bottom() - top});
+        for (size_t i = 0; i < rows_.size(); i++) {
+            int y = top + int(i) * kRowH - int(scrollY_);
+            if (y > area.bottom() || y + kRowH < top) continue;
+            const Row &r = rows_[i];
+            bool focusRow = int(i) == row_ && !app.sidebarFocused();
+            int x0 = area.x + theme::Margin;
+            app.fonts.bold->draw(c, x0, y, 30, r.title, focusRow ? theme::Text : theme::TextDim);
+            if (!r.sub.empty()) {
+                int tw = app.fonts.bold->measure(30, r.title);
+                app.fonts.regular->draw(c, x0 + tw + 18, y + 8, 21, r.sub, theme::TextMute);
+            }
+            int cy = y + 56;
+            if (r.state == Row::Loading || r.state == Row::Idle) {
+                for (int k = 0; k < 6; k++) c.fillRoundRect(x0 + k * kStep, cy, kCardW, kCardH, 16, theme::Surface);
+                app.fonts.regular->draw(c, x0 + 24, cy + kCardH / 2 - 14, 24, "Carregando...", theme::TextMute);
+                continue;
+            }
+            if (r.items.empty()) {
+                std::string msg = r.state == Row::Failed ? "Nao carregou: " + r.error + (focusRow ? "  (X tenta de novo)" : "") : "Lista vazia";
+                app.fonts.regular->draw(c, x0, cy + 20, 23, app.fonts.regular->ellipsize(23, msg, area.w - 2 * theme::Margin), theme::TextMute);
+                continue;
+            }
+            c.pushClip({area.x, y + 40, area.w, kRowH});
+            for (size_t k = 0; k < r.items.size(); k++) {
+                int cx = x0 + int(k) * kStep - int(r.scrollX);
+                if (cx > area.right() || cx + kCardW < area.x) continue;
+                const auto &m = r.items[k];
+                std::string s2 = m.releaseInfo + (m.imdbRating.empty() ? "" : "  -  " + m.imdbRating);
+                drawPosterCard(app, c, {cx, cy, kCardW, kCardH}, m.id, m.name, s2, focusRow && int(k) == r.sel, -1, m.poster);
+            }
+            c.popClip();
         }
         c.popClip();
     }
 
     Hints hints() const override
     {
-        Hints h{{BtnCross, "Detalhes"}, {BtnL1 | BtnR1, "Genero"}, {BtnTriangle, "Buscar"}};
+        Hints h{{BtnCross, "Detalhes"}, {BtnTriangle, "Buscar"}};
         if (!query_.empty()) h.push_back({BtnSquare, "Limpar busca"});
         return h;
     }
 
 private:
-    static constexpr int kCols = 6, kCardW = 212, kCardH = 318, kRowH = 400;
+    struct Row {
+        enum State { Idle, Loading, Done, Failed } state = Idle;
+        std::string title, sub, url, error;
+        UrlPolicy policy;
+        std::vector<addon::MetaPreview> items;
+        int ticket = 0, sel = 0;
+        float scrollX = 0;
+        bool search = false;
+    };
+    static constexpr int kCardW = 212, kCardH = 318, kStep = 240, kRowH = 440;
     std::string type_;
+    std::unique_ptr<CatalogLoader> loader_;
     bool loaded_ = false, anim_ = false;
-    int seenVersion_ = -1;
-    std::vector<addon::MetaPreview> all_;
-    std::vector<size_t> shown_;
-    std::vector<std::string> genres_{"Todos"};
-    int genre_ = 0, sel_ = 0;
-    float scroll_ = 0;
-    std::string query_, notes_;
+    int seenVersion_ = -1, row_ = 0;
+    float scrollY_ = 0;
+    std::vector<Row> rows_;
+    std::string query_;
 };
 
 // ---------------------------------------------------------------- detail

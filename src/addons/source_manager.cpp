@@ -90,7 +90,7 @@ bool SourceManager::save()
     return store_.save("sources.json", root);
 }
 
-std::string SourceManager::getJson(const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes)
+static std::string getJsonWith(HttpClient *http_, const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes)
 {
     Url u = parseUrl(url);
     std::string why = checkUrlPolicy(u, pol);
@@ -109,6 +109,33 @@ std::string SourceManager::getJson(const std::string &url, const UrlPolicy &pol,
     out = parseJson(r.body, &err, JsonLimits{maxBytes, 64});
     if (!err.ok()) return "JSON invalido (" + err.message + ")";
     return "";
+}
+
+std::string SourceManager::getJson(const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes)
+{
+    return getJsonWith(http_, url, pol, out, maxBytes);
+}
+
+std::string SourceManager::catalogUrl(const CatalogRef &c, const std::vector<std::pair<std::string, std::string>> &extra,
+                                      UrlPolicy *policy) const
+{
+    if (c.source >= sources_.size() || !c.decl) return "";
+    const Source &s = sources_[c.source];
+    for (const auto &kv : extra)
+        if (!c.decl->supportsExtra(kv.first)) return "";
+    if (policy) *policy = policyFor(s);
+    return baseFromManifestUrl(s.manifestUrl) + resourcePath("catalog", c.decl->type, c.decl->id, extra);
+}
+
+std::string SourceManager::fetchCatalogAt(HttpClient *http, const std::string &url, const UrlPolicy &policy,
+                                          std::vector<MetaPreview> &out)
+{
+    out.clear();
+    Json j;
+    std::string e = getJsonWith(http, url, policy, j, kResourceMax);
+    if (!e.empty()) return e;
+    ParseResult r = parseCatalog(j, out);
+    return r.ok() ? "" : r.error;
 }
 
 std::string SourceManager::fetchManifest(const std::string &url, const UrlPolicy &pol, Manifest &m)

@@ -67,6 +67,7 @@ public:
     HttpClient *http() override { return &web_; }   // always the same object; requests fail cleanly until init works
     Sockets *sockets() override { return &net_; }
     WebClient &web() { return web_; }
+    int installPackage(const std::string &path, bool replaceInstalled, std::string *err) override;
     std::string networkStatus() const override { return httpOk_ ? "" : netErr_; }
     bool retryNetwork() override;
     std::string dataDir() const override { return "/data/moonlight"; }
@@ -92,6 +93,8 @@ private:
     std::string netErr_;
     bool jailbroken_ = false;
     bool imeReady_ = false;
+    bool installerReady_ = false;
+    bool initInstaller(std::string *err);
     uint16_t imeText_[2049];
     uint16_t imeTitle_[128];
 };

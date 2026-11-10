@@ -104,6 +104,13 @@ public:
     virtual std::unique_ptr<AudioOut> makeAudioOut() = 0;
     virtual HttpClient *http() = 0;               // nullptr = no network implementation yet
     virtual Sockets *sockets() { return nullptr; } // raw TCP (phone remote server); nullptr = unavailable
+    // Installs a .pkg already on disk. 0 = installation started (system notification shows progress),
+    // 1 = this app is already installed (call again with replaceInstalled), -1 = error in *err.
+    virtual int installPackage(const std::string &path, bool replaceInstalled, std::string *err)
+    {
+        if (err) *err = "instalacao automatica so existe no PS4";
+        return -1;
+    }
     // Human-readable state of the network stack ("" = OK) and a way to try initialising it again.
     virtual std::string networkStatus() const { return ""; }
     virtual bool retryNetwork() { return http() != nullptr; }
