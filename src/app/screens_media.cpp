@@ -371,9 +371,7 @@ private:
             if (choice < 0) return;
             const auto &s = (*st)[size_t(choice)];
             if (!s.playableHere()) { a->modal("Nao suportado", "Esse tipo de stream nao e suportado pelo Moonlight HB."); return; }
-            VideoPlayer vp;
-            std::string err;
-            if (!vp.open(s.url, &err)) a->modal("Player de video", err);
+            a->playVideo(s.url, s.name.empty() ? "Video" : s.name);
         });
     }
 };

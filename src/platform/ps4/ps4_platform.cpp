@@ -38,6 +38,13 @@ std::vector<std::string> Ps4Platform::musicDirs() const
     return d;
 }
 
+std::vector<std::string> Ps4Platform::videoDirs() const
+{
+    std::vector<std::string> d{"/data/moonlight/videos"};
+    for (int i = 0; i < 8; i++) d.push_back("/mnt/usb" + std::to_string(i) + "/Videos");
+    return d;
+}
+
 uint64_t Ps4Platform::nowMs() { return sceKernelGetProcessTime() / 1000; }
 void Ps4Platform::sleepMs(unsigned ms) { sceKernelUsleep(ms * 1000); }
 

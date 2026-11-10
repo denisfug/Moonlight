@@ -7,7 +7,7 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.03")
+set(ML_VERSION "01.04")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
@@ -27,6 +27,7 @@ add_library(ml_core STATIC
     src/radio/radio.cpp
     src/player/player.cpp
     src/player/mp3_core.c
+    src/player/nv12.cpp
 )
 target_include_directories(ml_core PUBLIC src third_party)
 target_compile_options(ml_core PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${ML_WARN}>")
@@ -44,6 +45,7 @@ add_library(ml_ui STATIC
     src/app/screens_media.cpp
     src/app/screens_music.cpp
     src/app/screens_radio.cpp
+    src/app/screens_video.cpp
     src/app/screens_misc.cpp
 )
 target_link_libraries(ml_ui PUBLIC ml_core)
@@ -56,6 +58,7 @@ if(ML_PS4)
         src/main.cpp
         src/platform/ps4/ps4_platform.cpp
         src/platform/ps4/video/video_out.cpp
+        src/platform/ps4/video/av_engine.cpp
         src/platform/ps4/controller/pad.cpp
         src/platform/ps4/audio/audio_out.cpp
         src/platform/ps4/filesystem/file_system.cpp

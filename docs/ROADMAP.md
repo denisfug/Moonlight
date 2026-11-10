@@ -72,7 +72,7 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 | Item | PC | PS4 |
 |---|---|---|
 | AudioPlayer MP3 | sim | pendente |
-| Prova de vídeo com sceAvPlayer (MP4 local) | — | **não iniciado** |
+| Prova de vídeo com sceAvPlayer (MP4 local), tela Vídeos, player em tela cheia | sim (UI; sem motor no PC) | **01.04 aguardando teste** |
 | VideoPlayer real, legendas, streaming | não | não |
 | Música em segundo plano durante jogos | fora do app (o PS4 fecha o app); ver plugin GoldHEN do projeto DevHub | — |
 
@@ -82,6 +82,6 @@ Pendentes. Precisam do resultado do primeiro teste no console.
 
 ## Próxima tarefa recomendada
 
-1. Instalar `Moonlight-HB_01.02.pkg` no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
+1. Instalar `Moonlight-HB_01.04.pkg` (interface já validada no 01.03) no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
    A aba Rádios lista estações (= internet + HTTPS funcionando)? Uma rádio toca?
 2. Com isso validado: internet dentro do plugin GoldHEN (rádio durante o jogo) e prova de vídeo com `sceAvPlayer`.

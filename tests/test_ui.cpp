@@ -7,6 +7,7 @@
 #include "ui/canvas.hpp"
 #include "ui/font.hpp"
 #include "ui/input_map.hpp"
+#include "player/nv12.hpp"
 #include "test.hpp"
 
 using namespace ml;
@@ -132,7 +133,12 @@ TEST(app_navigation_headless)
     h.press(BtnCross);                      // Favoritar
     CHECK_EQ(h.app.library.favorites().size(), size_t(1));
     h.press(BtnCircle);                     // back to grid
-    h.press(BtnR2);                         // next section: Canais
+    h.press(BtnR2);                         // next section: Videos
+    CHECK(h.app.section() == Section::Videos);
+    h.app.playVideo("/data/moonlight/videos/x.mp4", "x");   // PC build: no video engine -> explained
+    CHECK(h.app.modalOpen());
+    h.press(BtnCross);
+    h.press(BtnR2);                         // Canais
     CHECK(h.app.section() == Section::Live);
     // nothing rendered when idle
     h.app.frame();
@@ -173,4 +179,52 @@ TEST(render_cost_report)
     for (; n < 20; n++) { h.app.dirty(); h.app.frame(); }
     uint64_t ms = h.plat.nowMs() - t0;
     std::printf("(%.1f ms/frame on host) ", double(ms) / n);
+}
+
+TEST(nv12_to_argb)
+{
+    // 4x2 frame, pitch 8, aligned height 2: left half black (Y=16), right half white (Y=235), neutral chroma
+    std::vector<uint8_t> f(8 * 2 + 8 * 1, 128);
+    for (int y = 0; y < 2; y++)
+        for (int x = 0; x < 8; x++) f[size_t(y * 8 + x)] = x < 2 ? 16 : 235;
+    Nv12Frame src;
+    src.data = f.data();
+    src.width = 4;
+    src.height = 2;
+    src.pitch = 8;
+    src.alignedHeight = 2;
+    std::vector<uint32_t> px(8 * 8, 0x12345678u);
+    CHECK(nv12ToArgb(src, {px.data(), 8, 8, 8}));
+    // 4x2 scaled to 8x4 centred in 8x8: rows 0-1 and 6-7 are black bars
+    CHECK_EQ(px[0], 0xFF000000u);
+    CHECK_EQ(px[2 * 8 + 0], 0xFF000000u);              // black video pixel
+    CHECK_EQ(px[2 * 8 + 7], 0xFFFFFFFFu);              // white video pixel (235 -> 255)
+    CHECK_EQ(px[7 * 8 + 7], 0xFF000000u);              // bottom bar
+    // pure red in BT.709 limited range: Y=63 U=102 V=240
+    std::vector<uint8_t> r = {63, 63, 63, 63, 102, 240};
+    Nv12Frame red;
+    red.data = r.data();
+    red.width = 2;
+    red.height = 2;
+    red.pitch = 2;
+    red.alignedHeight = 2;
+    uint32_t out[4];
+    CHECK(nv12ToArgb(red, {out, 2, 2, 2}));
+    uint32_t R = (out[0] >> 16) & 0xFF, G = (out[0] >> 8) & 0xFF, B = out[0] & 0xFF;
+    CHECK(R > 240 && G < 15 && B < 15);
+    Nv12Frame bad;
+    CHECK(!nv12ToArgb(bad, {out, 2, 2, 2}));
+    // 1080p conversion cost on this PC (the PS4 does this on the CPU for every video frame)
+    std::vector<uint8_t> big(size_t(1920) * 1088 * 3 / 2, 100);
+    Nv12Frame b;
+    b.data = big.data();
+    b.width = 1920;
+    b.height = 1080;
+    b.pitch = 1920;
+    b.alignedHeight = 1088;
+    std::vector<uint32_t> fb(size_t(1920) * 1080);
+    host::HostPlatform plat(t::scratch, "");
+    uint64_t t0 = plat.nowMs();
+    for (int i = 0; i < 10; i++) nv12ToArgb(b, {fb.data(), 1920, 1080, 1920});
+    std::printf("(%.1f ms/frame on host) ", double(plat.nowMs() - t0) / 10);
 }

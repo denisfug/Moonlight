@@ -213,8 +213,8 @@ void AudioPlayer::run()
 
 const char *VideoPlayer::unavailableReason()
 {
-    return "Reproducao de video ainda nao integrada: o motor (FFmpeg/decodificador do PS4) precisa ser "
-           "validado no console antes. Veja docs/MEDIA_ENGINE.md.";
+    return "Este aparelho nao tem player de video (no PC de testes nao existe; no PS4 o player do sistema "
+           "nao carregou). Veja docs/MEDIA_ENGINE.md.";
 }
 
 bool VideoPlayer::open(const std::string &, std::string *error)

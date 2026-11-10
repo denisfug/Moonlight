@@ -19,7 +19,7 @@ struct NavItem { Section s; Icon icon; const char *label; };
 const NavItem kNav[] = {
     {Section::Home, Icon::Home, "Inicio"},       {Section::Music, Icon::Music, "Musica"},
     {Section::Radio, Icon::Live, "Radios"},
-    {Section::Movies, Icon::Film, "Filmes"},     {Section::Series, Icon::Series, "Series"},
+    {Section::Movies, Icon::Film, "Filmes"},     {Section::Series, Icon::Series, "Series"},   {Section::Videos, Icon::Play, "Videos"},
     {Section::Live, Icon::Live, "Canais"},       {Section::Library, Icon::Library, "Biblioteca"},
     {Section::Sources, Icon::Sources, "Fontes"}, {Section::Settings, Icon::Settings, "Configuracoes"},
 };
@@ -63,6 +63,7 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Radio)] = makeRadio(*this);
     roots_[size_t(Section::Movies)] = makeCatalog(*this, "movie");
     roots_[size_t(Section::Series)] = makeCatalog(*this, "series");
+    roots_[size_t(Section::Videos)] = makeVideos(*this);
     roots_[size_t(Section::Live)] = makeLive(*this);
     roots_[size_t(Section::Library)] = makeLibrary(*this);
     roots_[size_t(Section::Sources)] = makeSources(*this);
@@ -273,6 +274,14 @@ void App::playStation(const radio::Station &s)
     audio.play();
     radio.countClick(s.uuid);
     toast("Conectando em " + s.name + "...");
+}
+
+void App::playVideo(const std::string &location, const std::string &title)
+{
+    std::unique_ptr<VideoEngine> engine = platform.makeVideoEngine();
+    if (!engine) { modal("Player de video", VideoPlayer::unavailableReason()); return; }
+    audio.stop();   // one audio source at a time
+    push(makePlayer(*this, std::move(engine), location, title));
 }
 
 void App::togglePause()
@@ -489,6 +498,16 @@ void App::draw(Canvas &c)
         bc.fillCircle(1780, -40, 170, rgba(139, 92, 246, 12));
     }
     c.drawImage(background_, 0, 0);
+    if (current().fullscreen()) {   // video player: the screen owns the whole display
+        current().draw(c, {0, 0, theme::W, theme::H});
+        if (!toast_.text.empty()) {
+            int w = std::min(1100, fonts.regular->measure(24, toast_.text) + 80);
+            c.fillRoundRect(theme::W - 56 - w, 60, w, 70, 20, withAlpha(theme::SurfaceHi, 230));
+            fonts.regular->draw(c, theme::W - 56 - w + 30, 60 + (70 - fonts.regular->lineHeight(24)) / 2, 24, toast_.text, theme::Text);
+        }
+        if (modal_.open) drawModal(c);
+        return;
+    }
     drawSidebar(c);
     Rect area{theme::SidebarW, 0, theme::W - theme::SidebarW, theme::H - 72};
     c.pushClip(area);

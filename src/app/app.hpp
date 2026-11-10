@@ -39,12 +39,13 @@ public:
     virtual bool animating() const { return false; }
     virtual void draw(ui::Canvas &c, ui::Rect area) = 0;
     virtual Hints hints() const { return {{BtnCross, "Selecionar"}, {BtnCircle, "Voltar"}}; }
+    virtual bool fullscreen() const { return false; }   // true: no sidebar/hint bar (video player)
 
 protected:
     App &app;
 };
 
-enum class Section { Home, Music, Radio, Movies, Series, Live, Library, Sources, Settings, Count };
+enum class Section { Home, Music, Radio, Movies, Series, Videos, Live, Library, Sources, Settings, Count };
 
 struct Settings {
     bool animations = true;
@@ -103,6 +104,8 @@ public:
     void playTracks(const std::vector<size_t> &tracks, size_t start);
     void togglePause();
     void playStation(const radio::Station &s);
+    // Opens the full-screen video player, or explains why video is not available here.
+    void playVideo(const std::string &location, const std::string &title);
     bool startTrack(size_t t, std::string *err);   // local file or server song
     std::string loadServerMusic();                 // playlists + random mix from the server (blocking)
     std::vector<size_t> searchServer(const std::string &q, std::string *err);
@@ -159,6 +162,8 @@ std::unique_ptr<Screen> makeCatalog(App &, const std::string &type);
 std::unique_ptr<Screen> makeDetail(App &, const std::string &type, const std::string &id, const std::string &name);
 std::unique_ptr<Screen> makeMusic(App &);
 std::unique_ptr<Screen> makeRadio(App &);
+std::unique_ptr<Screen> makeVideos(App &);
+std::unique_ptr<Screen> makePlayer(App &, std::unique_ptr<VideoEngine> engine, const std::string &location, const std::string &title);
 std::unique_ptr<Screen> makeLive(App &);
 std::unique_ptr<Screen> makeLibrary(App &);
 std::unique_ptr<Screen> makeSources(App &);

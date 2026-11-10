@@ -83,11 +83,7 @@ public:
             const Channel &ch = app.channels[shown_[size_t(list_.sel)]];
             if (ch.url.empty()) app.modal(ch.name, "Canal de demonstracao, sem transmissao. Coloque uma lista M3U autorizada em " + app.platform.dataDir() + "/channels.m3u.");
             else if (ch.drmProtected) app.modal(ch.name, "Este canal usa DRM. O Moonlight HB nao contorna protecoes de conteudo.");
-            else {
-                VideoPlayer vp;
-                std::string err;
-                if (!vp.open(ch.url, &err)) app.modal(ch.name, err);
-            }
+            else app.playVideo(ch.url, ch.name);
             return true;
         }
         return false;

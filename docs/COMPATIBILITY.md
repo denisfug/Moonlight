@@ -15,7 +15,7 @@ Nada deste projeto foi testado no PS4 ainda.
 | Threads (`scePthreadCreate`) | sim | std::thread | não | |
 | Rede HTTP/HTTPS (libSceNet/Ssl/Http) | sim | http local | não | Ordem de inicialização do exemplo oficial `net_http`, mas **sem** o callback do exemplo que aceita qualquer certificado. Se a inicialização falhar o app avisa e segue sem internet. Não sabemos ainda se continua funcionando depois do `sys_sdk_jailbreak`. |
 | Rádios (Radio Browser + MP3 ao vivo) | sim | sim | não | Só estações MP3 (minimp3); AAC/HLS ficam de fora. Streams de rádio aceitam `http://` (só áudio é decodificado); a API do diretório exige HTTPS. Servidores SHOUTcast antigos respondem `ICY 200`; no PC aceitamos, no PS4 depende do sceHttp. |
-| Vídeo | **não implementado** | — | não | Ver `MEDIA_ENGINE.md`. |
+| Vídeo (libSceAvPlayer + NV12→ARGB por CPU) | sim | conversão NV12 testada (7,6 ms/quadro 1080p no PC) | não | Experimental. Declarações da ABI escritas a partir da documentação do emulador shadPS4 (só fatos de interface), tamanhos conferidos com `static_assert`. Memória de quadro em memória direta. O player mostra em que passo parou (△). |
 | SDL2 | não usado | — | — | Não disponível no toolchain construído do código-fonte. |
 | FreeType do sistema | não usado | — | — | stb_truetype no lugar. |
 
@@ -24,7 +24,8 @@ Nada deste projeto foi testado no PS4 ainda.
 | Versão | Resultado relatado |
 |---|---|
 | 01.02 | PKG instala e abre. A tela ficava presa na imagem de abertura (`pic1.png`); a interface só aparecia por um instante ao fechar o app. Causa provável: faltava `sceSystemServiceHideSplashScreen()`. Controle, áudio e rede: não deu para avaliar. |
-| 01.03 | Correção acima + redesenho forçado nos primeiros quadros. **Aguardando teste.** |
+| 01.03 | Correção acima + redesenho forçado nos primeiros quadros. **Testado no PS4: interface aparece e navega ("funciona tudo").** Filmes/séries mostram só a demonstração, como esperado. |
+| 01.04 | Player de vídeo experimental (libSceAvPlayer). **Aguardando teste.** |
 
 ## Desempenho
 

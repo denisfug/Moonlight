@@ -74,6 +74,25 @@ public:
     virtual bool exists(const std::string &path) = 0;
 };
 
+// ---------------------------------------------------------------- video
+// Hardware/system video playback (PS4: libSceAvPlayer). Audio is played by the engine itself.
+class VideoEngine {
+public:
+    virtual ~VideoEngine() = default;
+    virtual bool open(const std::string &location, std::string *error) = 0;   // starts playing
+    virtual void pause() = 0;
+    virtual void resume() = 0;
+    virtual void stop() = 0;
+    virtual bool seek(int64_t ms) = 0;
+    virtual int64_t positionMs() = 0;
+    virtual int64_t durationMs() = 0;
+    virtual bool paused() = 0;
+    virtual bool finished() = 0;
+    // If a new decoded frame is due, converts it into `fb` (scaled to fit) and returns true.
+    virtual bool updateFrame(Framebuffer fb) = 0;
+    virtual std::string status() = 0;   // diagnostics shown in the player overlay
+};
+
 // ---------------------------------------------------------------- everything together
 class Platform {
 public:
@@ -95,6 +114,9 @@ public:
     // Called once packaged assets (fonts) are in memory. PS4: leaves the sandbox here (afterwards the
     // package mount /app0 is no longer reachable). Default: nothing.
     virtual void afterAssetsLoaded() {}
+    // nullptr = no video engine on this platform (the PC test build).
+    virtual std::unique_ptr<VideoEngine> makeVideoEngine() { return nullptr; }
+    virtual std::vector<std::string> videoDirs() const { return {}; }
 };
 
 }  // namespace ml

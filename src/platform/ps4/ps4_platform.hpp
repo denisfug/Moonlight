@@ -71,6 +71,8 @@ public:
     void notify(const std::string &text) override;
     bool startThread(void (*fn)(void *), void *arg, const char *name) override;
     void afterAssetsLoaded() override;   // GoldHEN jailbreak for /data and USB access
+    std::unique_ptr<VideoEngine> makeVideoEngine() override;   // libSceAvPlayer (experimental)
+    std::vector<std::string> videoDirs() const override;
 
 private:
     VideoOut video_;

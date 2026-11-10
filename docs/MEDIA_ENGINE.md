@@ -22,6 +22,17 @@ o app fecha (o PS4 encerra o app ao abrir um jogo).
 - Incorporar código ou linkar libmpv obrigaria o Moonlight a ser distribuído sob GPL-3 (com código-fonte).
   Isso é uma decisão do dono do projeto, não técnica.
 
+## Implementação atual (01.04, experimental)
+
+- `src/platform/ps4/video/avplayer_api.h`: declarações próprias da ABI do libSceAvPlayer (o OpenOrbis só
+  tem os nomes). Fonte dos fatos: shadPS4 (`src/core/libraries/avplayer/avplayer.h`), sem copiar código.
+- `av_engine.cpp`: Init (auto-start) → AddSource → quadros NV12 via `GetVideoDataEx` → `nv12ToArgb`
+  (portável, testado no PC) → tela. Áudio por `GetAudioData` em thread própria → AudioOut 48 kHz.
+- Tela **Vídeos**: MP4 em `/data/moonlight/videos` ou `Videos/` no pendrive. Streams `http(s)` de fontes
+  autorizadas e canais M3U também abrem no mesmo player.
+- Riscos conhecidos: alocação de memória de vídeo (tipo/proteção) pode estar errada; áudio fora de 48 kHz
+  ainda não é convertido; HLS/DASH não testados.
+
 ## Caminhos candidatos (a validar no console, nesta ordem)
 
 1. **`sceAvPlayer` do sistema** (`orbis/AvPlayer.h` existe no OpenOrbis): decodificação por hardware de
