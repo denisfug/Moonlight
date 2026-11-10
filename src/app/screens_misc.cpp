@@ -243,8 +243,10 @@ public:
     {
         const auto &src = app.sources.sources();
         HttpClient *h = app.sources.http();
-        std::string net = !h ? "rede ainda nao implementada nesta plataforma (veja docs/COMPATIBILITY.md)"
-                             : std::string("rede: ") + h->name() + (h->supportsHttps() ? "" : " (somente http local)");
+        std::string ns = app.platform.networkStatus();
+        std::string net = !h ? "sem cliente de rede nesta plataforma"
+                        : !ns.empty() ? "internet com problema: " + ns + " (Configuracoes > Testar internet)"
+                        : std::string("rede: ") + h->name() + (h->supportsHttps() ? "" : " (somente http local)");
         drawSectionHeader(app, c, area, "Fontes", std::to_string(src.size()) + " fontes  -  " + net);
         int x = area.x + theme::Margin, top = 186;
         int listW = 880;
@@ -382,7 +384,7 @@ public:
 
     bool handle(uint32_t p) override
     {
-        const int n = 6;
+        const int n = 7;
         if (p & BtnUp) { if (sel_ > 0) sel_--; return true; }
         if (p & BtnDown) { if (sel_ + 1 < n) sel_++; return true; }
         if (p & BtnCross) {
@@ -403,7 +405,8 @@ public:
             }
             case 3: configureServer(); break;
             case 4: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 5:
+            case 5: testInternet(); break;
+            case 6:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -425,19 +428,20 @@ public:
         Item items[] = {
             {"Animacoes", "Rolagem suave e transicoes entre telas.", app.settings.animations ? 1 : 0},
             {"Conteudo de demonstracao", "Mostra filmes, series, canais e playlists ficticios enquanto nao ha fontes reais.", app.settings.showDemo ? 1 : 0},
-            {"Procurar musicas de novo", "Rele /data/moonlight/music e /mnt/usb0/Music.", -1},
+            {"Procurar musicas de novo", "Rele /data/music, /data/moonlight/music, /data/devhub/Music e o pendrive (Music/).", -1},
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
+            {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
-        for (int i = 0; i < 6; i++, y += 120) {
-            Rect r{x, y, w, 104};
+        for (int i = 0; i < 7; i++, y += 106) {
+            Rect r{x, y, w, 96};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
             app.fonts.bold->draw(c, r.x + 30, r.y + 18, 27, items[i].title, theme::Text);
             app.fonts.regular->draw(c, r.x + 30, r.y + 58, 20, items[i].desc, theme::TextMute);
             if (items[i].toggle >= 0) {
                 bool on = items[i].toggle == 1;
-                int tx = r.right() - 110, ty = r.y + 34;
+                int tx = r.right() - 110, ty = r.y + 29;
                 if (on) c.fillGradient(tx, ty, 76, 38, 19, theme::Violet, theme::Blue, 0);
                 else c.fillRoundRect(tx, ty, 76, 38, 19, theme::SurfaceHi);
                 c.fillCircle(float(on ? tx + 57 : tx + 19), float(ty + 19), 14, theme::Text);
@@ -450,6 +454,23 @@ public:
 private:
     int sel_ = 0;
     std::string serverDesc_, newUrl_, newUser_;
+
+    void testInternet()
+    {
+        bool up = app.platform.retryNetwork();
+        std::string report = up ? "Internet do PS4 iniciada.\n" : "A internet do PS4 nao iniciou: " + app.platform.networkStatus() + "\n";
+        HttpClient *h = app.platform.http();
+        if (h && up) {
+            HttpRequest req;
+            req.url = "https://example.com/";
+            req.timeoutMs = 10000;
+            req.maxBytes = 256 * 1024;
+            HttpResponse r = h->get(req);
+            if (!r.error.empty()) report += "Site seguro (HTTPS): falhou - " + r.error;
+            else report += "Site seguro (HTTPS): respondeu " + std::to_string(r.status) + " com " + std::to_string(r.body.size()) + " bytes. Tudo certo.";
+        }
+        app.modal("Testar internet", report);
+    }
 
     // URL -> user -> password, then a ping before saving. The password is turned into a salted token
     // (Subsonic protocol) and discarded; it is never written to disk or logged.

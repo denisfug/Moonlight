@@ -27,7 +27,8 @@ Nada deste projeto foi testado no PS4 ainda.
 | 01.03 | Correção acima + redesenho forçado nos primeiros quadros. **Testado no PS4: interface aparece e navega ("funciona tudo").** Filmes/séries mostram só a demonstração, como esperado. |
 | 01.04 | Player de vídeo experimental (libSceAvPlayer). **Aguardando teste.** |
 | 01.05 | Pôsteres reais das fontes, importar fontes por arquivo no pendrive. Relato: importar "não abriu" (arquivo provavelmente com outro nome/extensão dupla). |
-| 01.06 | Teclado do sistema (IME), importação aceita qualquer .txt com "fonte"/"moonlight" no nome, demonstração some com fonte ativa, cache de catálogos, músicas de /data/devhub/Music. **Aguardando teste.** |
+| 01.06 | **Testado no PS4:** teclado do sistema (IME) abre normalmente; músicas de `/data/devhub/Music` aparecem. **Falha:** app indica "sem internet" com o console conectado; fontes não importam. |
+| 01.07 | Internet: mesmos tamanhos de pool do exemplo oficial, nova tentativa automática a cada requisição, erro exato por passo e "Testar internet" em Configurações. **Aguardando teste.** |
 
 ## Desempenho
 

@@ -16,9 +16,8 @@ bool Ps4Platform::init(std::string *err)
 {
     if (!video_.init(err)) return false;
     if (!pad_.init(err)) notify("Moonlight HB: " + *err + " (continuando)");
-    std::string netErr;
-    httpOk_ = http_.init(&netErr);
-    if (!httpOk_) notify("Moonlight HB: internet indisponivel (" + netErr + ")");
+    httpOk_ = http_.init(&netErr_);
+    if (!httpOk_) notify("Moonlight HB: internet indisponivel (" + netErr_ + ")");
     return true;
 }
 
@@ -37,6 +36,14 @@ std::vector<std::string> Ps4Platform::musicDirs() const
     std::vector<std::string> d{"/data/moonlight/music", "/data/devhub/Music", "/data/music", "/data/Music"};
     for (int i = 0; i < 8; i++) d.push_back("/mnt/usb" + std::to_string(i) + "/Music");
     return d;
+}
+
+bool Ps4Platform::retryNetwork()
+{
+    if (httpOk_) return true;
+    netErr_.clear();
+    httpOk_ = http_.init(&netErr_);
+    return httpOk_;
 }
 
 std::vector<std::string> Ps4Platform::videoDirs() const

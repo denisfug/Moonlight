@@ -48,19 +48,32 @@ public:
 };
 }  // namespace
 
+// Same order and pool sizes as the OpenOrbis net_http sample. Each step's code is reported so a failure
+// on the console says exactly where it stopped (Configuracoes -> Testar internet).
 bool Http::init(std::string *err)
 {
-    if (sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET) & 0x80000000u) { *err = "modulo de rede nao carregou"; return false; }
-    if (sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP) & 0x80000000u) { *err = "modulo HTTP nao carregou"; return false; }
-    if (sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SSL) & 0x80000000u) { *err = "modulo SSL nao carregou"; return false; }
-    sceNetInit();
-    int net = sceNetPoolCreate("ml_net", 16 * 1024, 0);
-    if (net < 0) { *err = "sceNetPoolCreate " + hex(net); return false; }
-    int ssl = sceSslInit(SSL_POOLSIZE * 2);
-    if (ssl < 0) { *err = "sceSslInit " + hex(ssl); return false; }
-    int http = sceHttpInit(net, ssl, LIBHTTP_POOLSIZE * 4);
-    if (http < 0) { *err = "sceHttpInit " + hex(http); return false; }
-    ctx_ = http;
+    int r = sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
+    if (r < 0) { *err = "carregar modulo NET " + hex(r); return false; }
+    r = sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP);
+    if (r < 0) { *err = "carregar modulo HTTP " + hex(r); return false; }
+    r = sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SSL);
+    if (r < 0) { *err = "carregar modulo SSL " + hex(r); return false; }
+    if (netPool_ < 0) {
+        sceNetInit();
+        int net = sceNetPoolCreate("ml_net", 4 * 1024, 0);
+        if (net < 0) { *err = "sceNetPoolCreate " + hex(net); return false; }
+        netPool_ = net;
+    }
+    if (ssl_ < 0) {
+        int ssl = sceSslInit(SSL_POOLSIZE);
+        if (ssl < 0) { *err = "sceSslInit " + hex(ssl); return false; }
+        ssl_ = ssl;
+    }
+    if (ctx_ < 0) {
+        int http = sceHttpInit(netPool_, ssl_, LIBHTTP_POOLSIZE);
+        if (http < 0) { *err = "sceHttpInit " + hex(http); return false; }
+        ctx_ = http;
+    }
     return true;
 }
 
@@ -90,7 +103,8 @@ static std::string begin(int ctx, const HttpRequest &q, Request &r, int &status)
 HttpResponse Http::get(const HttpRequest &q)
 {
     HttpResponse resp;
-    if (ctx_ < 0) { resp.error = "rede nao inicializada"; return resp; }
+    std::string ie;
+    if (ctx_ < 0 && !init(&ie)) { resp.error = "internet do PS4 nao iniciou (" + ie + ")"; return resp; }
     Request r;
     std::string e = begin(ctx_, q, r, resp.status);
     if (!e.empty()) { resp.error = e; return resp; }
@@ -107,7 +121,8 @@ HttpResponse Http::get(const HttpRequest &q)
 
 std::unique_ptr<HttpStream> Http::openStream(const HttpRequest &q, std::string *error)
 {
-    if (ctx_ < 0) { if (error) *error = "rede nao inicializada"; return nullptr; }
+    std::string ie;
+    if (ctx_ < 0 && !init(&ie)) { if (error) *error = "internet do PS4 nao iniciou (" + ie + ")"; return nullptr; }
     std::unique_ptr<Ps4Stream> s(new Ps4Stream);
     s->r.reset(new Request);
     std::string e = begin(ctx_, q, *s->r, s->code);

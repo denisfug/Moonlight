@@ -51,7 +51,7 @@ public:
     std::string name() const override { return "ps4-sceHttp"; }
 
 private:
-    int ctx_ = -1;
+    int ctx_ = -1, netPool_ = -1, ssl_ = -1;
 };
 
 class Ps4Platform : public Platform {
@@ -62,7 +62,9 @@ public:
     Input &input() override { return pad_; }
     FileSystem &fs() override { return files_; }
     std::unique_ptr<AudioOut> makeAudioOut() override { return ps4::makeAudioOut(); }
-    HttpClient *http() override { return httpOk_ ? &http_ : nullptr; }
+    HttpClient *http() override { return &http_; }   // always the same object; requests fail cleanly until init works
+    std::string networkStatus() const override { return httpOk_ ? "" : netErr_; }
+    bool retryNetwork() override;
     std::string dataDir() const override { return "/data/moonlight"; }
     std::string assetDir() const override { return "/app0/assets"; }
     std::vector<std::string> musicDirs() const override;
@@ -82,6 +84,7 @@ private:
     Files files_;
     Http http_;
     bool httpOk_ = false;
+    std::string netErr_;
     bool jailbroken_ = false;
     bool imeReady_ = false;
     uint16_t imeText_[2049];
