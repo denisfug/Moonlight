@@ -86,6 +86,8 @@ async function poll(){
  }catch(e){$('dot').className=''}
  setTimeout(poll,1500)}
 $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+const hp=(location.hash.match(/pin=(\d{4})/)||[])[1];
+if(hp){$('pin').value=hp;history.replaceState(null,'',location.pathname);login()}
 </script></body></html>)HTML";
 
 std::string response(int code, const char *reason, const std::string &type, const std::string &body)

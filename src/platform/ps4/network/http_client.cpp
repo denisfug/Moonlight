@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <orbis/libkernel.h>
 #include <orbis/Net.h>
 #include <orbis/NetCtl.h>
 #include <orbis/Sysmodule.h>
@@ -27,6 +28,7 @@ namespace {
 // unresolved import. That is the most likely cause of the crash at start of 01.09/01.10 (CE-34878-0),
 // when the first HTTPS request seeded Mbed TLS. Fact from XCloud4, which loads it the same way.
 std::atomic<int> gRandomState{0};   // 0 not loaded, 1 ready, -1 failed
+std::atomic_flag gDnsLock = ATOMIC_FLAG_INIT;
 }  // namespace
 
 bool ml_ps4_load_random()
@@ -165,11 +167,27 @@ std::unique_ptr<TcpConn> Net::connect(const std::string &host, int port, int tim
     }
     OrbisNetInAddr addr{};
     if (sceNetInetPton(ORBIS_NET_AF_INET, host.c_str(), &addr) != 1) {
-        int rid = sceNetResolverCreate("ml_dns", pool_, 0);
-        if (rid < 0) { if (err) *err = "DNS: resolver " + hex(rid); return nullptr; }
-        int r = sceNetResolverStartNtoa(rid, host.c_str(), &addr, 0, 0, 0);
-        sceNetResolverDestroy(rid);
-        if (r < 0) { if (err) *err = "DNS nao encontrou o site (" + hex(r) + ")"; return nullptr; }
+        // One lookup at a time (several threads resolve at start: images, catalogs, update check), with
+        // an explicit timeout and retries. 01.12 got 0x804101E1 (RESOLVER_ENODNS) on the first lookup
+        // right after start. Timeouts are in microseconds (fact from XCloud4/shadPS4).
+        int r = -1;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            while (gDnsLock.test_and_set(std::memory_order_acquire)) {}
+            int rid = sceNetResolverCreate("ml_dns", pool_, 0);
+            if (rid >= 0) {
+                r = sceNetResolverStartNtoa(rid, host.c_str(), &addr, 5 * 1000 * 1000, 2, 0);
+                sceNetResolverDestroy(rid);
+            } else {
+                r = rid;
+            }
+            gDnsLock.clear(std::memory_order_release);
+            if (r >= 0) break;
+            sceKernelUsleep(useconds_t(500 * 1000 * (attempt + 1)));
+        }
+        if (r < 0) {
+            if (err) *err = std::string(unsigned(r) == 0x804101E1u ? "o PS4 ainda nao tem servidor DNS" : "DNS nao encontrou o site") + " (" + hex(r) + ")";
+            return nullptr;
+        }
     }
     int s = sceNetSocket("ml_tcp", ORBIS_NET_AF_INET, ORBIS_NET_SOCK_STREAM, 0);
     if (s < 0) { if (err) *err = "socket " + hex(s); return nullptr; }

@@ -109,14 +109,15 @@ int bioRecv(void *ctx, unsigned char *buf, size_t len)
     return int(n);
 }
 
-std::string verifyText(uint32_t flags)
+std::string verifyText(uint32_t flags, const std::string &chainTop)
 {
     std::string s;
     auto add = [&](const char *t) { if (!s.empty()) s += ", "; s += t; };
     if (flags & MBEDTLS_X509_BADCERT_EXPIRED) add("certificado vencido (confira a data do console)");
     if (flags & MBEDTLS_X509_BADCERT_FUTURE) add("certificado ainda nao valido (data do console errada?)");
     if (flags & MBEDTLS_X509_BADCERT_CN_MISMATCH) add("certificado e de outro site");
-    if (flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED) add("emissor do certificado desconhecido");
+    if (flags & MBEDTLS_X509_BADCERT_NOT_TRUSTED)
+        add(("emissor do certificado desconhecido" + (chainTop.empty() ? std::string() : " - a cadeia termina em: " + chainTop)).c_str());
     if (flags & MBEDTLS_X509_BADCERT_REVOKED) add("certificado revogado");
     if (s.empty()) {
         char b[256];
@@ -135,6 +136,20 @@ public:
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context drbg;
     std::string err;
+    std::string chainTop;   // issuer of the topmost certificate the server sent (diagnostics)
+    int topDepth = -1;
+
+    // Records the chain for error messages; never changes the verification result.
+    static int onVerify(void *ctx, mbedtls_x509_crt *crt, int depth, uint32_t *)
+    {
+        auto *self = static_cast<TlsConn *>(ctx);
+        if (depth > self->topDepth) {
+            char b[256];
+            if (mbedtls_x509_dn_gets(b, sizeof b, &crt->issuer) > 0) self->chainTop = b;
+            self->topDepth = depth;
+        }
+        return 0;
+    }
 
     TlsConn()
     {
@@ -161,6 +176,7 @@ public:
         if (ret != 0) { err = "config TLS: " + mbedErr(ret); return false; }
         mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
         mbedtls_ssl_conf_ca_chain(&conf, &gChain, nullptr);
+        mbedtls_ssl_conf_verify(&conf, &TlsConn::onVerify, this);
         mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &drbg);
         ret = mbedtls_ssl_setup(&ssl, &conf);
         if (ret != 0) { err = "setup TLS: " + mbedErr(ret); return false; }
@@ -170,7 +186,7 @@ public:
         while ((ret = mbedtls_ssl_handshake(&ssl)) != 0) {
             if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
             uint32_t flags = mbedtls_ssl_get_verify_result(&ssl);
-            if (ret == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED && flags != 0 && flags != uint32_t(-1)) err = verifyText(flags);
+            if (ret == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED && flags != 0 && flags != uint32_t(-1)) err = verifyText(flags, chainTop);
             else if (ret == -0x004C || ret == -0x0050) err = "conexao caiu durante o TLS (" + tcp->lastError() + ")";
             else err = "handshake TLS: " + mbedErr(ret);
             return false;

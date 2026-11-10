@@ -8,6 +8,7 @@
 #include "app/app.hpp"
 #include "app/demo_data.hpp"
 #include "app/updater.hpp"
+#include "qrcodegen/qrcodegen.h"
 #include "net/tls.hpp"
 #include "ui/theme.hpp"
 
@@ -380,6 +381,80 @@ private:
 };
 
 // ---------------------------------------------------------------- settings
+// ---------------------------------------------------------------- phone remote: QR code
+// Shows the address + PIN as a QR code; the link carries the PIN in the fragment (#pin=1234), so
+// the phone page signs in by itself. The fragment never leaves the phone's browser.
+class RemoteQrScreen : public Screen {
+public:
+    explicit RemoteQrScreen(App &a) : Screen(a) { build(); }
+    std::string title() const override { return "Controle pelo celular"; }
+
+    void build()
+    {
+        link_ = app.remote->address() + "/#pin=" + app.remote->pin();
+        uint8_t tmp[qrcodegen_BUFFER_LEN_MAX], qr[qrcodegen_BUFFER_LEN_MAX];
+        size_ = 0;
+        if (qrcodegen_encodeText(link_.c_str(), tmp, qr, qrcodegen_Ecc_MEDIUM, qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+                                 qrcodegen_Mask_AUTO, true)) {
+            size_ = qrcodegen_getSize(qr);
+            modules_.assign(size_t(size_ * size_), 0);
+            for (int y = 0; y < size_; y++)
+                for (int x = 0; x < size_; x++) modules_[size_t(y * size_ + x)] = qrcodegen_getModule(qr, x, y) ? 1 : 0;
+        }
+    }
+
+    bool handle(uint32_t p) override
+    {
+        if (p & BtnSquare) {
+            app.remote->stop();
+            app.settings.remote = false;
+            app.saveSettings();
+            app.toast("Controle pelo celular desligado");
+            app.pop();
+            return true;
+        }
+        return false;   // O goes back
+    }
+
+    void draw(Canvas &c, Rect area) override
+    {
+        drawSectionHeader(app, c, area, "Controle pelo celular", "Use o celular como controle e teclado");
+        const int quiet = 4;
+        int px = size_ > 0 ? std::min(16, 560 / (size_ + 2 * quiet)) : 0;
+        int side = (size_ + 2 * quiet) * px;
+        int qx = area.x + theme::Margin, qy = 200;
+        if (size_ > 0) {
+            c.fillRoundRect(qx - 8, qy - 8, side + 16, side + 16, 20, rgba(255, 255, 255));
+            for (int y = 0; y < size_; y++)
+                for (int x = 0; x < size_; x++)
+                    if (modules_[size_t(y * size_ + x)]) c.fillRect(qx + (x + quiet) * px, qy + (y + quiet) * px, px, px, rgba(0, 0, 0));
+        }
+        int tx = qx + side + 80, ty = qy + 10;
+        auto line = [&](int size, const std::string &t, Color col, int gap) {
+            app.fonts.regular->draw(c, tx, ty, size, t, col);
+            ty += gap;
+        };
+        app.fonts.bold->draw(c, tx, ty, 40, "Aponte a camera do celular", theme::Text);
+        ty += 70;
+        line(28, "1. Conecte o celular no mesmo Wi-Fi do PS4.", theme::TextDim, 50);
+        line(28, "2. Abra a camera e aponte para o codigo.", theme::TextDim, 50);
+        line(28, "3. Toque no link que aparecer: entra direto, sem digitar.", theme::TextDim, 90);
+        line(24, "Sem camera? Digite no navegador:", theme::TextMute, 44);
+        app.fonts.bold->draw(c, tx, ty, 34, app.remote->address(), theme::Text);
+        ty += 60;
+        app.fonts.bold->draw(c, tx, ty, 34, "PIN  " + app.remote->pin(), theme::Glow);
+        ty += 90;
+        line(22, "O PIN muda cada vez que o app abre. So funciona na sua rede de casa.", theme::TextMute, 36);
+    }
+
+    Hints hints() const override { return {{BtnCircle, "Voltar"}, {BtnSquare, "Desligar"}}; }
+
+private:
+    std::string link_;
+    int size_ = 0;
+    std::vector<uint8_t> modules_;
+};
+
 class SettingsScreen : public Screen {
 public:
     using Screen::Screen;
@@ -427,7 +502,7 @@ public:
     {
         serverDesc_ = app.server.configured() ? app.server.user + " em " + app.server.url + "  (X para trocar)"
                                               : "Suas musicas do PC pelo Wi-Fi. X para configurar.";
-        remoteDesc_ = app.remote->running() ? "No celular, abra " + app.remote->address() + "  PIN " + app.remote->pin()
+        remoteDesc_ = app.remote->running() ? "Ligado. X mostra o QR code (" + app.remote->address() + "  PIN " + app.remote->pin() + ")"
                                              : "Use o celular (mesmo Wi-Fi) como controle e teclado. Desligado.";
         updateDesc_ = describeUpdate();
         drawSectionHeader(app, c, area, "Configuracoes", "Dados em " + app.platform.dataDir());
@@ -439,7 +514,7 @@ public:
             {"Procurar musicas de novo", "Rele /data/music, /data/moonlight/music, /data/devhub/Music e o pendrive (Music/).", -1},
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
-            {"Controle pelo celular", remoteDesc_.c_str(), app.settings.remote ? 1 : 0},
+            {"Controle pelo celular", remoteDesc_.c_str(), app.remote->running() ? 1 : 0},
             {"Atualizar o Moonlight", updateDesc_.c_str(), -1},
             {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
@@ -510,21 +585,13 @@ private:
 
     void toggleRemote()
     {
-        if (app.remote->running()) {
-            app.remote->stop();
-            app.settings.remote = false;
+        if (!app.remote->running()) {
+            std::string e;
+            if (!app.remote->start(&e)) { app.modal("Controle pelo celular", "Nao foi possivel ligar: " + e); return; }
+            app.settings.remote = true;
             app.saveSettings();
-            app.toast("Controle pelo celular desligado");
-            return;
         }
-        std::string e;
-        if (!app.remote->start(&e)) { app.modal("Controle pelo celular", "Nao foi possivel ligar: " + e); return; }
-        app.settings.remote = true;
-        app.saveSettings();
-        app.modal("Controle pelo celular",
-                  "No celular, conectado ao mesmo Wi-Fi, abra no navegador:\n" + app.remote->address() +
-                      "\nPIN: " + app.remote->pin() +
-                      "\nO PIN muda a cada vez que o app abre. Funciona so na sua rede de casa.");
+        app.push(std::unique_ptr<Screen>(new RemoteQrScreen(app)));   // QR code; square turns it off
     }
 
     // Runs on a worker thread: if the network hangs, the screen stays responsive (01.11 froze on start
