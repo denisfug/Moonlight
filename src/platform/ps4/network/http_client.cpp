@@ -148,7 +148,6 @@ bool Net::init(std::string *err)
 {
     int r = sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
     if (r < 0) { *err = "carregar modulo NET " + hex(r); return false; }
-    if (!ml_ps4_load_random()) { *err = "carregar modulo Random (necessario para HTTPS)"; return false; }
     if (pool_ < 0) {
         sceNetInit();
         int p = sceNetPoolCreate("ml_net", 16 * 1024, 0);

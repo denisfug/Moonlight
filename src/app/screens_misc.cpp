@@ -1,6 +1,7 @@
 // Live TV (M3U), Library (favorites/history), Sources (addon manager) and Settings.
 #include <algorithm>
 #include <cctype>
+#include <atomic>
 #include <cmath>
 #include <ctime>
 
@@ -463,6 +464,8 @@ public:
 private:
     int sel_ = 0;
     std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_;
+    std::string testHeader_, testResult_;
+    std::atomic<bool> testBusy_{false}, testDone_{false};
 
     std::string describeUpdate()
     {
@@ -524,39 +527,65 @@ private:
                       "\nO PIN muda a cada vez que o app abre. Funciona so na sua rede de casa.");
     }
 
+    // Runs on a worker thread: if the network hangs, the screen stays responsive (01.11 froze on start
+    // while a request waited). The result appears as a window when it is ready.
     void testInternet()
     {
+        if (testBusy_.load()) { app.toast("Teste em andamento..."); return; }
         bool up = app.platform.retryNetwork();
-        std::string report = up ? "Internet do PS4 iniciada.\n" : "A internet do PS4 nao iniciou: " + app.platform.networkStatus() + "\n";
+        testHeader_ = up ? "Internet do PS4 iniciada.\n" : "A internet do PS4 nao iniciou: " + app.platform.networkStatus() + "\n";
+        std::time_t now = std::time(nullptr);   // a wrong console date makes every certificate look invalid
+        char date[32] = "?";
+        if (std::tm *t = std::gmtime(&now)) std::strftime(date, sizeof date, "%d/%m/%Y %H:%M UTC", t);
+        testHeader_ += std::string("Data do console: ") + date + " (se estiver errada, os sites seguros falham).\n";
+        if (!up || !app.platform.http()) { app.modal("Testar internet", testHeader_); return; }
+        testBusy_ = true;
+        testDone_ = false;
+        if (!app.platform.startThread(&SettingsScreen::testMain, this, "ml_nettest")) {
+            testBusy_ = false;
+            app.modal("Testar internet", testHeader_ + "Nao iniciou o teste.");
+            return;
+        }
+        app.toast("Testando a internet (ate 30 s)...");
+    }
+
+    static void testMain(void *self) { static_cast<SettingsScreen *>(self)->runTest(); }
+
+    void runTest()
+    {
+        std::string report;
+        HttpClient *h = app.platform.http();
+        auto probe = [&](const char *label, const char *url) {
+            HttpRequest req;
+            req.url = url;
+            req.timeoutMs = 10000;
+            req.maxBytes = 256 * 1024;
+            HttpResponse r = h->get(req);
+            if (!r.error.empty()) report += std::string(label) + ": falhou - " + r.error + "\n";
+            else report += std::string(label) + ": respondeu " + std::to_string(r.status) + " (" + std::to_string(r.body.size()) + " bytes).\n";
+            return r.error.empty();
+        };
+        bool plain = probe("Site comum (HTTP)", "http://example.com/");
         std::string te;
         int roots = tls::trustedRoots(&te);
         report += roots > 0 ? "Seguranca propria (Mbed TLS): " + std::to_string(roots) + " certificados raiz.\n"
                             : "Seguranca propria nao iniciou: " + te + "\n";
-        // A wrong console date also makes every certificate look invalid.
-        std::time_t now = std::time(nullptr);
-        char date[32] = "?";
-        if (std::tm *t = std::gmtime(&now)) std::strftime(date, sizeof date, "%d/%m/%Y %H:%M UTC", t);
-        report += std::string("Data do console: ") + date + " (se estiver errada, os sites seguros falham).\n";
-        HttpClient *h = app.platform.http();
-        if (h && up) {
-            auto probe = [&](const char *label, const char *url) {
-                HttpRequest req;
-                req.url = url;
-                req.timeoutMs = 10000;
-                req.maxBytes = 256 * 1024;
-                HttpResponse r = h->get(req);
-                if (!r.error.empty()) report += std::string(label) + ": falhou - " + r.error + "\n";
-                else report += std::string(label) + ": respondeu " + std::to_string(r.status) + " (" + std::to_string(r.body.size()) + " bytes).\n";
-                return r.error.empty();
-            };
-            bool plain = probe("Site comum (HTTP)", "http://example.com/");
-            bool secure = probe("Site seguro (HTTPS)", "https://example.com/");
-            if (secure) report += "Tudo certo.";
-            else if (plain) report += "A rede funciona; o site seguro falhou no passo mostrado acima.";
-            else report += "Nem o site comum abriu: verifique a conexao do console.";
-        }
-        app.modal("Testar internet", report);
+        bool secure = probe("Site seguro (HTTPS)", "https://example.com/");
+        if (secure) report += "Tudo certo.";
+        else if (plain) report += "A rede funciona; o site seguro falhou no passo mostrado acima.";
+        else report += "Nem o site comum abriu: verifique a conexao do console.";
+        testResult_ = report;   // published by testDone_ (release), read by the UI thread after it
+        testDone_.store(true, std::memory_order_release);
     }
+
+    void update(float) override
+    {
+        if (testBusy_.load() && testDone_.load(std::memory_order_acquire)) {
+            testBusy_ = false;
+            app.modal("Testar internet", testHeader_ + testResult_);
+        }
+    }
+    bool animating() const override { return testBusy_.load(); }
 
     // URL -> user -> password, then a ping before saving. The password is turned into a salted token
     // (Subsonic protocol) and discarded; it is never written to disk or logged.

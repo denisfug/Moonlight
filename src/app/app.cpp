@@ -84,12 +84,14 @@ bool App::init(std::string *error)
     library.load();
     sources.load();
     radioFavorites.load();
+    crumb("abrindo o app (musicas e canais)");
     server = subsonic::loadConfig(store);
     rescanMusic();
     loadChannels();
     audio.setVolume(settings.volume);
     images.start();
 
+    crumb("abrindo o app (montando as telas)");
     roots_.resize(size_t(Section::Count));
     roots_[size_t(Section::Home)] = makeHome(*this);
     roots_[size_t(Section::Music)] = makeMusic(*this);
@@ -102,6 +104,7 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Sources)] = makeSources(*this);
     roots_[size_t(Section::Settings)] = makeSettings(*this);
     roots_[0]->onEnter();
+    crumb("abrindo o app (primeira tela)");
     now_ = last_ = startMs_ = platform.nowMs();
     if (!crashedAt_.empty()) {
         // Safe start: what runs on its own (phone server, update check) stays off this time.

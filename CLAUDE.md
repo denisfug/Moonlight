@@ -16,6 +16,9 @@ Centro multimídia homebrew para PS4 (GoldHEN), C++17, toolchain OpenOrbis. Leia
   (o binário PS4 hoje não tem `.init_array` nem `__cxa_guard`; verifique com `nm build-ps4/moonlight`).
 - Sem exceções (`-fno-exceptions`); erros por valor de retorno/string.
 - Mudanças pequenas e testadas; não reescreva arquivos que funcionam sem justificar.
+- Nada de rede na thread da interface antes do primeiro quadro (01.11 ficou preso na abertura); rede em
+  thread (CatalogLoader, ImageLoader, Updater). Módulos não-internos (ex. libSceRandom) precisam de
+  `sceSysmoduleLoadModule` antes da primeira chamada (01.10 fechou com CE-34878-0).
 
 ## Estrutura
 

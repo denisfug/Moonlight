@@ -7,7 +7,7 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.11")
+set(ML_VERSION "01.12")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "app/app.hpp"
+#include "app/catalog_loader.hpp"
 #include "app/demo_data.hpp"
 #include "ui/theme.hpp"
 
@@ -63,10 +64,31 @@ Rect cardSize(Shape s)
 
 class HomeScreen : public Screen {
 public:
-    using Screen::Screen;
+    explicit HomeScreen(App &a) : Screen(a), loader_(new CatalogLoader(a.platform, a.platform.http())) {}
     std::string title() const override { return "Inicio"; }
 
+    // Source catalogs load in the background: 01.11 fetched them here synchronously, before the first
+    // frame, and the console stayed on the splash screen while the network answered (or timed out).
     void onEnter() override
+    {
+        if (seenVersion_ != app.sourcesVersion) {
+            seenVersion_ = app.sourcesVersion;
+            loader_->cancelAll();
+            srcs_.clear();
+            for (const auto &ref : app.sources.browsableCatalogs()) {
+                Src s;
+                s.title = ref.decl->name + " - " + app.sources.sources()[ref.source].manifest.name;
+                UrlPolicy pol;
+                std::string url = app.sources.catalogUrl(ref, {}, &pol);
+                if (url.empty()) continue;
+                s.ticket = loader_->request(url, pol);
+                if (s.ticket) srcs_.push_back(s);
+            }
+        }
+        rebuild();
+    }
+
+    void rebuild()
     {
         std::string keepTitle = rows_.empty() ? "" : rows_[size_t(rowSel_)].title;
         rows_.clear();
@@ -84,12 +106,9 @@ public:
         }
         addMetaRow("Filmes em destaque", Shape::Poster, app.videoDemo() ? demo::movies() : std::vector<addon::MetaPreview>{});
         addMetaRow("Series para maratonar", Shape::Poster, app.videoDemo() ? demo::series() : std::vector<addon::MetaPreview>{});
-        // catalogs from the user's sources (synchronous for now; see docs/ROADMAP.md)
-        for (const auto &ref : app.sources.browsableCatalogs()) {
-            std::vector<addon::MetaPreview> metas;
-            if (!app.sources.fetchCatalog(ref, metas).empty() || metas.empty()) continue;
-            addMetaRow(ref.decl->name + " - " + app.sources.sources()[ref.source].manifest.name, Shape::Poster, metas);
-        }
+        // catalogs from the user's sources, as they arrive from the background loader
+        for (const auto &s : srcs_)
+            if (!s.metas.empty()) addMetaRow(s.title, Shape::Poster, s.metas);
         Row mus{"Sua musica", Shape::Square};
         for (size_t i = 0; i < app.music.playlists().size(); i++) {
             const auto &p = app.music.playlists()[i];
@@ -123,6 +142,11 @@ public:
 
     void update(float dt) override
     {
+        bool got = false;
+        for (auto &res : loader_->take())
+            for (auto &s : srcs_)
+                if (s.ticket == res.ticket) { s.metas = std::move(res.metas); got = true; }
+        if (got) { rebuild(); app.dirty(); }
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
         anim_ = false;
         auto ease = [&](float &v, float t) {
@@ -137,7 +161,7 @@ public:
         for (int i = 0; i < rowSel_; i++) target += rowHeight(rows_[size_t(i)]);
         ease(vscroll_, target);
     }
-    bool animating() const override { return anim_; }
+    bool animating() const override { return anim_ || loader_->busy(); }
 
     void draw(Canvas &c, Rect area) override
     {
@@ -182,6 +206,14 @@ private:
     int rowSel_ = 0;
     float vscroll_ = 0;
     bool anim_ = false;
+    struct Src {
+        std::string title;
+        int ticket = 0;
+        std::vector<addon::MetaPreview> metas;
+    };
+    std::unique_ptr<CatalogLoader> loader_;
+    std::vector<Src> srcs_;
+    int seenVersion_ = -1;
 
     static int rowHeight(const Row &r) { return cardSize(r.shape).h + 120; }
 
