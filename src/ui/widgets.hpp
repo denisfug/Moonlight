@@ -41,6 +41,7 @@ public:
     Result handle(uint32_t pressed);
     void draw(Canvas &c, Fonts &f);
     const std::string &text() const { return text_; }
+    const std::string &title() const { return title_; }
     void close() { active_ = false; }
 
 private:

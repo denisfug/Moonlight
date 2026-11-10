@@ -103,10 +103,10 @@ public:
     virtual FileSystem &fs() = 0;
     virtual std::unique_ptr<AudioOut> makeAudioOut() = 0;
     virtual HttpClient *http() = 0;               // nullptr = no network implementation yet
+    virtual Sockets *sockets() { return nullptr; } // raw TCP (phone remote server); nullptr = unavailable
     // Human-readable state of the network stack ("" = OK) and a way to try initialising it again.
     virtual std::string networkStatus() const { return ""; }
     virtual bool retryNetwork() { return http() != nullptr; }
-    virtual std::string networkInfo() const { return ""; }   // extra detail for "Testar internet"
     virtual std::string dataDir() const = 0;      // persistent app data (JSON files)
     virtual std::string assetDir() const = 0;     // packaged read-only assets
     virtual std::vector<std::string> musicDirs() const = 0;

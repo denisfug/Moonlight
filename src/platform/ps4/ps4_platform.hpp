@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "net/web_client.hpp"
 #include "platform/platform.hpp"
 
 namespace ml::ps4 {
@@ -42,18 +43,17 @@ public:
 
 std::unique_ptr<AudioOut> makeAudioOut();
 
-class Http : public HttpClient {
+// libSceNet sockets + DNS; HTTP and TLS on top are the app's own (src/net).
+class Net : public Sockets {
 public:
     bool init(std::string *err);
-    HttpResponse get(const HttpRequest &req) override;
-    std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error) override;
-    bool supportsHttps() const override { return true; }
-    std::string name() const override { return "ps4-sceHttp"; }
-    const std::string &certInfo() const { return certInfo_; }
+    std::unique_ptr<TcpConn> connect(const std::string &host, int port, int timeoutMs, std::string *err) override;
+    std::unique_ptr<TcpListener> listen(int port, std::string *err) override;
+    std::string localAddress() override;
 
 private:
-    int ctx_ = -1, netPool_ = -1, ssl_ = -1;
-    std::string certInfo_;
+    int pool_ = -1;
+    bool ctl_ = false;
 };
 
 class Ps4Platform : public Platform {
@@ -64,10 +64,11 @@ public:
     Input &input() override { return pad_; }
     FileSystem &fs() override { return files_; }
     std::unique_ptr<AudioOut> makeAudioOut() override { return ps4::makeAudioOut(); }
-    HttpClient *http() override { return &http_; }   // always the same object; requests fail cleanly until init works
+    HttpClient *http() override { return &web_; }   // always the same object; requests fail cleanly until init works
+    Sockets *sockets() override { return &net_; }
+    WebClient &web() { return web_; }
     std::string networkStatus() const override { return httpOk_ ? "" : netErr_; }
     bool retryNetwork() override;
-    std::string networkInfo() const override { return http_.certInfo(); }
     std::string dataDir() const override { return "/data/moonlight"; }
     std::string assetDir() const override { return "/app0/assets"; }
     std::vector<std::string> musicDirs() const override;
@@ -85,7 +86,8 @@ private:
     VideoOut video_;
     Pad pad_;
     Files files_;
-    Http http_;
+    Net net_;
+    WebClient web_{&net_, "MoonlightHB/" ML_VERSION " (PlayStation 4)"};
     bool httpOk_ = false;
     std::string netErr_;
     bool jailbroken_ = false;

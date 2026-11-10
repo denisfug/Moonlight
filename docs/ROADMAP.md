@@ -52,7 +52,9 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 
 | Item | Compila PS4 | PC | PS4 |
 |---|---|---|---|
-| Cliente HTTP/HTTPS do PS4 (libSceNet/Ssl/Http, verificação de certificado do sistema ligada) | sim | — | **PS4 01.07: rede inicia, HTTPS falha (0x8095F00C). 01.08: raízes atuais via sceHttpsLoadCert, aguardando teste** |
+| Cliente HTTP/HTTPS do PS4 | sim | sim (TLS local) | **01.07/01.08: TLS do sistema falha (0x8095F00C) mesmo com raízes novas. 01.09: HTTP/TLS próprios (Mbed TLS), aguardando teste** |
+| Controle pelo celular (página web na rede local, PIN) | sim | sim | **01.09, aguardando teste** |
+| Vídeo HTTPS via cliente próprio (Range) | sim | Range testado | **01.09, aguardando teste** |
 | Streaming HTTP incremental (`HttpStream`) | sim | sim (servidor local real) | pendente |
 | Rádios: diretório Radio Browser (só MP3), abas por gênero/país, busca, favoritas | sim | sim (fixtures + servidor local) | pendente |
 | AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |

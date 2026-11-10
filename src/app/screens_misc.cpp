@@ -6,6 +6,7 @@
 
 #include "app/app.hpp"
 #include "app/demo_data.hpp"
+#include "net/tls.hpp"
 #include "ui/theme.hpp"
 
 namespace ml {
@@ -385,7 +386,7 @@ public:
 
     bool handle(uint32_t p) override
     {
-        const int n = 7;
+        const int n = 8;
         if (p & BtnUp) { if (sel_ > 0) sel_--; return true; }
         if (p & BtnDown) { if (sel_ + 1 < n) sel_++; return true; }
         if (p & BtnCross) {
@@ -406,8 +407,9 @@ public:
             }
             case 3: configureServer(); break;
             case 4: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 5: testInternet(); break;
-            case 6:
+            case 5: toggleRemote(); break;
+            case 6: testInternet(); break;
+            case 7:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -423,6 +425,8 @@ public:
     {
         serverDesc_ = app.server.configured() ? app.server.user + " em " + app.server.url + "  (X para trocar)"
                                               : "Suas musicas do PC pelo Wi-Fi. X para configurar.";
+        remoteDesc_ = app.remote->running() ? "No celular, abra " + app.remote->address() + "  PIN " + app.remote->pin()
+                                             : "Use o celular (mesmo Wi-Fi) como controle e teclado. Desligado.";
         drawSectionHeader(app, c, area, "Configuracoes", "Dados em " + app.platform.dataDir());
         int x = area.x + theme::Margin, y = 186, w = 1000;
         struct Item { const char *title, *desc; int toggle; };
@@ -432,11 +436,12 @@ public:
             {"Procurar musicas de novo", "Rele /data/music, /data/moonlight/music, /data/devhub/Music e o pendrive (Music/).", -1},
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
+            {"Controle pelo celular", remoteDesc_.c_str(), app.settings.remote ? 1 : 0},
             {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
-        for (int i = 0; i < 7; i++, y += 106) {
-            Rect r{x, y, w, 96};
+        for (int i = 0; i < 8; i++, y += 100) {
+            Rect r{x, y, w, 90};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
             app.fonts.bold->draw(c, r.x + 30, r.y + 18, 27, items[i].title, theme::Text);
             app.fonts.regular->draw(c, r.x + 30, r.y + 58, 20, items[i].desc, theme::TextMute);
@@ -454,14 +459,35 @@ public:
 
 private:
     int sel_ = 0;
-    std::string serverDesc_, newUrl_, newUser_;
+    std::string serverDesc_, newUrl_, newUser_, remoteDesc_;
+
+    void toggleRemote()
+    {
+        if (app.remote->running()) {
+            app.remote->stop();
+            app.settings.remote = false;
+            app.saveSettings();
+            app.toast("Controle pelo celular desligado");
+            return;
+        }
+        std::string e;
+        if (!app.remote->start(&e)) { app.modal("Controle pelo celular", "Nao foi possivel ligar: " + e); return; }
+        app.settings.remote = true;
+        app.saveSettings();
+        app.modal("Controle pelo celular",
+                  "No celular, conectado ao mesmo Wi-Fi, abra no navegador:\n" + app.remote->address() +
+                      "\nPIN: " + app.remote->pin() +
+                      "\nO PIN muda a cada vez que o app abre. Funciona so na sua rede de casa.");
+    }
 
     void testInternet()
     {
         bool up = app.platform.retryNetwork();
         std::string report = up ? "Internet do PS4 iniciada.\n" : "A internet do PS4 nao iniciou: " + app.platform.networkStatus() + "\n";
-        std::string ci = app.platform.networkInfo();
-        if (!ci.empty()) report += "Certificados: " + ci + ".\n";
+        std::string te;
+        int roots = tls::trustedRoots(&te);
+        report += roots > 0 ? "Seguranca propria (Mbed TLS): " + std::to_string(roots) + " certificados raiz.\n"
+                            : "Seguranca propria nao iniciou: " + te + "\n";
         // A wrong console date also makes every certificate look invalid.
         std::time_t now = std::time(nullptr);
         char date[32] = "?";
@@ -482,7 +508,7 @@ private:
             bool plain = probe("Site comum (HTTP)", "http://example.com/");
             bool secure = probe("Site seguro (HTTPS)", "https://example.com/");
             if (secure) report += "Tudo certo.";
-            else if (plain) report += "A rede funciona; o problema e so a verificacao de certificado (HTTPS).";
+            else if (plain) report += "A rede funciona; o site seguro falhou no passo mostrado acima.";
             else report += "Nem o site comum abriu: verifique a conexao do console.";
         }
         app.modal("Testar internet", report);

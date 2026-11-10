@@ -70,6 +70,32 @@ public:
     virtual std::string name() const = 0;
 };
 
+// ---------------------------------------------------------------- raw TCP, supplied by the platform
+// Used by the app's own HTTP/TLS client (src/net) and by the phone remote server. Blocking I/O; the
+// timeout given at connect/accept applies to every send/recv. Return values: >0 bytes, 0 = closed, <0 = error.
+class TcpConn {
+public:
+    virtual ~TcpConn() = default;
+    virtual long send(const void *buf, size_t len) = 0;
+    virtual long recv(void *buf, size_t len) = 0;
+    virtual std::string lastError() const = 0;
+};
+
+class TcpListener {
+public:
+    virtual ~TcpListener() = default;
+    // Waits up to timeoutMs; nullptr on timeout or error. *peer = "a.b.c.d" of the client.
+    virtual std::unique_ptr<TcpConn> accept(int timeoutMs, std::string *peer) = 0;
+};
+
+class Sockets {
+public:
+    virtual ~Sockets() = default;
+    virtual std::unique_ptr<TcpConn> connect(const std::string &host, int port, int timeoutMs, std::string *err) = 0;
+    virtual std::unique_ptr<TcpListener> listen(int port, std::string *err) = 0;   // all interfaces
+    virtual std::string localAddress() = 0;   // LAN IPv4 of this device, "" if unknown
+};
+
 // Policy applied before any request: http(s) only, HTTPS required unless the host is local or the
 // user explicitly allowed plain HTTP for that source.
 struct UrlPolicy {

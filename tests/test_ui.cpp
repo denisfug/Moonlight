@@ -283,3 +283,31 @@ TEST(image_loader_live_local_server)
     CHECK(loader.takeUpdated());
     CHECK(loader.get(std::string(base) + "/nao-existe.png", 40, 60) == nullptr);
 }
+
+TEST(phone_remote_fills_keyboard_and_presses_buttons)
+{
+    std::string sb = t::scratch + "/appsb_remote";
+    host::HostFileSystem(sb).makeDirs("/");
+    Harness h(sb);
+    std::string err;
+    CHECK(h.app.init(&err));
+    CHECK(h.app.remote->start(&err));
+    std::string pin = h.app.remote->pin();
+    auto post = [&](const std::string &path, const std::string &body) {
+        return h.app.remote->handle("POST " + path + " HTTP/1.1\r\nX-Pin: " + pin + "\r\n\r\n" + body, h.plat.nowMs());
+    };
+    h.app.goSection(Section::Sources, true);
+    post("/api/key", "cross");              // empty source list: X opens the keyboard
+    h.app.frame();
+    CHECK(h.app.keyboard.active());
+    std::string st = h.app.remote->handle("GET /api/state HTTP/1.1\r\nX-Pin: " + pin + "\r\n\r\n", h.plat.nowMs());
+    CHECK(st.find("\"prompt\":true") != std::string::npos);
+    post("/api/text", "nao-e-url");         // phone text completes the TV keyboard -> add fails -> modal
+    h.app.frame();
+    CHECK(!h.app.keyboard.active());
+    CHECK(h.app.modalOpen());
+    post("/api/key", "cross");
+    h.app.frame();
+    CHECK(!h.app.modalOpen());
+    h.app.remote->stop();
+}

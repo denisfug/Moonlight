@@ -2,12 +2,17 @@
 // - Display: off-screen 1920x1080 buffer; present() can save PNG frames.
 // - Input: scripted button events ("t_ms:BUTTONS" list) or set programmatically.
 // - FileSystem: PS4-style absolute paths mapped under a sandbox directory.
-// - HTTP: plain http:// only (for the local test addon server); https is reported unsupported.
+// - Network: POSIX sockets under the app's own HTTP/TLS client (src/net), same code as on the PS4.
 #pragma once
 #include <string>
 #include <vector>
 
+#include "net/web_client.hpp"
 #include "platform/platform.hpp"
+
+#ifndef ML_HOST_VERSION
+#define ML_HOST_VERSION "dev"
+#endif
 
 namespace ml::host {
 
@@ -47,12 +52,21 @@ private:
     std::string root_;
 };
 
-class HostHttp : public HttpClient {
+class HostSockets : public Sockets {
 public:
-    HttpResponse get(const HttpRequest &req) override;
-    std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error) override;
-    bool supportsHttps() const override { return false; }
-    std::string name() const override { return "host-http"; }
+    std::unique_ptr<TcpConn> connect(const std::string &host, int port, int timeoutMs, std::string *err) override;
+    std::unique_ptr<TcpListener> listen(int port, std::string *err) override;
+    std::string localAddress() override;
+};
+
+// The shared client (src/net/web_client) over POSIX sockets.
+class HostHttp : public WebClient {
+public:
+    HostHttp() : WebClient(&sockets_, "MoonlightHB/" ML_HOST_VERSION " (PC)") {}
+    Sockets &sockets() { return sockets_; }
+
+private:
+    HostSockets sockets_;
 };
 
 class HostPlatform : public Platform {
@@ -64,6 +78,7 @@ public:
     FileSystem &fs() override { return fs_; }
     std::unique_ptr<AudioOut> makeAudioOut() override;
     HttpClient *http() override { return &http_; }
+    Sockets *sockets() override { return &http_.sockets(); }
     std::string dataDir() const override { return "/data/moonlight"; }
     std::string assetDir() const override { return "/app0/assets"; }
     std::vector<std::string> musicDirs() const override { return {"/data/moonlight/music", "/mnt/usb0/Music"}; }

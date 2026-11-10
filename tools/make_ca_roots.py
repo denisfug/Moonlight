@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Generates src/platform/ps4/network/ca_roots.inc: a curated set of current root CAs (PEM) taken from the
-Mozilla trust store shipped by the build machine (ca-certificates, MPL-2.0). Old PS4 firmware carries an
-outdated root list, so modern sites fail certificate verification (sceHttpSendRequest 0x8095F00C).
-The roots are added to the HTTP context with sceHttpsLoadCert; verification stays ON.
+"""Generates src/net/ca_roots.inc: a curated set of current root CAs (PEM) taken from the
+Mozilla trust store shipped by the build machine (ca-certificates, MPL-2.0). They are the trust anchors
+of the app's own TLS client (src/net/tls.cpp, Mbed TLS); the PS4 system store is not used.
 
 usage: tools/make_ca_roots.py [/etc/ssl/certs/ca-certificates.crt]"""
 import re, subprocess, sys, pathlib
@@ -68,7 +67,7 @@ def main():
         lines[-1] += ";"
     lines.append("static const char *const kCaRoots[ML_CA_ROOT_COUNT] = {" + ", ".join(f"kCaRoot{i}" for i in range(len(out))) + "};")
     lines.append("static const unsigned kCaRootSizes[ML_CA_ROOT_COUNT] = {" + ", ".join(f"sizeof kCaRoot{i} - 1" for i in range(len(out))) + "};")
-    dst = pathlib.Path(__file__).resolve().parent.parent / "src/platform/ps4/network/ca_roots.inc"
+    dst = pathlib.Path(__file__).resolve().parent.parent / "src/net/ca_roots.inc"
     dst.write_text("\n".join(lines) + "\n")
     print(f"{dst}: {len(out)} roots ({nrsa} RSA)")
 

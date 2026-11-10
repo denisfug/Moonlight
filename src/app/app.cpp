@@ -27,11 +27,15 @@ const NavItem kNav[] = {
 
 App::App(Platform &p)
     : platform(p), store(p.fs(), p.dataDir()), library(store), sources(store, p.http()), audio(p),
-      radio(p.http()), radioFavorites(store), images(p, p.http())
+      radio(p.http()), radioFavorites(store), images(p, p.http()), remote(new RemoteControl(p))
 {
 }
 
-App::~App() { audio.stop(); }
+App::~App()
+{
+    remote->stop();
+    audio.stop();
+}
 
 bool App::init(std::string *error)
 {
@@ -71,6 +75,11 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Settings)] = makeSettings(*this);
     roots_[0]->onEnter();
     now_ = last_ = platform.nowMs();
+    if (settings.remote) {
+        std::string e;
+        if (remote->start(&e)) toast("Controle pelo celular: " + remote->address() + "  PIN " + remote->pin());
+        else toast("Controle pelo celular nao ligou: " + e);
+    }
     return true;
 }
 
@@ -80,6 +89,7 @@ void App::loadSettings()
     settings.animations = j["animations"].asBool(true);
     settings.showDemo = j["showDemo"].asBool(true);
     settings.showRadio = j["showRadio"].asBool(false);
+    settings.remote = j["remote"].asBool(false);
     settings.volume = int(j["volume"].asInt(80));
 }
 
@@ -89,6 +99,7 @@ void App::saveSettings()
     j.set("animations", Json::boolean(settings.animations));
     j.set("showDemo", Json::boolean(settings.showDemo));
     j.set("showRadio", Json::boolean(settings.showRadio));
+    j.set("remote", Json::boolean(settings.remote));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);
 }
@@ -174,7 +185,9 @@ void App::openKeyboard(const std::string &title, const std::string &initial, boo
                        std::function<void(const std::string &)> onDone)
 {
     kbDone_ = std::move(onDone);
-    if (platform.startTextInput(title, initial, url)) { systemKeyboard_ = true; dirty(); return; }
+    // While the phone is in use (last 10 min), keep the app's own keyboard: the phone can fill it.
+    bool phone = remote->running() && remote->lastSeenMs() > 0 && platform.nowMs() - remote->lastSeenMs() < 10 * 60 * 1000;
+    if (!phone && platform.startTextInput(title, initial, url)) { systemKeyboard_ = true; dirty(); return; }
     keyboard.open(title, initial, url);
     dirty();
 }
@@ -338,6 +351,7 @@ bool App::frame()
     input_.repeatRateMs = keyboard.active() ? 45 : 85;
     uint32_t pressed = systemKeyboard_ ? 0 : input_.update(platform.input().read(), now_);
     if (pressed) { handleInput(pressed); dirty(); }
+    if (remote->running()) serviceRemote();
 
     // music: auto-advance at end of track, redraw while the position changes
     PlayState st = audio.state();
@@ -370,6 +384,43 @@ bool App::frame()
         rendered_ = true;
     }
     return true;
+}
+
+// Commands from the phone page (remote.cpp), applied on the UI thread.
+void App::serviceRemote()
+{
+    for (RemoteControl::Command &c : remote->take()) {
+        switch (c.kind) {
+        case RemoteControl::Command::Buttons:
+            if (!systemKeyboard_) handleInput(c.buttons);
+            break;
+        case RemoteControl::Command::Text:
+            if (keyboard.active() && kbDone_) {
+                keyboard.close();
+                auto cb = kbDone_;
+                kbDone_ = nullptr;
+                cb(c.text);
+            } else if (systemKeyboard_) {
+                toast("Feche o teclado da TV e tente de novo pelo celular");
+            } else {
+                toast("Texto do celular recebido, mas nenhum campo de texto esta aberto");
+            }
+            break;
+        case RemoteControl::Command::Source: {
+            std::string e = sources.add(c.text, false, int64_t(now_));
+            if (e.empty()) { sourcesVersion++; toast("Fonte adicionada pelo celular: " + sources.sources().back().manifest.name); }
+            else toast("Fonte do celular nao entrou: " + e);
+            break;
+        }
+        }
+        dirty();
+    }
+    bool prompt = keyboard.active();
+    std::string key = current().title() + (prompt ? "|" + keyboard.title() + "|" + keyboard.text() : "");
+    if (key != remoteState_) {
+        remoteState_ = key;
+        remote->setState(current().title(), prompt, prompt ? keyboard.title() : "", prompt ? keyboard.text() : "", false);
+    }
 }
 
 void App::handleInput(uint32_t p)

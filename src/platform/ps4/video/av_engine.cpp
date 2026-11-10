@@ -10,6 +10,7 @@
 #include <cstring>
 #include <vector>
 
+#include "net/range_reader.hpp"
 #include "platform/ps4/ps4_platform.hpp"
 #include "platform/ps4/video/avplayer_api.h"
 #include "player/nv12.hpp"
@@ -86,14 +87,34 @@ public:
         init.numOutputVideoFramebuffers = 2;
         init.autoStart = true;
         init.defaultLanguage = "por";
+        // http(s): the system player would use the system TLS, which refuses modern sites on older
+        // firmware (0x8095F00C). It reads through our client instead (file-replacement callbacks + Range).
+        std::string source = location;
+        std::string lower = location.substr(0, 8);
+        for (auto &ch : lower) ch = char(ch >= 'A' && ch <= 'Z' ? ch + 32 : ch);
+        bool remote = lower.compare(0, 7, "http://") == 0 || lower.compare(0, 8, "https://") == 0;
+        if (remote && location.find(".m3u8") == std::string::npos) {
+            log("conectando ao servidor do video");
+            reader_.reset(new RangeReader(&plat_.web(), location));
+            std::string e = reader_->open();
+            if (!e.empty()) {
+                reader_.reset();
+                log("rede: " + e);
+                if (error) *error = "nao abriu o video pela internet: " + e;
+                return false;
+            }
+            init.file = {this, &AvEngine::fOpen, &AvEngine::fClose, &AvEngine::fRead, &AvEngine::fSize};
+            source = "/ml_stream/video" + extensionOf(location);
+        }
         h_ = sceAvPlayerInit(&init);
-        if (!h_) { log("sceAvPlayerInit falhou"); if (error) *error = status_; return false; }
-        int r = sceAvPlayerAddSource(h_, location.c_str());
+        if (!h_) { reader_.reset(); log("sceAvPlayerInit falhou"); if (error) *error = "sceAvPlayerInit falhou"; return false; }
+        int r = sceAvPlayerAddSource(h_, source.c_str());
         if (r < 0) {
             log("AddSource " + hex(r));
             if (error) *error = "o player do sistema recusou o arquivo (" + hex(r) + ")";
             sceAvPlayerClose(h_);
             h_ = nullptr;
+            reader_.reset();
             return false;
         }
         log("fonte adicionada, aguardando o decodificador");
@@ -115,6 +136,7 @@ public:
         sceAvPlayerClose(h_);
         h_ = nullptr;
         paused_ = false;
+        reader_.reset();
     }
 
     bool seek(int64_t ms) override
@@ -162,7 +184,13 @@ public:
         return nv12ToArgb(src, fb);
     }
 
-    std::string status() override { return status_; }
+    std::string status() override
+    {
+        while (statusLock_.test_and_set(std::memory_order_acquire)) {}
+        std::string s = status_;
+        statusLock_.clear(std::memory_order_release);
+        return s;
+    }
 
 private:
     Ps4Platform &plat_;
@@ -171,8 +199,43 @@ private:
     bool paused_ = false, gotFrame_ = false;
     int64_t duration_ = 0;
     std::string status_;
+    std::unique_ptr<RangeReader> reader_;
 
-    void log(const std::string &s) { status_ = s; }
+    static std::string extensionOf(const std::string &url)
+    {
+        std::string path = url.substr(0, url.find_first_of("?#"));
+        size_t dot = path.rfind('.'), slash = path.rfind('/');
+        if (dot == std::string::npos || (slash != std::string::npos && dot < slash) || path.size() - dot > 5) return ".mp4";
+        std::string ext = path.substr(dot);
+        for (auto &ch : ext) ch = char(ch >= 'A' && ch <= 'Z' ? ch + 32 : ch);
+        return ext;
+    }
+
+    // File-replacement callbacks (called from the player's own threads).
+    static int32_t fOpen(void *, const char *) { return 0; }
+    static int32_t fClose(void *) { return 0; }
+    static int32_t fRead(void *obj, uint8_t *buf, uint64_t pos, uint32_t len)
+    {
+        auto *self = static_cast<AvEngine *>(obj);
+        if (!self->reader_) return -1;
+        long n = self->reader_->readAt(pos, buf, len);
+        if (n < 0) self->log("rede: " + self->reader_->lastError());
+        return int32_t(n);
+    }
+    static uint64_t fSize(void *obj)
+    {
+        auto *self = static_cast<AvEngine *>(obj);
+        return self->reader_ && self->reader_->size() > 0 ? uint64_t(self->reader_->size()) : 0;
+    }
+
+    std::atomic_flag statusLock_ = ATOMIC_FLAG_INIT;
+    // Called from the UI thread and from the player's callback threads.
+    void log(const std::string &s)
+    {
+        while (statusLock_.test_and_set(std::memory_order_acquire)) {}
+        status_ = s;
+        statusLock_.clear(std::memory_order_release);
+    }
 
     static void onEvent(void *obj, int32_t ev, int32_t, void *)
     {

@@ -2,6 +2,9 @@
 
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <ifaddrs.h>
+#include <poll.h>
+#include <sys/random.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -10,11 +13,23 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cerrno>
 #include <cstring>
 #include <thread>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
+
+extern "C" int ml_platform_random(unsigned char *buf, size_t len)
+{
+    while (len > 0) {
+        ssize_t n = getrandom(buf, len, 0);
+        if (n <= 0) return -1;
+        buf += n;
+        len -= size_t(n);
+    }
+    return 0;
+}
 
 namespace ml::host {
 
@@ -109,146 +124,110 @@ bool HostFileSystem::exists(const std::string &path)
     return stat(map(path).c_str(), &st) == 0;
 }
 
-// ---------------------------------------------------------------- http (plain, for local tests)
-HttpResponse HostHttp::get(const HttpRequest &req)
-{
-    HttpResponse r;
-    Url u = parseUrl(req.url);
-    if (!u.valid) { r.error = "URL invalida"; return r; }
-    if (u.scheme != "http") { r.error = "https nao suportado no cliente de teste"; return r; }
-    addrinfo hints{}, *res = nullptr;
-    hints.ai_socktype = SOCK_STREAM;
-    std::string host = u.host;
-    if (!host.empty() && host[0] == '[') host = host.substr(1, host.size() - 2);
-    if (getaddrinfo(host.c_str(), std::to_string(u.port).c_str(), &hints, &res) != 0 || !res) {
-        r.error = "DNS falhou";
-        return r;
+// ---------------------------------------------------------------- sockets (POSIX)
+namespace {
+class PosixConn : public TcpConn {
+public:
+    int fd;
+    std::string err;
+    explicit PosixConn(int f) : fd(f) {}
+    ~PosixConn() override { if (fd >= 0) close(fd); }
+    long send(const void *buf, size_t len) override
+    {
+        ssize_t n = ::send(fd, buf, len, MSG_NOSIGNAL);
+        if (n < 0) err = (errno == EAGAIN || errno == EWOULDBLOCK) ? "tempo esgotado" : std::strerror(errno);
+        return long(n);
     }
-    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    timeval tv{req.timeoutMs / 1000, (req.timeoutMs % 1000) * 1000};
+    long recv(void *buf, size_t len) override
+    {
+        ssize_t n = ::recv(fd, buf, len, 0);
+        if (n < 0) err = (errno == EAGAIN || errno == EWOULDBLOCK) ? "tempo esgotado" : std::strerror(errno);
+        return long(n);
+    }
+    std::string lastError() const override { return err; }
+};
+
+void setTimeouts(int fd, int ms)
+{
+    timeval tv{ms / 1000, (ms % 1000) * 1000};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
-    if (fd < 0 || connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
-        freeaddrinfo(res);
-        if (fd >= 0) close(fd);
-        r.error = "conexao recusada";
-        return r;
-    }
-    freeaddrinfo(res);
-    std::string q = "GET " + u.path + (u.query.empty() ? "" : "?" + u.query) + " HTTP/1.1\r\nHost: " + u.host +
-                    "\r\nConnection: close\r\nUser-Agent: MoonlightHB/0.1\r\n";
-    for (const auto &h : req.headers) q += h.first + ": " + h.second + "\r\n";
-    q += "\r\n";
-    send(fd, q.data(), q.size(), 0);
-    std::string raw;
-    char buf[16384];
-    const size_t cap = req.maxBytes + 64 * 1024;
-    ssize_t n;
-    while ((n = recv(fd, buf, sizeof buf, 0)) > 0) {
-        raw.append(buf, static_cast<size_t>(n));
-        if (raw.size() > cap) { close(fd); r.error = "resposta maior que o limite"; return r; }
-    }
-    close(fd);
-    if (n < 0 && raw.empty()) { r.error = "tempo esgotado"; return r; }
-    size_t he = raw.find("\r\n\r\n");
-    if (he == std::string::npos || raw.compare(0, 5, "HTTP/") != 0) { r.error = "resposta HTTP invalida"; return r; }
-    std::string head = raw.substr(0, he);
-    std::string body = raw.substr(he + 4);
-    r.status = std::atoi(head.c_str() + head.find(' ') + 1);
-    bool chunked = false;
-    for (size_t p = head.find("\r\n"); p != std::string::npos; p = head.find("\r\n", p + 2)) {
-        size_t e = head.find("\r\n", p + 2);
-        std::string line = head.substr(p + 2, e == std::string::npos ? std::string::npos : e - p - 2);
-        std::string low = line;
-        for (auto &c : low) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (low.compare(0, 13, "content-type:") == 0) r.contentType = line.substr(13);
-        if (low.find("transfer-encoding:") == 0 && low.find("chunked") != std::string::npos) chunked = true;
-    }
-    if (chunked) {
-        std::string out;
-        size_t p = 0;
-        for (;;) {
-            size_t le = body.find("\r\n", p);
-            if (le == std::string::npos) { r.error = "chunked invalido"; return r; }
-            size_t len = std::strtoul(body.substr(p, le - p).c_str(), nullptr, 16);
-            p = le + 2;
-            if (len == 0) break;
-            if (p + len > body.size()) { r.error = "chunked truncado"; return r; }
-            out.append(body, p, len);
-            p += len + 2;
-        }
-        body.swap(out);
-    }
-    if (body.size() > req.maxBytes) { r.error = "resposta maior que o limite"; return r; }
-    r.body = std::move(body);
-    return r;
 }
 
-// Streaming GET (internet radio): reads only the headers, then hands out the body incrementally.
-// Accepts "ICY 200 OK" status lines (SHOUTcast v1). Chunked transfer is not supported here.
-namespace {
-class HostStream : public HttpStream {
+class PosixListener : public TcpListener {
 public:
-    int fd = -1, code = 0;
-    std::string ctype, pending;
-    ~HostStream() override { if (fd >= 0) close(fd); }
-    long read(void *buf, size_t len) override
+    int fd;
+    explicit PosixListener(int f) : fd(f) {}
+    ~PosixListener() override { close(fd); }
+    std::unique_ptr<TcpConn> accept(int timeoutMs, std::string *peer) override
     {
-        if (!pending.empty()) {
-            size_t n = std::min(len, pending.size());
-            std::memcpy(buf, pending.data(), n);
-            pending.erase(0, n);
-            return long(n);
+        pollfd p{fd, POLLIN, 0};
+        if (poll(&p, 1, timeoutMs) <= 0) return nullptr;
+        sockaddr_in a{};
+        socklen_t al = sizeof a;
+        int c = ::accept(fd, reinterpret_cast<sockaddr *>(&a), &al);
+        if (c < 0) return nullptr;
+        setTimeouts(c, 10000);
+        if (peer) {
+            char b[INET_ADDRSTRLEN] = "";
+            inet_ntop(AF_INET, &a.sin_addr, b, sizeof b);
+            *peer = b;
         }
-        ssize_t n = recv(fd, buf, len, 0);
-        return n < 0 ? -1 : long(n);
+        return std::unique_ptr<TcpConn>(new PosixConn(c));
     }
-    int status() const override { return code; }
-    std::string contentType() const override { return ctype; }
 };
 }  // namespace
 
-std::unique_ptr<HttpStream> HostHttp::openStream(const HttpRequest &req, std::string *error)
+std::unique_ptr<TcpConn> HostSockets::connect(const std::string &host, int port, int timeoutMs, std::string *err)
 {
-    auto fail = [&](const char *m) { if (error) *error = m; return std::unique_ptr<HttpStream>(); };
-    Url u = parseUrl(req.url);
-    if (!u.valid) return fail("URL invalida");
-    if (u.scheme != "http") return fail("https nao suportado no cliente de teste");
     addrinfo hints{}, *res = nullptr;
     hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(u.host.c_str(), std::to_string(u.port).c_str(), &hints, &res) != 0 || !res) return fail("DNS falhou");
-    std::unique_ptr<HostStream> st(new HostStream);
-    st->fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    timeval tv{req.timeoutMs / 1000, (req.timeoutMs % 1000) * 1000};
-    setsockopt(st->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-    bool ok = st->fd >= 0 && connect(st->fd, res->ai_addr, res->ai_addrlen) == 0;
-    freeaddrinfo(res);
-    if (!ok) return fail("conexao recusada");
-    std::string q = "GET " + u.path + (u.query.empty() ? "" : "?" + u.query) + " HTTP/1.1\r\nHost: " + u.host +
-                    "\r\nConnection: close\r\nUser-Agent: MoonlightHB/0.1\r\n";
-    for (const auto &h : req.headers) q += h.first + ": " + h.second + "\r\n";
-    q += "\r\n";
-    send(st->fd, q.data(), q.size(), 0);
-    std::string head;
-    char c[4096];
-    while (head.find("\r\n\r\n") == std::string::npos) {
-        ssize_t n = recv(st->fd, c, sizeof c, 0);
-        if (n <= 0) return fail("sem resposta");
-        head.append(c, size_t(n));
-        if (head.size() > 64 * 1024) return fail("cabecalho grande demais");
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0 || !res) {
+        if (err) *err = "DNS falhou";
+        return nullptr;
     }
-    size_t he = head.find("\r\n\r\n");
-    st->pending = head.substr(he + 4);
-    head.resize(he);
-    if (head.compare(0, 5, "HTTP/") != 0 && head.compare(0, 4, "ICY ") != 0) return fail("resposta invalida");
-    st->code = std::atoi(head.c_str() + head.find(' ') + 1);
-    std::string low = head;
-    for (auto &ch : low) ch = char(std::tolower(static_cast<unsigned char>(ch)));
-    size_t ct = low.find("content-type:");
-    if (ct != std::string::npos) st->ctype = head.substr(ct + 13, low.find("\r\n", ct) - ct - 13);
-    if (low.find("transfer-encoding: chunked") != std::string::npos) return fail("chunked nao suportado");
-    if (st->code < 200 || st->code >= 300) return fail("servidor respondeu erro");
-    return std::unique_ptr<HttpStream>(st.release());
+    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd >= 0) setTimeouts(fd, timeoutMs);
+    bool ok = fd >= 0 && ::connect(fd, res->ai_addr, res->ai_addrlen) == 0;
+    freeaddrinfo(res);
+    if (!ok) {
+        if (err) *err = std::string("conexao recusada (") + std::strerror(errno) + ")";
+        if (fd >= 0) close(fd);
+        return nullptr;
+    }
+    return std::unique_ptr<TcpConn>(new PosixConn(fd));
+}
+
+std::unique_ptr<TcpListener> HostSockets::listen(int port, std::string *err)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(uint16_t(port));
+    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (fd < 0 || bind(fd, reinterpret_cast<sockaddr *>(&a), sizeof a) != 0 || ::listen(fd, 8) != 0) {
+        if (err) *err = std::string("porta ocupada (") + std::strerror(errno) + ")";
+        if (fd >= 0) close(fd);
+        return nullptr;
+    }
+    return std::unique_ptr<TcpListener>(new PosixListener(fd));
+}
+
+std::string HostSockets::localAddress()
+{
+    ifaddrs *list = nullptr;
+    std::string out;
+    if (getifaddrs(&list) != 0) return out;
+    for (ifaddrs *i = list; i; i = i->ifa_next) {
+        if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET) continue;
+        char b[INET_ADDRSTRLEN] = "";
+        inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in *>(i->ifa_addr)->sin_addr, b, sizeof b);
+        if (std::strncmp(b, "127.", 4) != 0) { out = b; break; }
+    }
+    freeifaddrs(list);
+    return out.empty() ? "127.0.0.1" : out;
 }
 
 // ---------------------------------------------------------------- audio

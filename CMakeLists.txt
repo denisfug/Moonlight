@@ -7,10 +7,17 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.08")
+set(ML_VERSION "01.09")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
+
+# ---------------------------------------------------------------- Mbed TLS 3.6.4 (Apache-2.0): the app's own TLS
+file(GLOB ML_MBEDTLS_SOURCES ${CMAKE_SOURCE_DIR}/third_party/mbedtls/library/*.c)
+add_library(ml_mbedtls STATIC ${ML_MBEDTLS_SOURCES})
+target_include_directories(ml_mbedtls PUBLIC third_party/mbedtls/include src/net/mbedtls_cfg PRIVATE third_party/mbedtls/library)
+target_compile_definitions(ml_mbedtls PUBLIC "MBEDTLS_USER_CONFIG_FILE=\"ml_mbedtls_user_config.h\"")
+target_compile_options(ml_mbedtls PRIVATE -w)
 
 # ---------------------------------------------------------------- portable core (no platform code)
 add_library(ml_core STATIC
@@ -28,8 +35,12 @@ add_library(ml_core STATIC
     src/player/player.cpp
     src/player/mp3_core.c
     src/player/nv12.cpp
+    src/net/tls.cpp
+    src/net/web_client.cpp
+    src/net/range_reader.cpp
 )
 target_include_directories(ml_core PUBLIC src third_party)
+target_link_libraries(ml_core PUBLIC ml_mbedtls)
 target_compile_options(ml_core PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${ML_WARN}>")
 
 # ---------------------------------------------------------------- user interface (software renderer)
@@ -42,6 +53,7 @@ add_library(ml_ui STATIC
     src/ui/image_loader.cpp
     src/app/demo_data.cpp
     src/app/app.cpp
+    src/app/remote.cpp
     src/app/screens_home.cpp
     src/app/screens_media.cpp
     src/app/screens_music.cpp
@@ -79,6 +91,7 @@ else()
     find_package(Threads REQUIRED)
     add_library(ml_host STATIC src/platform/host/host_platform.cpp)
     target_link_libraries(ml_host PUBLIC ml_core Threads::Threads)
+    target_compile_definitions(ml_host PUBLIC ML_HOST_VERSION="${ML_VERSION}")
 
     # Headless app runner: renders screens to PNG with scripted DualShock input.
     add_executable(moonlight_host src/main.cpp)
@@ -86,7 +99,7 @@ else()
     target_compile_definitions(moonlight_host PRIVATE ML_PLATFORM_HOST ML_VERSION="${ML_VERSION}")
 
     add_executable(moonlight_tests
-        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_ui.cpp)
+        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_ui.cpp tests/test_net.cpp)
     target_include_directories(moonlight_tests PRIVATE tests)
     target_link_libraries(moonlight_tests PRIVATE ml_ui ml_host)
     enable_testing()

@@ -20,7 +20,8 @@ Centro multimídia homebrew para PS4 (GoldHEN), C++17, toolchain OpenOrbis. Leia
 ## Estrutura
 
 ```
-src/core        JSON, URL/política de rede, contrato HttpClient
+src/core        JSON, URL/política de rede, contratos HttpClient e Sockets
+src/net         HTTP/1.1 + TLS próprios (Mbed TLS 3.6.4 em third_party/mbedtls), RangeReader, raízes (ca_roots.inc)
 src/storage     JsonStore (escrita atômica)
 src/addons      protocolo Stremio (protocol.*) + SourceManager
 src/library     favoritos / histórico / progresso
@@ -29,7 +30,7 @@ src/live        parser M3U
 src/radio       diretório Radio Browser, estações, favoritas
 src/player      MediaPlayer, AudioPlayer (MP3), VideoPlayer (indisponível), mp3_core (C)
 src/ui          Canvas (software), Font (stb_truetype), widgets, teclado, InputMap, tema
-src/app         App (shell/navegação/overlays) + telas (screens_*.cpp) + demo_data
+src/app         App (shell/navegação/overlays) + telas (screens_*.cpp) + demo_data + remote (controle pelo celular)
 src/platform    platform.hpp | host/ (PC) | ps4/{video,controller,audio,filesystem,network} + ps4_platform
 tests/          testes (framework próprio em test.hpp) + fixtures (addon de demonstração, M3U, MP3 de teste)
 toolchain/      build-libcxx.sh, overlay/math.h
@@ -55,6 +56,6 @@ Ver tabela em README.md. libc++ é gerada em `toolchain/libcxx` (não versionada
 ## Implementado / pendente / limitações
 
 Fonte da verdade: `docs/ROADMAP.md`. Resumo: UI completa com dados de demonstração, música MP3 local,
-fontes Stremio (PC), biblioteca e M3U funcionam no PC. Pendentes: primeiro teste no PS4 (inclusive a internet via
-`sceHttp`/`sceSsl`, já implementada), rádio dentro do plugin, motor de vídeo (`docs/MEDIA_ENGINE.md`), imagens de pôster, requisições em thread.
+fontes Stremio (PC), biblioteca e M3U funcionam no PC. Pendentes: teste no PS4 do HTTP/TLS próprio (01.09; o TLS do sistema
+falhou com 0x8095F00C), rádio dentro do plugin, motor de vídeo (`docs/MEDIA_ENGINE.md`), imagens de pôster, requisições em thread.
 Limitação conhecida: o PS4 fecha o app quando um jogo abre, então a música do app não toca durante jogos.

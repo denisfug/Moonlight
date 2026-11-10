@@ -13,7 +13,9 @@ Resultados do console estão na tabela "Testes no console".
 | Arquivos via libkernel + Getdents | sim | sim (POSIX) | não | Mesmo código-base que funcionou no DevHub. |
 | GoldHEN `sys_sdk_jailbreak` (USB/`/data`) | sim (se `GOLDHEN_SDK`) | — | não | Chamado só depois de carregar as fontes de `/app0` (depois do jailbreak `/app0` fica inacessível — achado de testes anteriores). |
 | Threads (`scePthreadCreate`) | sim | std::thread | não | |
-| Rede HTTP/HTTPS (libSceNet/Ssl/Http) | sim | http local | não | Ordem de inicialização do exemplo oficial `net_http`, mas **sem** o callback do exemplo que aceita qualquer certificado. Se a inicialização falhar o app avisa e segue sem internet. Não sabemos ainda se continua funcionando depois do `sys_sdk_jailbreak`. |
+| Rede HTTP/HTTPS própria (sockets libSceNet + Mbed TLS 3.6.4) | sim | sim (servidores locais HTTP e TLS 1.2/1.3, certificados de teste) | não (01.09) | Substitui libSceHttp/libSceSsl, que no console recusaram todo HTTPS com `0x8095F00C`. Verificação de cadeia, datas e nome sempre ligada; 25 raízes Mozilla embutidas. Números de opções de socket e `sceRandomGetRandomNumber` tirados do shadPS4 (fatos de interface). |
+| Controle pelo celular (servidor na rede local, PIN) | sim | sim (teste de ponta a ponta no PC) | não (01.09) | Porta 8080 (ou seguinte), desligado por padrão; 5 PINs errados bloqueiam por 60 s. |
+| Vídeo pela internet via cliente próprio (callbacks de arquivo do AvPlayer + Range) | sim | leitura por Range testada no PC | não (01.09) | HLS (`.m3u8`) ainda vai pelo player do sistema. Formato continua limitado ao que o AvPlayer decodifica (MP4 H.264/AAC); MKV/HEVC provavelmente não. |
 | Rádios (Radio Browser + MP3 ao vivo) | sim | sim | não | Só estações MP3 (minimp3); AAC/HLS ficam de fora. Streams de rádio aceitam `http://` (só áudio é decodificado); a API do diretório exige HTTPS. Servidores SHOUTcast antigos respondem `ICY 200`; no PC aceitamos, no PS4 depende do sceHttp. |
 | Vídeo (libSceAvPlayer + NV12→ARGB por CPU) | sim | conversão NV12 testada (7,6 ms/quadro 1080p no PC) | não | Experimental. Declarações da ABI escritas a partir da documentação do emulador shadPS4 (só fatos de interface), tamanhos conferidos com `static_assert`. Memória de quadro em memória direta. O player mostra em que passo parou (△). |
 | SDL2 | não usado | — | — | Não disponível no toolchain construído do código-fonte. |
@@ -29,7 +31,8 @@ Resultados do console estão na tabela "Testes no console".
 | 01.05 | Pôsteres reais das fontes, importar fontes por arquivo no pendrive. Relato: importar "não abriu" (arquivo provavelmente com outro nome/extensão dupla). |
 | 01.06 | **Testado no PS4:** teclado do sistema (IME) abre normalmente; músicas de `/data/devhub/Music` aparecem. **Falha:** app indica "sem internet" com o console conectado; fontes não importam. |
 | 01.07 | **Testado no PS4:** a internet inicia ("Internet do PS4 iniciada"), mas todo HTTPS falha no envio com `0x8095F00C` (example.com e as 4 fontes do usuário). Causa provável: lista de certificados raiz desatualizada no firmware (mesmo erro relatado por outro homebrew). |
-| 01.08 | 25 raízes atuais (Mozilla) adicionadas com `sceHttpsLoadCert`, verificação continua ligada; reenvio só com as 14 RSA se o firmware recusar as ECC. "Testar internet" mostra carga dos certificados, data do console e HTTP comum × HTTPS. **Aguardando teste.** Se ainda falhar, o plano B é um TLS próprio (Mbed TLS), trabalho maior. |
+| 01.08 | 25 raízes atuais adicionadas com `sceHttpsLoadCert`. **Testado no PS4:** "25 certificados" carregados, data do console correta, HTTP comum responde (~700 bytes), mas **todo HTTPS continua falhando com `0x8095F00C`** (example.com, fontes, rádios, filmes). Conclusão: o TLS do sistema nesse firmware não serve. |
+| 01.09 | HTTP/TLS próprios (Mbed TLS sobre sockets do sistema), controle pelo celular, vídeo pela internet lido pelo cliente próprio. **Aguardando teste.** |
 
 ## Desempenho
 

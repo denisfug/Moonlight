@@ -16,7 +16,7 @@ bool Ps4Platform::init(std::string *err)
 {
     if (!video_.init(err)) return false;
     if (!pad_.init(err)) notify("Moonlight HB: " + *err + " (continuando)");
-    httpOk_ = http_.init(&netErr_);
+    httpOk_ = net_.init(&netErr_);
     if (!httpOk_) notify("Moonlight HB: internet indisponivel (" + netErr_ + ")");
     return true;
 }
@@ -42,7 +42,7 @@ bool Ps4Platform::retryNetwork()
 {
     if (httpOk_) return true;
     netErr_.clear();
-    httpOk_ = http_.init(&netErr_);
+    httpOk_ = net_.init(&netErr_);
     return httpOk_;
 }
 

@@ -13,6 +13,7 @@
 #include "platform/platform.hpp"
 #include "player/player.hpp"
 #include "radio/radio.hpp"
+#include "app/remote.hpp"
 #include "music/subsonic.hpp"
 #include "storage/store.hpp"
 #include "ui/canvas.hpp"
@@ -52,6 +53,7 @@ struct Settings {
     bool animations = true;
     bool showDemo = true;
     bool showRadio = false;   // Radios section is opt-in (Configuracoes)
+    bool remote = false;      // phone remote server (opt-in)
     int volume = 80;
 };
 
@@ -82,6 +84,7 @@ public:
     ui::Fonts fonts;
     ui::ImageLoader images;
     ui::Keyboard keyboard;
+    std::unique_ptr<RemoteControl> remote;
 
     // navigation
     void goSection(Section s, bool focusContent);
@@ -155,6 +158,8 @@ private:
 
     Screen &current();
     void handleInput(uint32_t pressed);
+    void serviceRemote();
+    std::string remoteState_;
     void draw(ui::Canvas &c);
     void drawSidebar(ui::Canvas &c);
     void drawModal(ui::Canvas &c);

@@ -73,9 +73,18 @@ TEST(radio_favorites_persist)
     CHECK(again.list()[0].playable());
 }
 
+namespace {
+class NoTlsHttp : public HttpClient {   // a client without TLS: the real directory is refused cleanly
+public:
+    HttpResponse get(const HttpRequest &) override { HttpResponse r; r.error = "sem rede"; return r; }
+    bool supportsHttps() const override { return false; }
+    std::string name() const override { return "sem-tls"; }
+};
+}  // namespace
+
 TEST(radio_directory_without_https)
 {
-    host::HostHttp http;   // host client has no TLS: the real directory is refused cleanly
+    NoTlsHttp http;
     RadioBrowser rb(&http);
     std::vector<Station> out;
     CHECK(!rb.search(Query{}, out).empty());
