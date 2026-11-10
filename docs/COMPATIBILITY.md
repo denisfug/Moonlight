@@ -19,6 +19,13 @@ Nada deste projeto foi testado no PS4 ainda.
 | SDL2 | não usado | — | — | Não disponível no toolchain construído do código-fonte. |
 | FreeType do sistema | não usado | — | — | stb_truetype no lugar. |
 
+## Testes no console
+
+| Versão | Resultado relatado |
+|---|---|
+| 01.02 | PKG instala e abre. A tela ficava presa na imagem de abertura (`pic1.png`); a interface só aparecia por um instante ao fechar o app. Causa provável: faltava `sceSystemServiceHideSplashScreen()`. Controle, áudio e rede: não deu para avaliar. |
+| 01.03 | Correção acima + redesenho forçado nos primeiros quadros. **Aguardando teste.** |
+
 ## Desempenho
 
 Quadro completo 1920x1080 por software: **7,2 ms no PC** (Xeon 2,3 GHz, 1 thread) depois do cache de arte

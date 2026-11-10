@@ -116,9 +116,8 @@ TEST(app_navigation_headless)
     CHECK(h.app.sidebarFocused());
     h.press(BtnDown);                       // sidebar: Musica
     CHECK(h.app.section() == Section::Music);
-    h.press(BtnDown);                       // Radios
-    CHECK(h.app.section() == Section::Radio);
-    h.press(BtnDown);
+    h.press(BtnDown);                       // Filmes (Radios is hidden by default)
+    CHECK(h.app.section() == Section::Movies);
     h.press(BtnDown);                       // Series
     CHECK(h.app.section() == Section::Series);
     h.press(BtnRight);                      // into content

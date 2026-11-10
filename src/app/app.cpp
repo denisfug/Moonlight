@@ -77,6 +77,7 @@ void App::loadSettings()
     Json j = store.load("settings.json");
     settings.animations = j["animations"].asBool(true);
     settings.showDemo = j["showDemo"].asBool(true);
+    settings.showRadio = j["showRadio"].asBool(false);
     settings.volume = int(j["volume"].asInt(80));
 }
 
@@ -85,6 +86,7 @@ void App::saveSettings()
     Json j = Json::object();
     j.set("animations", Json::boolean(settings.animations));
     j.set("showDemo", Json::boolean(settings.showDemo));
+    j.set("showRadio", Json::boolean(settings.showRadio));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);
 }
@@ -364,10 +366,8 @@ void App::handleInput(uint32_t p)
         return;
     }
     if (sidebarFocus_) {
-        int n = int(Section::Count);
-        if (p & BtnUp) sidebarSel_ = (sidebarSel_ + n - 1) % n;
-        if (p & BtnDown) sidebarSel_ = (sidebarSel_ + 1) % n;
-        if (p & (BtnUp | BtnDown)) goSection(Section(sidebarSel_), false);
+        if (p & BtnUp) goSection(step(Section(sidebarSel_), -1), false);
+        else if (p & BtnDown) goSection(step(Section(sidebarSel_), +1), false);
         if (p & (BtnRight | BtnCross)) { sidebarFocus_ = false; current().onEnter(); }
         return;
     }
@@ -379,10 +379,15 @@ void App::handleInput(uint32_t p)
     }
     if ((p & BtnLeft) && stack_.empty()) { focusSidebar(); return; }
     if (p & (BtnL2 | BtnR2)) {   // global section switch
-        int n = int(Section::Count);
-        int s = (int(section_) + ((p & BtnR2) ? 1 : n - 1)) % n;
-        goSection(Section(s), true);
+        goSection(step(section_, (p & BtnR2) ? 1 : -1), true);
     }
+}
+
+Section App::step(Section from, int dir) const
+{
+    int n = int(Section::Count), s = int(from);
+    do { s = (s + (dir > 0 ? 1 : n - 1)) % n; } while (!visible(Section(s)));
+    return Section(s);
 }
 
 // ---------------------------------------------------------------- drawing
@@ -407,6 +412,7 @@ void App::drawSidebar(Canvas &c)
     drawLogo(*this, c, 32, 44);
     int y = 170;
     for (const auto &it : kNav) {
+        if (!visible(it.s)) continue;
         bool cur = it.s == section_;
         bool foc = sidebarFocus_ && int(it.s) == sidebarSel_;
         Rect r{20, y, theme::SidebarW - 40, 64};

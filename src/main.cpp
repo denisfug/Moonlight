@@ -24,7 +24,10 @@ int main()
         platform.notify("Moonlight HB: " + err);
         for (;;) platform.sleepMs(1000);
     }
-    for (;;) {
+    for (unsigned n = 0;; n++) {
+        // Redraw the first frames unconditionally and then once a second, so both video buffers
+        // always hold a current image even if the system drops or reorders a flip.
+        if (n < 120 || n % 60 == 0) app.dirty();
         app.frame();
         if (!app.renderedLastFrame()) platform.sleepMs(16);   // present() already waits for vsync
     }

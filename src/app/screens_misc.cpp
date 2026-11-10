@@ -329,7 +329,7 @@ public:
 
     bool handle(uint32_t p) override
     {
-        const int n = 5;
+        const int n = 6;
         if (p & BtnUp) { if (sel_ > 0) sel_--; return true; }
         if (p & BtnDown) { if (sel_ + 1 < n) sel_++; return true; }
         if (p & BtnCross) {
@@ -349,7 +349,8 @@ public:
                 break;
             }
             case 3: configureServer(); break;
-            case 4:
+            case 4: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
+            case 5:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -373,9 +374,10 @@ public:
             {"Conteudo de demonstracao", "Mostra filmes, series, canais e playlists ficticios enquanto nao ha fontes reais.", app.settings.showDemo ? 1 : 0},
             {"Procurar musicas de novo", "Rele /data/moonlight/music e /mnt/usb0/Music.", -1},
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
+            {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
-        for (int i = 0; i < 5; i++, y += 120) {
+        for (int i = 0; i < 6; i++, y += 120) {
             Rect r{x, y, w, 104};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
             app.fonts.bold->draw(c, r.x + 30, r.y + 18, 27, items[i].title, theme::Text);

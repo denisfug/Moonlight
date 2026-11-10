@@ -1,5 +1,6 @@
 // VideoOut: two 1920x1080 linear A8R8G8B8 buffers in direct memory, flip on vsync.
 // Same sequence as the OpenOrbis graphics sample; the UI renders straight into the back buffer.
+#include <orbis/SystemService.h>
 #include <orbis/VideoOut.h>
 #include <orbis/libkernel.h>
 
@@ -54,6 +55,9 @@ void VideoOut::present()
         int n = 0;
         if (sceKernelWaitEqueue(*q, &ev, 1, &n, nullptr) != 0) break;
     }
+    // The system keeps the splash (sce_sys/pic1.png) on top of the app until this is called.
+    // Found on console (01.02): without it the UI was only visible for an instant while closing.
+    if (frame_ == 1) sceSystemServiceHideSplashScreen();
     frame_++;
     cur_ ^= 1;
 }

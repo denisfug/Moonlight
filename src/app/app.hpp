@@ -49,6 +49,7 @@ enum class Section { Home, Music, Radio, Movies, Series, Live, Library, Sources,
 struct Settings {
     bool animations = true;
     bool showDemo = true;
+    bool showRadio = false;   // Radios section is opt-in (Configuracoes)
     int volume = 80;
 };
 
@@ -82,6 +83,8 @@ public:
     // navigation
     void goSection(Section s, bool focusContent);
     Section section() const { return section_; }
+    bool visible(Section s) const { return s != Section::Radio || settings.showRadio; }
+    Section step(Section from, int dir) const;   // next/previous visible section
     void push(std::unique_ptr<Screen> s);
     void pop();
     bool sidebarFocused() const { return sidebarFocus_; }
