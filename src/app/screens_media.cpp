@@ -140,7 +140,7 @@ public:
             if (cy > area.bottom() || cy + kRowH < top - 30) continue;
             const auto &m = all_[shown_[i]];
             std::string sub = m.releaseInfo + (m.imdbRating.empty() ? "" : "  -  " + m.imdbRating);
-            drawPosterCard(app, c, {cx, cy, kCardW, kCardH}, m.id, m.name, sub, int(i) == sel_ && !app.sidebarFocused());
+            drawPosterCard(app, c, {cx, cy, kCardW, kCardH}, m.id, m.name, sub, int(i) == sel_ && !app.sidebarFocused(), -1, m.poster);
         }
         c.popClip();
     }
@@ -255,7 +255,8 @@ public:
         int x = area.x + theme::Margin;
         Rect poster{x, 70, 260, 390};
         c.shadow(poster.x, poster.y, poster.w, poster.h, 18, 30, rgba(0, 0, 0, 160));
-        drawGeneratedArt(c, app.fonts, poster, 18, meta_.id, meta_.name, true);
+        if (const Image *img = app.images.get(meta_.poster, poster.w, poster.h)) c.drawImage(*img, poster.x, poster.y, 18);
+        else drawGeneratedArt(c, app.fonts, poster, 18, meta_.id, meta_.name, true);
         int tx = x + 310;
         app.fonts.bold->draw(c, tx, 70, 60, app.fonts.bold->ellipsize(60, meta_.name, area.right() - tx - 60), theme::Text);
         std::string line;

@@ -42,7 +42,8 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | Servidor HTTP local de teste | sim | — |
 | Cliente HTTP/HTTPS do PS4 (sceHttp/sceSsl) | — | ver Fase 3b |
 | Requisições em segundo plano (thread) | não | não |
-| Imagens de pôster (stb_image + rede) | não | não |
+| Imagens de pôster (stb_image + rede, thread própria, cache limitado) | sim (servidor local) | pendente (01.05) |
+| Importar fontes de `moonlight-fontes.txt` no pendrive (R1 em Fontes) + atalhos de URL no teclado | sim | pendente (01.05) |
 
 ## Fase 3b — Internet no PS4 e Rádios (01.01)
 

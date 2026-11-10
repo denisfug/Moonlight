@@ -27,7 +27,7 @@ const NavItem kNav[] = {
 
 App::App(Platform &p)
     : platform(p), store(p.fs(), p.dataDir()), library(store), sources(store, p.http()), audio(p),
-      radio(p.http()), radioFavorites(store)
+      radio(p.http()), radioFavorites(store), images(p, p.http())
 {
 }
 
@@ -56,6 +56,7 @@ bool App::init(std::string *error)
     rescanMusic();
     loadChannels();
     audio.setVolume(settings.volume);
+    images.start();
 
     roots_.resize(size_t(Section::Count));
     roots_[size_t(Section::Home)] = makeHome(*this);
@@ -339,6 +340,8 @@ bool App::frame()
     int64_t pos = audio.getPosition() / 1000;
     if (pos != lastAudioPos_) { lastAudioPos_ = pos; dirty(); }
 
+    images.trim();
+    if (images.takeUpdated()) dirty();
     current().update(dt);
     if (fade_ > 0) { fade_ = std::max(0.0f, fade_ - dt * 6.0f); dirty(); }
     if (current().animating()) dirty();

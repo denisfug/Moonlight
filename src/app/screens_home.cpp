@@ -18,14 +18,15 @@ void drawSectionHeader(App &app, Canvas &c, Rect area, const std::string &title,
 }
 
 void drawPosterCard(App &app, Canvas &c, Rect r, const std::string &seed, const std::string &title,
-                    const std::string &subtitle, bool focused, double progress)
+                    const std::string &subtitle, bool focused, double progress, const std::string &posterUrl)
 {
     if (focused) {
         int g = 10;   // grow
         r = {r.x - g / 2, r.y - g, r.w + g, r.h + g};
         drawFocusRing(c, r, 18);
     }
-    drawGeneratedArt(c, app.fonts, r, 16, seed, title, true);
+    if (const Image *img = app.images.get(posterUrl, r.w, r.h)) c.drawImage(*img, r.x, r.y, 16);
+    else drawGeneratedArt(c, app.fonts, r, 16, seed, title, true);
     if (progress >= 0) drawProgress(c, r.x + 14, r.bottom() - 16, r.w - 28, 6, progress, theme::Blue, rgba(255, 255, 255, 50));
     if (!subtitle.empty()) {
         Font *f = app.fonts.regular;
@@ -38,7 +39,7 @@ namespace {
 enum class Shape { Poster, Landscape, Square };
 
 struct Card {
-    std::string id, type, title, subtitle, description, meta;
+    std::string id, type, title, subtitle, description, meta, poster;
     double progress = -1;
     size_t index = 0;   // playlist / channel index
 };
@@ -165,7 +166,7 @@ public:
                     if (cx > area.right() || cx + cs.w < area.x) continue;
                     const Card &cd = r.cards[k];
                     drawPosterCard(app, c, {cx, cy, cs.w, cs.h}, cd.id, cd.title, r.shape == Shape::Poster ? cd.meta : cd.subtitle,
-                                   rowFocus && int(k) == r.sel, cd.progress);
+                                   rowFocus && int(k) == r.sel, cd.progress, cd.poster);
                 }
                 c.popClip();
             }
@@ -191,6 +192,7 @@ private:
         for (const auto &m : metas) {
             Card cd{m.id, m.type, m.name};
             cd.description = m.description;
+            cd.poster = m.poster;
             cd.meta = m.releaseInfo;
             if (!m.genres.empty()) cd.meta += (cd.meta.empty() ? "" : "  -  ") + m.genres[0];
             if (!m.imdbRating.empty()) cd.meta += "  -  nota " + m.imdbRating;

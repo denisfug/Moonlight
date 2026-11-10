@@ -7,7 +7,7 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.04")
+set(ML_VERSION "01.05")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
@@ -39,6 +39,7 @@ add_library(ml_ui STATIC
     src/ui/input_map.cpp
     src/ui/widgets.cpp
     src/ui/stb_impl.c
+    src/ui/image_loader.cpp
     src/app/demo_data.cpp
     src/app/app.cpp
     src/app/screens_home.cpp

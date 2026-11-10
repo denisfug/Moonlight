@@ -202,6 +202,7 @@ public:
         const auto &src = app.sources.sources();
         int n = int(src.size());
         if (p & BtnOptions) { addSource(); return true; }
+        if (p & BtnR1) { importList(); return true; }
         if (p & BtnUp) { if (list_.sel > 0) list_.sel--; return true; }
         if (p & BtnDown) { if (list_.sel + 1 < n) list_.sel++; return true; }
         if (n == 0) { if (p & BtnCross) { addSource(); return true; } return false; }
@@ -299,12 +300,47 @@ public:
 
     Hints hints() const override
     {
-        if (app.sources.sources().empty()) return {{BtnCross, "Adicionar"}, {BtnOptions, "Adicionar"}};
-        return {{BtnCross, "Ativar/Desativar"}, {BtnTriangle, "Atualizar"}, {BtnSquare, "Remover"}, {BtnOptions, "Adicionar"}};
+        if (app.sources.sources().empty()) return {{BtnCross, "Digitar endereco"}, {BtnR1, "Importar lista do pendrive"}};
+        return {{BtnCross, "Ativar/Desativar"}, {BtnTriangle, "Atualizar"}, {BtnSquare, "Remover"}, {BtnOptions, "Adicionar"},
+                {BtnR1, "Importar lista"}};
     }
 
 private:
     ListScroll list_;
+
+    // Reads addresses (one per line) from moonlight-fontes.txt on a pendrive or in the data folder,
+    // so nobody has to type long URLs with the controller.
+    void importList()
+    {
+        std::vector<std::string> places;
+        for (int i = 0; i < 8; i++) places.push_back("/mnt/usb" + std::to_string(i) + "/moonlight-fontes.txt");
+        places.push_back(app.platform.dataDir() + "/fontes.txt");
+        std::string text, used;
+        for (const auto &p : places)
+            if (app.platform.fs().exists(p) && app.platform.fs().readFile(p, text, 256 * 1024)) { used = p; break; }
+        if (used.empty()) {
+            app.modal("Importar fontes", "Crie um arquivo moonlight-fontes.txt na raiz do pendrive com um endereco por linha "
+                                         "(terminando em /manifest.json), conecte no PS4 e aperte R1 de novo.");
+            return;
+        }
+        int added = 0, failed = 0;
+        std::string lastErr;
+        size_t pos = 0;
+        while (pos < text.size()) {
+            size_t nl = text.find('\n', pos);
+            std::string line = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+            pos = nl == std::string::npos ? text.size() : nl + 1;
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            while (!line.empty() && line.front() == ' ') line.erase(0, 1);
+            if (line.empty() || line[0] == '#') continue;
+            std::string e = app.sources.add(line, false, int64_t(app.now()));
+            if (e.empty()) added++;
+            else if (e.find("ja esta na lista") == std::string::npos) { failed++; lastErr = e; }
+        }
+        std::string msg = std::to_string(added) + " fonte(s) adicionada(s)";
+        if (failed) msg += ", " + std::to_string(failed) + " com erro (ultimo: " + lastErr + ")";
+        app.modal("Importar fontes", msg + ".");
+    }
 
     void addSource()
     {

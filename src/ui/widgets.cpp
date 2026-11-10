@@ -342,7 +342,10 @@ std::vector<std::vector<std::string>> Keyboard::rows() const
     r.push_back(split(upper_ ? "QWERTYUIOP" : "qwertyuiop"));
     r.push_back(split(upper_ ? "ASDFGHJKL-" : "asdfghjkl-"));
     r.push_back(split(upper_ ? "ZXCVBNM_.," : "zxcvbnm_.,"));
-    if (urlMode_) r.push_back(split(":/?&=%#@~+"));
+    if (urlMode_) {
+        r.push_back(split(":/?&=%#@~+"));
+        r.push_back({"https://", ".com", ".com.br", ".app", "/manifest.json"});
+    }
     r.push_back({"Maiusc", "Espaco", "Apagar", "OK"});
     return r;
 }

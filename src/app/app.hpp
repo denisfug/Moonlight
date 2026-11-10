@@ -17,6 +17,7 @@
 #include "storage/store.hpp"
 #include "ui/canvas.hpp"
 #include "ui/font.hpp"
+#include "ui/image_loader.hpp"
 #include "ui/input_map.hpp"
 #include "ui/widgets.hpp"
 
@@ -79,6 +80,7 @@ public:
     std::string serverStatus; // "" = not loaded yet
     Settings settings;
     ui::Fonts fonts;
+    ui::ImageLoader images;
     ui::Keyboard keyboard;
 
     // navigation
@@ -171,7 +173,7 @@ std::unique_ptr<Screen> makeSettings(App &);
 
 // shared drawing helpers (screens_home.cpp)
 void drawPosterCard(App &app, ui::Canvas &c, ui::Rect r, const std::string &seed, const std::string &title,
-                    const std::string &subtitle, bool focused, double progress = -1);
+                    const std::string &subtitle, bool focused, double progress = -1, const std::string &posterUrl = "");
 void drawSectionHeader(App &app, ui::Canvas &c, ui::Rect area, const std::string &title, const std::string &subtitle);
 
 }  // namespace ml

@@ -8,6 +8,8 @@
 #include "ui/font.hpp"
 #include "ui/input_map.hpp"
 #include "player/nv12.hpp"
+#include "ui/image_loader.hpp"
+#include <cstdlib>
 #include "test.hpp"
 
 using namespace ml;
@@ -227,4 +229,57 @@ TEST(nv12_to_argb)
     uint64_t t0 = plat.nowMs();
     for (int i = 0; i < 10; i++) nv12ToArgb(b, {fb.data(), 1920, 1080, 1920});
     std::printf("(%.1f ms/frame on host) ", double(plat.nowMs() - t0) / 10);
+}
+
+TEST(image_decode_cover)
+{
+    host::HostFileSystem fs("");
+    std::string png, jpg;
+    CHECK(fs.readFile(t::fixtures + "/radio/poster.png", png, 1 << 20));
+    CHECK(fs.readFile(t::fixtures + "/radio/poster.jpg", jpg, 1 << 20));
+    ui::Image a, b;
+    CHECK(ui::decodeImage(png, 100, 150, a));
+    CHECK(a.w == 100 && a.h == 150);
+    CHECK_EQ(a.px[10 * 100 + 50], 0xFFC81E1Eu);           // top half red
+    CHECK_EQ(a.px[140 * 100 + 50], 0xFF1E1EC8u);          // bottom half blue
+    CHECK(ui::decodeImage(jpg, 60, 60, b));                // square crop of a 2:3 image
+    uint32_t top = b.px[2 * 60 + 30];
+    CHECK(((top >> 16) & 0xFF) > 150);                    // still red-ish (JPEG is lossy)
+    ui::Image c;
+    CHECK(!ui::decodeImage("<html>not an image</html>", 10, 10, c));
+    CHECK(!ui::decodeImage(png, 0, 10, c));
+}
+
+TEST(sources_import_list_offline)
+{
+    std::string sb = t::scratch + "/appsb4";
+    host::HostFileSystem(sb).makeDirs("/mnt/usb0");
+    Harness h(sb);
+    std::string err;
+    CHECK(h.app.init(&err));
+    h.app.goSection(Section::Sources, true);
+    h.press(BtnR1);                                         // no file yet -> instructions
+    CHECK(h.app.modalOpen());
+    h.press(BtnCross);
+    h.plat.fs().writeFile("/mnt/usb0/moonlight-fontes.txt",
+                          "# comentario\r\nhttp://remote.example/manifest.json\r\n\r\nnao-e-url\n");
+    h.press(BtnR1);
+    CHECK(h.app.modalOpen());                               // 0 added, 2 with error
+    CHECK(h.app.sources.sources().empty());
+}
+
+TEST(image_loader_live_local_server)
+{
+    const char *base = std::getenv("ML_RADIO_URL");   // the radio fixture server also serves poster.png
+    if (!base) { std::printf("(skipped: ML_RADIO_URL not set) "); return; }
+    host::HostPlatform plat(t::scratch, "");
+    ui::ImageLoader loader(plat, plat.http());
+    loader.start();
+    std::string url = std::string(base) + "/poster.png";
+    const ui::Image *img = loader.get(url, 40, 60);
+    for (int i = 0; i < 300 && !img; i++) { plat.sleepMs(10); img = loader.get(url, 40, 60); }
+    CHECK(img != nullptr);
+    if (img) CHECK(img->w == 40 && img->h == 60);
+    CHECK(loader.takeUpdated());
+    CHECK(loader.get(std::string(base) + "/nao-existe.png", 40, 60) == nullptr);
 }
