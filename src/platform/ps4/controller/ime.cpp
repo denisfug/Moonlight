@@ -2,6 +2,7 @@
 // presenting while it is open. Note: Sony's wchar_t is 16-bit (UTF-16) while our toolchain's is 32-bit, so
 // the buffers are uint16_t and passed through casts.
 // Status: compiles; not yet validated on a console. The app falls back to its own keyboard on failure.
+#include <cstddef>  // size_t, needed before the OpenOrbis dialog headers
 #include <orbis/CommonDialog.h>
 #include <orbis/ImeDialog.h>
 #include <orbis/Sysmodule.h>
