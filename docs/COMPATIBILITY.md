@@ -1,7 +1,7 @@
 # Compatibilidade — o que foi verificado e onde
 
 Legenda: **PC** = testado no computador (Linux, testes automáticos). **PS4** = testado no console.
-Nada deste projeto foi testado no PS4 ainda.
+Resultados do console estão na tabela "Testes no console".
 
 | Componente | Compila PS4 | PC | PS4 | Observação |
 |---|---|---|---|---|
@@ -28,7 +28,8 @@ Nada deste projeto foi testado no PS4 ainda.
 | 01.04 | Player de vídeo experimental (libSceAvPlayer). **Aguardando teste.** |
 | 01.05 | Pôsteres reais das fontes, importar fontes por arquivo no pendrive. Relato: importar "não abriu" (arquivo provavelmente com outro nome/extensão dupla). |
 | 01.06 | **Testado no PS4:** teclado do sistema (IME) abre normalmente; músicas de `/data/devhub/Music` aparecem. **Falha:** app indica "sem internet" com o console conectado; fontes não importam. |
-| 01.07 | Internet: mesmos tamanhos de pool do exemplo oficial, nova tentativa automática a cada requisição, erro exato por passo e "Testar internet" em Configurações. **Aguardando teste.** |
+| 01.07 | **Testado no PS4:** a internet inicia ("Internet do PS4 iniciada"), mas todo HTTPS falha no envio com `0x8095F00C` (example.com e as 4 fontes do usuário). Causa provável: lista de certificados raiz desatualizada no firmware (mesmo erro relatado por outro homebrew). |
+| 01.08 | 25 raízes atuais (Mozilla) adicionadas com `sceHttpsLoadCert`, verificação continua ligada; reenvio só com as 14 RSA se o firmware recusar as ECC. "Testar internet" mostra carga dos certificados, data do console e HTTP comum × HTTPS. **Aguardando teste.** Se ainda falhar, o plano B é um TLS próprio (Mbed TLS), trabalho maior. |
 
 ## Desempenho
 

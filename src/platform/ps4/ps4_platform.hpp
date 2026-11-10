@@ -49,9 +49,11 @@ public:
     std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error) override;
     bool supportsHttps() const override { return true; }
     std::string name() const override { return "ps4-sceHttp"; }
+    const std::string &certInfo() const { return certInfo_; }
 
 private:
     int ctx_ = -1, netPool_ = -1, ssl_ = -1;
+    std::string certInfo_;
 };
 
 class Ps4Platform : public Platform {
@@ -65,6 +67,7 @@ public:
     HttpClient *http() override { return &http_; }   // always the same object; requests fail cleanly until init works
     std::string networkStatus() const override { return httpOk_ ? "" : netErr_; }
     bool retryNetwork() override;
+    std::string networkInfo() const override { return http_.certInfo(); }
     std::string dataDir() const override { return "/data/moonlight"; }
     std::string assetDir() const override { return "/app0/assets"; }
     std::vector<std::string> musicDirs() const override;

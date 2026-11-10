@@ -106,6 +106,7 @@ public:
     // Human-readable state of the network stack ("" = OK) and a way to try initialising it again.
     virtual std::string networkStatus() const { return ""; }
     virtual bool retryNetwork() { return http() != nullptr; }
+    virtual std::string networkInfo() const { return ""; }   // extra detail for "Testar internet"
     virtual std::string dataDir() const = 0;      // persistent app data (JSON files)
     virtual std::string assetDir() const = 0;     // packaged read-only assets
     virtual std::vector<std::string> musicDirs() const = 0;

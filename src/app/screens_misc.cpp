@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <ctime>
 
 #include "app/app.hpp"
 #include "app/demo_data.hpp"
@@ -459,15 +460,30 @@ private:
     {
         bool up = app.platform.retryNetwork();
         std::string report = up ? "Internet do PS4 iniciada.\n" : "A internet do PS4 nao iniciou: " + app.platform.networkStatus() + "\n";
+        std::string ci = app.platform.networkInfo();
+        if (!ci.empty()) report += "Certificados: " + ci + ".\n";
+        // A wrong console date also makes every certificate look invalid.
+        std::time_t now = std::time(nullptr);
+        char date[32] = "?";
+        if (std::tm *t = std::gmtime(&now)) std::strftime(date, sizeof date, "%d/%m/%Y %H:%M UTC", t);
+        report += std::string("Data do console: ") + date + " (se estiver errada, os sites seguros falham).\n";
         HttpClient *h = app.platform.http();
         if (h && up) {
-            HttpRequest req;
-            req.url = "https://example.com/";
-            req.timeoutMs = 10000;
-            req.maxBytes = 256 * 1024;
-            HttpResponse r = h->get(req);
-            if (!r.error.empty()) report += "Site seguro (HTTPS): falhou - " + r.error;
-            else report += "Site seguro (HTTPS): respondeu " + std::to_string(r.status) + " com " + std::to_string(r.body.size()) + " bytes. Tudo certo.";
+            auto probe = [&](const char *label, const char *url) {
+                HttpRequest req;
+                req.url = url;
+                req.timeoutMs = 10000;
+                req.maxBytes = 256 * 1024;
+                HttpResponse r = h->get(req);
+                if (!r.error.empty()) report += std::string(label) + ": falhou - " + r.error + "\n";
+                else report += std::string(label) + ": respondeu " + std::to_string(r.status) + " (" + std::to_string(r.body.size()) + " bytes).\n";
+                return r.error.empty();
+            };
+            bool plain = probe("Site comum (HTTP)", "http://example.com/");
+            bool secure = probe("Site seguro (HTTPS)", "https://example.com/");
+            if (secure) report += "Tudo certo.";
+            else if (plain) report += "A rede funciona; o problema e so a verificacao de certificado (HTTPS).";
+            else report += "Nem o site comum abriu: verifique a conexao do console.";
         }
         app.modal("Testar internet", report);
     }

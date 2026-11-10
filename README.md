@@ -5,7 +5,7 @@ numa interface própria para TV, navegável só pelo DualShock 4. Fontes de cont
 [protocolo de add-ons do Stremio](https://stremio.github.io/stremio-addon-sdk/protocol.html) e devem ser
 **serviços e servidores que você está autorizado a usar**. Não há contorno de DRM nem motor P2P.
 
-> Estado: **versão 01.07 de desenvolvimento.** A interface foi validada no PS4 (01.03); player de vídeo experimental. Compila e gera PKG; testado no PC; **ainda não testado no PS4.**
+> Estado: **versão 01.08 de desenvolvimento.** A interface foi validada no PS4 (01.03); player de vídeo experimental. Compila e gera PKG; testado no PC; **ainda não testado no PS4.**
 > Vídeo ainda não reproduz. A internet no console (rádios, fontes) foi implementada mas não testada. Detalhes em [`docs/ROADMAP.md`](docs/ROADMAP.md)
 > e [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
@@ -58,6 +58,7 @@ Guia completo: [`docs/BUILD_GUIDE.md`](docs/BUILD_GUIDE.md). Arquitetura: [`docs
 | Fonte Outfit | SIL OFL 1.1 (`assets/fonts/OFL.txt`) | tipografia |
 | LLVM libc++/libc++abi 18 | Apache-2.0 com exceção LLVM | biblioteca C++ (linkada no binário PS4) |
 | OpenOrbis PS4 Toolchain | GPL-3.0 (ferramentas) | compilação/empacotamento |
+| Certificados raiz (Mozilla, via ca-certificates) | MPL-2.0 | `ca_roots.inc`, HTTPS no PS4 |
 | GoldHEN Plugins SDK | MIT | `sys_sdk_jailbreak` (acesso a USB/`/data`) |
 
 Nenhum código do Stremio, pPlay, Convx ou SimpMusic foi copiado. A licença do próprio Moonlight HB ainda
