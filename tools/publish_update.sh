@@ -11,6 +11,15 @@ NOTES="${1:-Moonlight HB $VER}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 cp "$PKG" "$WORK/"
+# Known-good test video for Configuracoes > Testar internet > Testar video (H.264 High + AAC 48 kHz,
+# moov at the start), generated locally: 20 s of a test pattern and a 440 Hz tone.
+VID="$ROOT/out/moonlight_teste.mp4"
+if [ ! -f "$VID" ]; then
+    ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=1280x720:rate=30:duration=20" \
+        -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=20" -c:v libx264 -profile:v high -level 4.0 \
+        -pix_fmt yuv420p -preset veryfast -b:v 1500k -c:a aac -b:a 128k -ar 48000 -ac 2 -movflags +faststart "$VID"
+fi
+cp "$VID" "$WORK/"
 SIZE=$(stat -c %s "$PKG")
 SHA=$(sha256sum "$PKG" | cut -d' ' -f1)
 python3 - "$WORK/update.json" "$VER" "$(basename "$PKG")" "$SIZE" "$SHA" "$NOTES" <<'PY'

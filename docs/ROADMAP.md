@@ -52,7 +52,7 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 
 | Item | Compila PS4 | PC | PS4 |
 |---|---|---|---|
-| Cliente HTTP/HTTPS do PS4 | sim | sim (TLS local) | **01.07/01.08: TLS do sistema falha (0x8095F00C) mesmo com raízes novas. 01.09: HTTP/TLS próprios (Mbed TLS), aguardando teste** |
+| Cliente HTTP/HTTPS do PS4 | sim | sim (TLS local) | **PS4 01.13: funciona (HTTP/TLS próprios, Mbed TLS, 163 raízes)** |
 | Controle pelo celular (página web na rede local, PIN) | sim | sim | **01.09, aguardando teste** |
 | Vídeo HTTPS via cliente próprio (Range) | sim | Range testado | **01.09, aguardando teste** |
 | Catálogo em fileiras (catálogo/serviço e gênero), carga em segundo plano | sim | sim (servidor local) | **01.10, aguardando teste** |

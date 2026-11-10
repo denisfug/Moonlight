@@ -386,7 +386,12 @@ private:
 // the phone page signs in by itself. The fragment never leaves the phone's browser.
 class RemoteQrScreen : public Screen {
 public:
-    explicit RemoteQrScreen(App &a) : Screen(a) { build(); }
+    explicit RemoteQrScreen(App &a) : Screen(a)
+    {
+        build();
+        app.remote->selfTest();
+    }
+    bool animating() const override { return true; }   // live counters
     std::string title() const override { return "Controle pelo celular"; }
 
     void build()
@@ -444,7 +449,15 @@ public:
         ty += 60;
         app.fonts.bold->draw(c, tx, ty, 34, "PIN  " + app.remote->pin(), theme::Glow);
         ty += 90;
-        line(22, "O PIN muda cada vez que o app abre. So funciona na sua rede de casa.", theme::TextMute, 36);
+        line(22, "O PIN muda cada vez que o app abre. So funciona na sua rede de casa.", theme::TextMute, 56);
+        // Diagnostics: if the self-test fails the console side is the problem; if it passes but the
+        // phone never connects (counter stays 0), it is the network between them (other Wi-Fi, mobile
+        // data, router isolating devices).
+        std::string st = app.remote->selfTestResult();
+        line(24, "Teste dentro do PS4: " + (st.empty() ? std::string("testando...") : st), st == "ok" ? theme::Good : st.empty() ? theme::TextDim : theme::Warn, 40);
+        line(24, "Conexoes recebidas: " + std::to_string(app.remote->accepted()), theme::TextDim, 40);
+        if (app.remote->address().find('<') != std::string::npos)
+            line(24, "O PS4 nao informou o IP: veja em Configuracoes do PS4 > Rede > Ver status da conexao.", theme::Warn, 40);
     }
 
     Hints hints() const override { return {{BtnCircle, "Voltar"}, {BtnSquare, "Desligar"}}; }
@@ -541,6 +554,7 @@ private:
     std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_;
     std::string testHeader_, testResult_;
     std::atomic<bool> testBusy_{false}, testDone_{false};
+    bool testOk_ = false;
 
     std::string describeUpdate()
     {
@@ -638,9 +652,10 @@ private:
         report += roots > 0 ? "Seguranca propria (Mbed TLS): " + std::to_string(roots) + " certificados raiz.\n"
                             : "Seguranca propria nao iniciou: " + te + "\n";
         bool secure = probe("Site seguro (HTTPS)", "https://example.com/");
-        if (secure) report += "Tudo certo.";
+        if (secure) report += "Tudo certo.\nQuer testar o video pela internet? (MP4 de teste do proprio Moonlight, 20 s)";
         else if (plain) report += "A rede funciona; o site seguro falhou no passo mostrado acima.";
         else report += "Nem o site comum abriu: verifique a conexao do console.";
+        testOk_ = secure;
         testResult_ = report;   // published by testDone_ (release), read by the UI thread after it
         testDone_.store(true, std::memory_order_release);
     }
@@ -649,7 +664,17 @@ private:
     {
         if (testBusy_.load() && testDone_.load(std::memory_order_acquire)) {
             testBusy_ = false;
-            app.modal("Testar internet", testHeader_ + testResult_);
+            if (testOk_) {
+                App *a = &app;
+                app.modal("Testar internet", testHeader_ + testResult_, {"OK", "Testar video"}, [a](int choice) {
+                    // Known-good H.264/AAC MP4 published next to the updates (tools/publish_update.sh).
+                    if (choice == 1)
+                        a->playVideo("https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4",
+                                     "Video de teste do Moonlight");
+                });
+            } else {
+                app.modal("Testar internet", testHeader_ + testResult_);
+            }
         }
     }
     bool animating() const override { return testBusy_.load(); }

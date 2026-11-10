@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "net/range_reader.hpp"
+#include "player/sniff.hpp"
 #include "platform/ps4/ps4_platform.hpp"
 #include "platform/ps4/video/avplayer_api.h"
 #include "player/nv12.hpp"
@@ -103,15 +104,31 @@ public:
                 if (error) *error = "nao abriu o video pela internet: " + e;
                 return false;
             }
+            // Look at the first bytes: formats the system player cannot open get a clear message.
+            uint8_t head[256] = {0};
+            long hn = reader_->readAt(0, head, sizeof head);
+            fmt_ = hn > 0 ? sniffContainer(head, size_t(hn)) : "";
+            std::string problem = containerProblem(fmt_);
+            if (!problem.empty()) {
+                reader_.reset();
+                log(problem);
+                if (error) *error = problem;
+                return false;
+            }
             init.file = {this, &AvEngine::fOpen, &AvEngine::fClose, &AvEngine::fRead, &AvEngine::fSize};
-            source = "/ml_stream/video" + extensionOf(location);
+            source = "/ml_stream/video" + (fmt_ == "mp4" ? std::string(".mp4") : extensionOf(location));
+            log("formato " + (fmt_.empty() ? std::string("desconhecido") : fmt_) + ", " +
+                std::to_string(reader_->size() / (1024 * 1024)) + " MB, abrindo no player do PS4");
         }
         h_ = sceAvPlayerInit(&init);
         if (!h_) { reader_.reset(); log("sceAvPlayerInit falhou"); if (error) *error = "sceAvPlayerInit falhou"; return false; }
         int r = sceAvPlayerAddSource(h_, source.c_str());
         if (r < 0) {
-            log("AddSource " + hex(r));
-            if (error) *error = "o player do sistema recusou o arquivo (" + hex(r) + ")";
+            log("AddSource " + hex(r) + (unsigned(r) == 0x806A0002u ? " (o player do PS4 recusou o arquivo" +
+                                             (fmt_.empty() ? std::string(")") : ", formato " + fmt_ + ")") : ""));
+            if (error)
+                *error = "o player do PS4 recusou o arquivo (" + hex(r) + (fmt_.empty() ? std::string("") : ", formato " + fmt_) +
+                         ")" + (fmt_ == "mp4" ? ". O MP4 pode usar um codec que o PS4 nao decodifica (ex. HEVC/x265)." : "");
             sceAvPlayerClose(h_);
             h_ = nullptr;
             reader_.reset();
@@ -200,6 +217,7 @@ private:
     int64_t duration_ = 0;
     std::string status_;
     std::unique_ptr<RangeReader> reader_;
+    std::string fmt_;
 
     static std::string extensionOf(const std::string &url)
     {

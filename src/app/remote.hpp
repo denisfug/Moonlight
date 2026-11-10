@@ -33,6 +33,12 @@ public:
     uint64_t lastSeenMs() const { return lastSeen_.load(); }   // last authorised request (platform clock)
 
     std::vector<Command> take();   // UI thread
+
+    // Diagnostics for the QR screen: connections accepted so far, and a request the console makes to
+    // its own server through its LAN address (if that fails, the problem is on the console side).
+    int accepted() const { return accepted_.load(); }
+    void selfTest();
+    std::string selfTestResult();   // "" while running
     // UI thread: what the phone page shows (screen name, and the text field the TV is waiting for).
     void setState(const std::string &screen, bool prompt, const std::string &title, const std::string &initial, bool url);
 
@@ -41,6 +47,7 @@ public:
 
 private:
     static void threadMain(void *self);
+    static void selfTestMain(void *self);
     void loop();
     void lock() { while (lock_.test_and_set(std::memory_order_acquire)) {} }
     void unlock() { lock_.clear(std::memory_order_release); }
@@ -49,6 +56,9 @@ private:
     std::unique_ptr<TcpListener> listener_;
     std::atomic<bool> running_{false}, quit_{false};
     std::atomic<uint64_t> lastSeen_{0};
+    std::atomic<int> accepted_{0};
+    std::atomic<bool> testing_{false};
+    std::string testResult_;
     std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
     std::vector<Command> queue_;
     std::string state_ = "{}";

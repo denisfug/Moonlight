@@ -151,6 +151,50 @@ bool RemoteControl::start(std::string *err)
     return true;
 }
 
+void RemoteControl::selfTest()
+{
+    if (!running_ || testing_.exchange(true)) return;
+    lock();
+    testResult_.clear();
+    unlock();
+    if (!platform_.startThread(&RemoteControl::selfTestMain, this, "ml_remote_test")) {
+        lock();
+        testResult_ = "nao iniciou";
+        unlock();
+        testing_ = false;
+    }
+}
+
+void RemoteControl::selfTestMain(void *self)
+{
+    auto *rc = static_cast<RemoteControl *>(self);
+    std::string out;
+    HttpClient *h = rc->platform_.http();
+    if (!h) {
+        out = "sem rede";
+    } else {
+        HttpRequest q;
+        q.url = rc->address_ + "/";
+        q.timeoutMs = 5000;
+        HttpResponse r = h->get(q);
+        if (!r.error.empty()) out = "falhou: " + r.error;
+        else if (r.status != 200) out = "respondeu HTTP " + std::to_string(r.status);
+        else out = "ok";
+    }
+    rc->lock();
+    rc->testResult_ = out;
+    rc->unlock();
+    rc->testing_ = false;
+}
+
+std::string RemoteControl::selfTestResult()
+{
+    lock();
+    std::string r = testResult_;
+    unlock();
+    return r;
+}
+
 void RemoteControl::stop()
 {
     if (!running_) return;
@@ -167,6 +211,7 @@ void RemoteControl::loop()
         std::string peer;
         std::unique_ptr<TcpConn> c = listener_->accept(250, &peer);
         if (!c) continue;
+        accepted_++;
         std::string req;
         char buf[4096];
         size_t need = std::string::npos;   // total bytes once the header is parsed

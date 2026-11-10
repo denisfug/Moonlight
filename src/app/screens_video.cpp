@@ -135,12 +135,12 @@ public:
     std::string title() const override { return title_; }
     bool fullscreen() const override { return true; }
 
+    // Opening reads from the network (and the system player reads while adding the source), so it
+    // happens after the "Abrindo..." frame is on screen instead of freezing on the previous screen.
     void onEnter() override
     {
         if (started_) return;
         started_ = true;
-        std::string err;
-        if (!engine_->open(location_, &err)) error_ = err;
         overlayUntil_ = app.now() + 4000;
     }
 
@@ -163,6 +163,14 @@ public:
 
     void update(float) override
     {
+        if (!opened_) {
+            if (drawn_ < 2) return;   // let "Abrindo o video..." reach the screen first
+            opened_ = true;
+            std::string err;
+            if (!engine_->open(location_, &err)) error_ = err;
+            overlayUntil_ = app.now() + 4000;
+            return;
+        }
         if (error_.empty() && engine_->updateFrame(frame_.fb())) newFrame_ = true;
     }
     bool animating() const override { return true; }   // keep polling for decoded frames
@@ -171,13 +179,19 @@ public:
     {
         c.drawImage(frame_, 0, 0);
         newFrame_ = false;
+        if (!opened_) {
+            drawn_++;
+            app.fonts.bold->draw(c, 80, 50, 40, app.fonts.bold->ellipsize(40, title_, theme::W - 160), theme::Text);
+            app.fonts.regular->draw(c, 200, theme::H / 2 - 20, 30, "Abrindo o video... (pode levar alguns segundos)", theme::TextDim);
+            return;
+        }
         bool overlay = !error_.empty() || details_ || engine_->paused() || app.now() < overlayUntil_;
         if (!overlay) return;
         c.fillGradient(0, theme::H - 220, theme::W, 220, 0, rgba(0, 0, 0, 0), rgba(0, 0, 0, 200), 1);
         c.fillGradient(0, 0, theme::W, 160, 0, rgba(0, 0, 0, 190), rgba(0, 0, 0, 0), 1);
         app.fonts.bold->draw(c, 80, 50, 40, app.fonts.bold->ellipsize(40, title_, theme::W - 160), theme::Text);
         if (!error_.empty()) {
-            auto lines = app.fonts.regular->wrap(28, "Nao foi possivel tocar: " + error_, theme::W - 400, 4);
+            auto lines = app.fonts.regular->wrap(28, "Nao foi possivel tocar: " + error_, theme::W - 400, 5);
             int y = theme::H / 2 - 40;
             for (const auto &l : lines) { app.fonts.regular->draw(c, 200, y, 28, l, theme::Warn); y += 40; }
             app.fonts.regular->draw(c, 200, y + 20, 22, "O para voltar", theme::TextDim);
@@ -199,7 +213,8 @@ private:
     std::unique_ptr<VideoEngine> engine_;
     std::string location_, title_, error_;
     Image frame_;
-    bool started_ = false, newFrame_ = false, details_ = false;
+    bool started_ = false, newFrame_ = false, details_ = false, opened_ = false;
+    int drawn_ = 0;
     uint64_t overlayUntil_ = 0;
 };
 

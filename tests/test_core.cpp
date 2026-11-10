@@ -161,3 +161,18 @@ TEST(store_survives_corrupt_file)
     CHECK(!warn.empty());
     CHECK(fs.exists("/bad/library.json.corrupt"));
 }
+
+#include "player/sniff.hpp"
+TEST(sniff_media_containers)
+{
+    const uint8_t mp4[] = {0, 0, 0, 0x20, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+    const uint8_t mkv[] = {0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42};
+    const uint8_t html[] = "  <!DOCTYPE html>";
+    const uint8_t hls[] = "#EXTM3U\n#EXT-X-VERSION:3";
+    CHECK_EQ(sniffContainer(mp4, sizeof mp4), std::string("mp4"));
+    CHECK_EQ(sniffContainer(mkv, sizeof mkv), std::string("mkv"));
+    CHECK_EQ(sniffContainer(html, sizeof html - 1), std::string("html"));
+    CHECK_EQ(sniffContainer(hls, sizeof hls - 1), std::string("hls"));
+    CHECK(!containerProblem("mkv").empty());
+    CHECK(containerProblem("mp4").empty());
+}
