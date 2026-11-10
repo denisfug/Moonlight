@@ -114,6 +114,10 @@ public:
     // Called once packaged assets (fonts) are in memory. PS4: leaves the sandbox here (afterwards the
     // package mount /app0 is no longer reachable). Default: nothing.
     virtual void afterAssetsLoaded() {}
+    // System on-screen keyboard (PS4: IME dialog). start returns false when unavailable (the app then
+    // uses its own keyboard). poll: 0 = still open, 1 = confirmed (text in *out), -1 = cancelled/failed.
+    virtual bool startTextInput(const std::string &title, const std::string &initial, bool url) { return false; }
+    virtual int pollTextInput(std::string *out) { return -1; }
     // nullptr = no video engine on this platform (the PC test build).
     virtual std::unique_ptr<VideoEngine> makeVideoEngine() { return nullptr; }
     virtual std::vector<std::string> videoDirs() const { return {}; }

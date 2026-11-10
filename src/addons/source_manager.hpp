@@ -59,6 +59,7 @@ private:
     JsonStore &store_;
     HttpClient *http_;
     std::vector<Source> sources_;
+    std::vector<std::pair<std::string, std::vector<addon::MetaPreview>>> catalogCache_;   // url -> metas
 
     std::string getJson(const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes);
     std::string fetchManifest(const std::string &url, const UrlPolicy &pol, addon::Manifest &m);

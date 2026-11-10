@@ -19,6 +19,7 @@ bool decodeImage(const std::string &bytes, int w, int h, Image &out);
 class ImageLoader {
 public:
     ImageLoader(Platform &p, HttpClient *http) : platform_(p), http_(http) {}
+    ~ImageLoader();   // stops the worker thread before the loader goes away
     void start();   // launches the worker thread (once)
     // Returns the image when ready; otherwise queues it (once) and returns nullptr.
     const Image *get(const std::string &url, int w, int h);
@@ -38,7 +39,7 @@ private:
     Platform &platform_;
     HttpClient *http_;
     std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
-    std::atomic<bool> updated_{false}, started_{false};
+    std::atomic<bool> updated_{false}, started_{false}, quit_{false}, running_{false};
     std::deque<Job> queue_;
     std::unordered_map<std::string, Image> done_;
     std::unordered_map<std::string, bool> failed_, queued_;

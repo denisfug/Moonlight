@@ -33,7 +33,8 @@ void Ps4Platform::afterAssetsLoaded()
 
 std::vector<std::string> Ps4Platform::musicDirs() const
 {
-    std::vector<std::string> d{"/data/moonlight/music"};
+    // /data/devhub/Music: songs already copied by the earlier Musica app, so they show up right away
+    std::vector<std::string> d{"/data/moonlight/music", "/data/devhub/Music", "/data/music", "/data/Music"};
     for (int i = 0; i < 8; i++) d.push_back("/mnt/usb" + std::to_string(i) + "/Music");
     return d;
 }

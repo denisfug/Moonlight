@@ -5,7 +5,7 @@ numa interface própria para TV, navegável só pelo DualShock 4. Fontes de cont
 [protocolo de add-ons do Stremio](https://stremio.github.io/stremio-addon-sdk/protocol.html) e devem ser
 **serviços e servidores que você está autorizado a usar**. Não há contorno de DRM nem motor P2P.
 
-> Estado: **versão 01.05 de desenvolvimento.** A interface foi validada no PS4 (01.03); player de vídeo experimental. Compila e gera PKG; testado no PC; **ainda não testado no PS4.**
+> Estado: **versão 01.06 de desenvolvimento.** A interface foi validada no PS4 (01.03); player de vídeo experimental. Compila e gera PKG; testado no PC; **ainda não testado no PS4.**
 > Vídeo ainda não reproduz. A internet no console (rádios, fontes) foi implementada mas não testada. Detalhes em [`docs/ROADMAP.md`](docs/ROADMAP.md)
 > e [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 

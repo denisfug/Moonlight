@@ -101,6 +101,9 @@ public:
                       std::function<void(const std::string &)> onDone);
     void dirty() { dirty_ = true; }
     bool modalOpen() const { return modal_.open; }
+    // Demo movies/series only while there is no active source of the user's.
+    bool videoDemo() const;
+    int sourcesVersion = 0;   // bumped when sources change, screens reload their catalogs
 
     // music helpers shared by screens
     void playTracks(const std::vector<size_t> &tracks, size_t start);
@@ -146,6 +149,7 @@ private:
         std::function<void(int)> cb;
     } modal_;
     std::function<void(const std::string &)> kbDone_;
+    bool systemKeyboard_ = false;   // PS4 system keyboard open: keep presenting frames, poll for the result
     PlayState lastAudioState_ = PlayState::Idle;
     int64_t lastAudioPos_ = -1;
 

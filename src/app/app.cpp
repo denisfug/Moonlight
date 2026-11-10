@@ -173,8 +173,9 @@ void App::modal(const std::string &title, const std::string &body, std::vector<s
 void App::openKeyboard(const std::string &title, const std::string &initial, bool url,
                        std::function<void(const std::string &)> onDone)
 {
-    keyboard.open(title, initial, url);
     kbDone_ = std::move(onDone);
+    if (platform.startTextInput(title, initial, url)) { systemKeyboard_ = true; dirty(); return; }
+    keyboard.open(title, initial, url);
     dirty();
 }
 
@@ -322,7 +323,20 @@ bool App::frame()
     last_ = now_;
     animT_ += dt;
 
-    uint32_t pressed = input_.update(platform.input().read(), now_);
+    if (systemKeyboard_) {   // the system dialog owns the controller until it closes
+        std::string text;
+        int r = platform.pollTextInput(&text);
+        if (r != 0) {
+            systemKeyboard_ = false;
+            if (r == 1 && kbDone_) { auto cb = kbDone_; kbDone_ = nullptr; cb(text); }
+            else kbDone_ = nullptr;
+        }
+        dirty();
+    }
+    // the on-screen keyboard repeats faster than the rest of the UI
+    input_.repeatDelayMs = keyboard.active() ? 220 : 380;
+    input_.repeatRateMs = keyboard.active() ? 45 : 85;
+    uint32_t pressed = systemKeyboard_ ? 0 : input_.update(platform.input().read(), now_);
     if (pressed) { handleInput(pressed); dirty(); }
 
     // music: auto-advance at end of track, redraw while the position changes
@@ -393,6 +407,13 @@ void App::handleInput(uint32_t p)
     if (p & (BtnL2 | BtnR2)) {   // global section switch
         goSection(step(section_, (p & BtnR2) ? 1 : -1), true);
     }
+}
+
+bool App::videoDemo() const
+{
+    if (!settings.showDemo) return false;
+    for (const auto &s : sources.sources()) if (s.enabled) return false;
+    return true;
 }
 
 Section App::step(Section from, int dir) const

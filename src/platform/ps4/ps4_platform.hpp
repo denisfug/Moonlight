@@ -73,6 +73,8 @@ public:
     void afterAssetsLoaded() override;   // GoldHEN jailbreak for /data and USB access
     std::unique_ptr<VideoEngine> makeVideoEngine() override;   // libSceAvPlayer (experimental)
     std::vector<std::string> videoDirs() const override;
+    bool startTextInput(const std::string &title, const std::string &initial, bool url) override;
+    int pollTextInput(std::string *out) override;
 
 private:
     VideoOut video_;
@@ -81,6 +83,9 @@ private:
     Http http_;
     bool httpOk_ = false;
     bool jailbroken_ = false;
+    bool imeReady_ = false;
+    uint16_t imeText_[2049];
+    uint16_t imeTitle_[128];
 };
 
 }  // namespace ml::ps4

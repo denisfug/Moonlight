@@ -28,15 +28,16 @@ public:
 
     void onEnter() override
     {
-        if (!loaded_) reload();
+        if (!loaded_ || seenVersion_ != app.sourcesVersion) reload();
     }
 
     void reload()
     {
         loaded_ = true;
+        seenVersion_ = app.sourcesVersion;
         all_.clear();
         notes_.clear();
-        if (app.settings.showDemo) all_ = type_ == "movie" ? demo::movies() : demo::series();
+        if (app.videoDemo()) all_ = type_ == "movie" ? demo::movies() : demo::series();
         for (const auto &ref : app.sources.browsableCatalogs(type_)) {
             std::vector<addon::MetaPreview> metas;
             std::string e = app.sources.fetchCatalog(ref, metas);
@@ -156,6 +157,7 @@ private:
     static constexpr int kCols = 6, kCardW = 212, kCardH = 318, kRowH = 400;
     std::string type_;
     bool loaded_ = false, anim_ = false;
+    int seenVersion_ = -1;
     std::vector<addon::MetaPreview> all_;
     std::vector<size_t> shown_;
     std::vector<std::string> genres_{"Todos"};

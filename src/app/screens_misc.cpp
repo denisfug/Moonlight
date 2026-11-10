@@ -1,5 +1,6 @@
 // Live TV (M3U), Library (favorites/history), Sources (addon manager) and Settings.
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 #include "app/app.hpp"
@@ -209,6 +210,7 @@ public:
         size_t i = size_t(list_.sel);
         if (p & BtnCross) {
             app.sources.setEnabled(i, !src[i].enabled);
+            app.sourcesVersion++;
             app.toast(src[i].manifest.name + (src[i].enabled ? " ativada" : " desativada"));
             return true;
         }
@@ -225,6 +227,7 @@ public:
                       [a, i, ls, name](int choice) {
                           if (choice != 1) return;
                           a->sources.remove(i);
+                          a->sourcesVersion++;
                           if (ls->sel > 0) ls->sel--;
                           a->toast(name + " removida");
                       });
@@ -312,15 +315,32 @@ private:
     // so nobody has to type long URLs with the controller.
     void importList()
     {
-        std::vector<std::string> places;
-        for (int i = 0; i < 8; i++) places.push_back("/mnt/usb" + std::to_string(i) + "/moonlight-fontes.txt");
-        places.push_back(app.platform.dataDir() + "/fontes.txt");
+        // Any .txt in the pendrive root whose name mentions "fonte"/"font"/"moonlight" (Windows often adds
+        // a hidden second ".txt"), or fontes.txt in the data folder.
         std::string text, used;
-        for (const auto &p : places)
-            if (app.platform.fs().exists(p) && app.platform.fs().readFile(p, text, 256 * 1024)) { used = p; break; }
+        std::vector<std::string> roots;
+        for (int i = 0; i < 8; i++) roots.push_back("/mnt/usb" + std::to_string(i));
+        for (const auto &r : roots) {
+            std::vector<DirEntry> ents;
+            if (!app.platform.fs().listDir(r, ents)) continue;
+            for (const auto &e : ents) {
+                std::string low = e.name;
+                for (auto &ch : low) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+                bool txt = low.size() > 4 && low.compare(low.size() - 4, 4, ".txt") == 0;
+                bool named = low.find("fonte") != std::string::npos || low.find("font") != std::string::npos ||
+                             low.find("moonlight") != std::string::npos;
+                if (!e.isDir && txt && named && app.platform.fs().readFile(r + "/" + e.name, text, 256 * 1024)) {
+                    used = r + "/" + e.name;
+                    break;
+                }
+            }
+            if (!used.empty()) break;
+        }
+        if (used.empty() && app.platform.fs().readFile(app.platform.dataDir() + "/fontes.txt", text, 256 * 1024)) used = "fontes.txt";
         if (used.empty()) {
-            app.modal("Importar fontes", "Crie um arquivo moonlight-fontes.txt na raiz do pendrive com um endereco por linha "
-                                         "(terminando em /manifest.json), conecte no PS4 e aperte R1 de novo.");
+            app.modal("Importar fontes", "Nao achei o arquivo. Coloque um .txt com \"fontes\" no nome (ex: moonlight-fontes.txt) "
+                                         "solto na raiz do pendrive, um endereco por linha terminando em /manifest.json, "
+                                         "conecte na porta da frente do PS4 e aperte R1 de novo.");
             return;
         }
         int added = 0, failed = 0;
@@ -337,7 +357,8 @@ private:
             if (e.empty()) added++;
             else if (e.find("ja esta na lista") == std::string::npos) { failed++; lastErr = e; }
         }
-        std::string msg = std::to_string(added) + " fonte(s) adicionada(s)";
+        if (added) app.sourcesVersion++;
+        std::string msg = "Arquivo: " + used + "\n" + std::to_string(added) + " fonte(s) adicionada(s)";
         if (failed) msg += ", " + std::to_string(failed) + " com erro (ultimo: " + lastErr + ")";
         app.modal("Importar fontes", msg + ".");
     }
@@ -347,7 +368,7 @@ private:
         App *a = &app;
         app.openKeyboard("Endereco da fonte (.../manifest.json)", "https://", true, [a](const std::string &url) {
             std::string e = a->sources.add(url, false, int64_t(a->now()));
-            if (e.empty()) a->toast("Fonte adicionada: " + a->sources.sources().back().manifest.name);
+            if (e.empty()) { a->sourcesVersion++; a->toast("Fonte adicionada: " + a->sources.sources().back().manifest.name); }
             else a->modal("Nao foi possivel adicionar", e);
         });
     }

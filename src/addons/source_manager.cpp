@@ -140,12 +140,14 @@ std::string SourceManager::add(const std::string &manifestUrlIn, bool allowPlain
         if (o.manifest.id == s.manifest.id) return "ja existe uma fonte com o id " + s.manifest.id;
     s.updatedAt = now;
     sources_.push_back(std::move(s));
+    catalogCache_.clear();
     save();
     return "";
 }
 
 bool SourceManager::remove(size_t i)
 {
+    catalogCache_.clear();
     if (i >= sources_.size()) return false;
     sources_.erase(sources_.begin() + static_cast<long>(i));
     save();
@@ -154,6 +156,7 @@ bool SourceManager::remove(size_t i)
 
 bool SourceManager::setEnabled(size_t i, bool en)
 {
+    catalogCache_.clear();
     if (i >= sources_.size()) return false;
     sources_[i].enabled = en;
     save();
@@ -162,6 +165,7 @@ bool SourceManager::setEnabled(size_t i, bool en)
 
 std::string SourceManager::refresh(size_t i, int64_t now)
 {
+    catalogCache_.clear();
     if (i >= sources_.size()) return "fonte inexistente";
     Manifest m;
     std::string e = fetchManifest(sources_[i].manifestUrl, policyFor(sources_[i]), m);
@@ -193,12 +197,19 @@ std::string SourceManager::fetchCatalog(const CatalogRef &c, std::vector<MetaPre
     const Source &s = sources_[c.source];
     for (const auto &kv : extra)
         if (!c.decl->supportsExtra(kv.first)) return "catalogo nao aceita o filtro " + kv.first;
+    std::string url = baseFromManifestUrl(s.manifestUrl) + resourcePath("catalog", c.decl->type, c.decl->id, extra);
+    for (const auto &kv : catalogCache_)
+        if (kv.first == url) { out = kv.second; return ""; }   // avoids re-downloading on every screen visit
     Json j;
-    std::string e = getJson(baseFromManifestUrl(s.manifestUrl) + resourcePath("catalog", c.decl->type, c.decl->id, extra),
-                            policyFor(s), j, kResourceMax);
+    std::string e = getJson(url, policyFor(s), j, kResourceMax);
     if (!e.empty()) return e;
     ParseResult r = parseCatalog(j, out);
-    return r.ok() ? "" : r.error;
+    if (!r.ok()) return r.error;
+    if (extra.empty()) {
+        if (catalogCache_.size() >= 40) catalogCache_.erase(catalogCache_.begin());
+        catalogCache_.push_back({url, out});
+    }
+    return "";
 }
 
 std::string SourceManager::search(const std::string &type, const std::string &query, std::vector<MetaPreview> &out)

@@ -46,7 +46,15 @@ bool decodeImage(const std::string &bytes, int w, int h, Image &out)
 void ImageLoader::start()
 {
     if (started_.exchange(true) || !http_) return;
-    if (!platform_.startThread(&ImageLoader::threadMain, this, "ml_images")) started_ = false;
+    running_ = true;
+    if (!platform_.startThread(&ImageLoader::threadMain, this, "ml_images")) { started_ = false; running_ = false; }
+}
+
+ImageLoader::~ImageLoader()
+{
+    quit_ = true;
+    // a download in progress can take up to its timeout (10 s)
+    for (int i = 0; i < 1100 && running_.load(); i++) platform_.sleepMs(10);
 }
 
 const Image *ImageLoader::get(const std::string &url, int w, int h)
@@ -82,7 +90,7 @@ void ImageLoader::threadMain(void *self) { static_cast<ImageLoader *>(self)->run
 
 void ImageLoader::run()
 {
-    for (;;) {
+    while (!quit_.load()) {
         Job job;
         bool have = false;
         lock();
@@ -108,6 +116,7 @@ void ImageLoader::run()
         unlock();
         if (ok) updated_ = true;
     }
+    running_ = false;
 }
 
 }  // namespace ml::ui

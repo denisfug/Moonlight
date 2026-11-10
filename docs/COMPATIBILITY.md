@@ -26,7 +26,8 @@ Nada deste projeto foi testado no PS4 ainda.
 | 01.02 | PKG instala e abre. A tela ficava presa na imagem de abertura (`pic1.png`); a interface só aparecia por um instante ao fechar o app. Causa provável: faltava `sceSystemServiceHideSplashScreen()`. Controle, áudio e rede: não deu para avaliar. |
 | 01.03 | Correção acima + redesenho forçado nos primeiros quadros. **Testado no PS4: interface aparece e navega ("funciona tudo").** Filmes/séries mostram só a demonstração, como esperado. |
 | 01.04 | Player de vídeo experimental (libSceAvPlayer). **Aguardando teste.** |
-| 01.05 | Pôsteres reais das fontes, importar fontes por arquivo no pendrive. **Aguardando teste.** |
+| 01.05 | Pôsteres reais das fontes, importar fontes por arquivo no pendrive. Relato: importar "não abriu" (arquivo provavelmente com outro nome/extensão dupla). |
+| 01.06 | Teclado do sistema (IME), importação aceita qualquer .txt com "fonte"/"moonlight" no nome, demonstração some com fonte ativa, cache de catálogos, músicas de /data/devhub/Music. **Aguardando teste.** |
 
 ## Desempenho
 

@@ -82,8 +82,8 @@ public:
             }
             rows_.push_back(r);
         }
-        addMetaRow("Filmes em destaque", Shape::Poster, app.settings.showDemo ? demo::movies() : std::vector<addon::MetaPreview>{});
-        addMetaRow("Series para maratonar", Shape::Poster, app.settings.showDemo ? demo::series() : std::vector<addon::MetaPreview>{});
+        addMetaRow("Filmes em destaque", Shape::Poster, app.videoDemo() ? demo::movies() : std::vector<addon::MetaPreview>{});
+        addMetaRow("Series para maratonar", Shape::Poster, app.videoDemo() ? demo::series() : std::vector<addon::MetaPreview>{});
         // catalogs from the user's sources (synchronous for now; see docs/ROADMAP.md)
         for (const auto &ref : app.sources.browsableCatalogs()) {
             std::vector<addon::MetaPreview> metas;
