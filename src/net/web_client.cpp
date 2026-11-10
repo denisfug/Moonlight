@@ -121,7 +121,9 @@ std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &
     std::string host = u.host;
     if (!host.empty() && host[0] == '[') host = host.substr(1, host.size() - 2);
     std::string e;
+    netTraceOnce(0, "primeira conexao de rede (DNS + TCP)", false);
     std::unique_ptr<TcpConn> c = sockets_->connect(host, u.port, req.timeoutMs, &e);
+    netTraceOnce(1, "primeira conexao de rede concluida", true);
     if (!c) return fail(host + ": " + e);
     if (u.scheme == "https") {
         c = tls::connect(std::move(c), host, &e);

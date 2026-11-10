@@ -311,3 +311,26 @@ TEST(phone_remote_fills_keyboard_and_presses_buttons)
     CHECK(!h.app.modalOpen());
     h.app.remote->stop();
 }
+
+TEST(safe_start_after_crash)
+{
+    std::string sb = t::scratch + "/appsb_crash";
+    host::HostFileSystem fs(sb);
+    fs.makeDirs("/");
+    {
+        Harness h(sb);
+        std::string err;
+        CHECK(h.app.init(&err));
+        CHECK(!h.app.modalOpen());   // first start: nothing to report
+        h.app.frame();
+        h.app.frame();               // after the first rendered frame -> marked stable
+        std::string s;
+        CHECK(h.plat.fs().readFile(h.plat.dataDir() + "/startup.txt", s, 100));
+        CHECK_EQ(s, std::string("estavel"));
+        h.plat.fs().writeFile(h.plat.dataDir() + "/startup.txt", "primeira conexao segura (handshake TLS)");   // simulated crash
+    }
+    Harness h(sb);
+    std::string err;
+    CHECK(h.app.init(&err));
+    CHECK(h.app.modalOpen());
+}

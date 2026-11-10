@@ -12,6 +12,7 @@
 #include <orbis/NetCtl.h>
 #include <orbis/Sysmodule.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 
@@ -20,8 +21,26 @@
 // OpenOrbis declares this without parameters; signature per shadPS4 (random.h): at most 64 bytes per call.
 extern "C" int32_t sceRandomGetRandomNumber(uint8_t *buf, size_t size);
 
+namespace {
+// libSceRandom is a regular (not "internal") system module that the loader does NOT bring in by itself:
+// calling sceRandomGetRandomNumber before sceSysmoduleLoadModule(ORBIS_SYSMODULE_RANDOM) jumps to an
+// unresolved import. That is the most likely cause of the crash at start of 01.09/01.10 (CE-34878-0),
+// when the first HTTPS request seeded Mbed TLS. Fact from XCloud4, which loads it the same way.
+std::atomic<int> gRandomState{0};   // 0 not loaded, 1 ready, -1 failed
+}  // namespace
+
+bool ml_ps4_load_random()
+{
+    int st = gRandomState.load();
+    if (st != 0) return st > 0;
+    int r = sceSysmoduleLoadModule(ORBIS_SYSMODULE_RANDOM);
+    gRandomState.store(r >= 0 ? 1 : -1);
+    return r >= 0;
+}
+
 extern "C" int ml_platform_random(unsigned char *buf, size_t len)
 {
+    if (!ml_ps4_load_random()) return -1;
     while (len > 0) {
         size_t n = len > 64 ? 64 : len;
         if (sceRandomGetRandomNumber(buf, n) < 0) return -1;
@@ -129,13 +148,13 @@ bool Net::init(std::string *err)
 {
     int r = sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
     if (r < 0) { *err = "carregar modulo NET " + hex(r); return false; }
+    if (!ml_ps4_load_random()) { *err = "carregar modulo Random (necessario para HTTPS)"; return false; }
     if (pool_ < 0) {
         sceNetInit();
         int p = sceNetPoolCreate("ml_net", 16 * 1024, 0);
         if (p < 0) { *err = "sceNetPoolCreate " + hex(p); return false; }
         pool_ = p;
     }
-    if (!ctl_ && sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NETCTL) >= 0 && sceNetCtlInit() >= 0) ctl_ = true;
     return true;
 }
 
@@ -199,6 +218,8 @@ std::unique_ptr<TcpListener> Net::listen(int port, std::string *err)
 
 std::string Net::localAddress()
 {
+    // NetCtl only when the phone remote needs the address (01.09 loaded it at start; kept off the start path).
+    if (!ctl_ && sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NETCTL) >= 0 && sceNetCtlInit() >= 0) ctl_ = true;
     if (!ctl_) return "";
     OrbisNetCtlInfo info;
     std::memset(&info, 0, sizeof info);

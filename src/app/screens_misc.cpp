@@ -477,7 +477,7 @@ private:
             int pct = u.size > 0 ? int(u.done * 100 / u.size) : 0;
             return "Baixando " + u.latest + "... " + std::to_string(pct) + "%";
         }
-        case Updater::Phase::Downloaded: return u.latest + " baixada em " + u.path + ". X para instalar.";
+        case Updater::Phase::Downloaded: return u.latest + " baixada em " + u.path + ". X mostra como instalar.";
         case Updater::Phase::Failed: return "Falhou: " + u.error + ". X tenta de novo.";
         }
         return cur;
@@ -496,29 +496,13 @@ private:
         }
     }
 
-    void install(const std::string &path, bool replace)
+    void install(const std::string &path, bool)
     {
-        std::string e;
-        int r = app.platform.installPackage(path, replace, &e);
-        const std::string manual = "\nVoce tambem pode instalar pelo GoldHEN > Package Installer: o arquivo esta em " + path +
-                                   ". Seus dados (fontes, favoritos) ficam em /data/moonlight e nao se perdem.";
-        if (r == 0) {
-            app.modal("Atualizar o Moonlight", std::string(replace ? "Versao antiga removida e " : "") +
-                          "instalacao iniciada. Acompanhe pela notificacao do PS4; quando terminar, abra o Moonlight de novo." +
-                          (replace ? " O app pode fechar sozinho agora." : ""));
-        } else if (r == 1) {
-            App *a = &app;
-            std::string pth = path;
-            app.modal("Atualizar o Moonlight",
-                      "O PS4 so instala por cima removendo a versao atual primeiro (experimental: se a instalacao falhar, "
-                      "o Moonlight some ate voce instalar o arquivo pelo GoldHEN)." + manual,
-                      {"Remover e instalar", "Eu instalo pelo GoldHEN"}, [this, a, pth](int choice) {
-                          if (choice == 0) install(pth, true);
-                          else a->toast("Arquivo em " + pth);
-                      });
-        } else {
-            app.modal("Atualizar o Moonlight", "A instalacao automatica nao funcionou: " + e + "." + manual);
-        }
+        // Automatic install is off since 01.11 (the system installer link crashed 01.10 on start).
+        app.modal("Atualizar o Moonlight",
+                  "Versao nova baixada em " + path + ".\nPara instalar: feche o Moonlight e instale esse arquivo do mesmo "
+                  "jeito que voce instala o app (Package Installer do GoldHEN, que le /data/pkg).\nSeus dados (fontes, favoritos) ficam em /data/moonlight "
+                  "e nao se perdem.");
     }
 
     void toggleRemote()

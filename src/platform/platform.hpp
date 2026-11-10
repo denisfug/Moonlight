@@ -108,7 +108,9 @@ public:
     // 1 = this app is already installed (call again with replaceInstalled), -1 = error in *err.
     virtual int installPackage(const std::string &path, bool replaceInstalled, std::string *err)
     {
-        if (err) *err = "instalacao automatica so existe no PS4";
+        // 01.10 linked the system installer (libSceBgft/libSceAppInstUtil) and crashed on start on the
+        // owner's console (CE-34878-0); until that is understood, installing is left to GoldHEN.
+        if (err) *err = "instalacao automatica desativada por enquanto";
         return -1;
     }
     // Human-readable state of the network stack ("" = OK) and a way to try initialising it again.

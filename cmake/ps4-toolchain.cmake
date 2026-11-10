@@ -26,7 +26,7 @@ set(CMAKE_C_FLAGS_INIT "${ML_PS4_BASE} ${ML_PS4_SYS}")
 # libc++ headers must come before the C library headers
 set(CMAKE_CXX_FLAGS_INIT "${ML_PS4_BASE} -nostdinc++ -isystem ${LIBCXX}/include/c++/v1 ${ML_PS4_SYS}")
 
-set(ML_PS4_LIBS "-lc++ -lc++abi -lc -lkernel -lSceVideoOut -lSceAudioOut -lScePad -lSceUserService -lSceSysmodule -lSceSystemService -lSceAvPlayer -lSceImeDialog -lSceCommonDialog -lSceNet -lSceNetCtl -lSceRandom -lSceAppInstUtil -lSceBgft")
+set(ML_PS4_LIBS "-lc++ -lc++abi -lc -lkernel -lSceVideoOut -lSceAudioOut -lScePad -lSceUserService -lSceSysmodule -lSceSystemService -lSceAvPlayer -lSceImeDialog -lSceCommonDialog -lSceNet -lSceNetCtl -lSceRandom")
 set(ML_GOLDHEN "")
 if(DEFINED ENV{GOLDHEN_SDK} AND EXISTS "$ENV{GOLDHEN_SDK}/libGoldHEN_Hook.a")
     set(ML_GOLDHEN "-L$ENV{GOLDHEN_SDK} -lGoldHEN_Hook")

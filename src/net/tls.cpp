@@ -66,6 +66,7 @@ bool ensureInit(std::string *err)
 {
     spinLock(&gInitLock);
     if (gState == 0) {
+        ml::netTraceOnce(2, "iniciando o HTTPS proprio (Mbed TLS)", false);
         mbedtls_threading_set_alt(mtxInit, mtxFree, mtxLock, mtxUnlock);
         psa_status_t ps = psa_crypto_init();
         if (ps != PSA_SUCCESS) {
@@ -78,6 +79,7 @@ bool ensureInit(std::string *err)
                 if (mbedtls_x509_crt_parse(&gChain, reinterpret_cast<const unsigned char *>(kCaRoots[i]), kCaRootSizes[i] + 1) == 0) ++gRoots;
             }
             if (gExtraPem && mbedtls_x509_crt_parse(&gChain, reinterpret_cast<const unsigned char *>(gExtraPem), std::strlen(gExtraPem) + 1) == 0) ++gRoots;
+            ml::netTraceOnce(3, "HTTPS proprio iniciado", true);
             if (gRoots == 0) {
                 std::snprintf(gInitErr, sizeof gInitErr, "nenhum certificado raiz carregou");
                 gState = -1;
@@ -225,7 +227,10 @@ std::unique_ptr<TcpConn> connect(std::unique_ptr<TcpConn> tcp, const std::string
     if (!ensureInit(&ie)) { if (err) *err = "TLS nao iniciou: " + ie; return nullptr; }
     std::unique_ptr<TlsConn> c(new TlsConn);
     c->tcp = std::move(tcp);
-    if (!c->handshake(host)) {
+    netTraceOnce(4, "primeira conexao segura (handshake TLS)", false);
+    bool ok = c->handshake(host);
+    netTraceOnce(5, "primeira conexao segura concluida", true);
+    if (!ok) {
         if (err) *err = c->err;
         c->tcp.reset();   // no close_notify on a failed handshake
         return nullptr;

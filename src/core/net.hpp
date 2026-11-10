@@ -103,4 +103,11 @@ struct UrlPolicy {
 };
 std::string checkUrlPolicy(const Url &u, const UrlPolicy &p);   // "" = allowed, else reason
 
+// Start-up diagnostics: the network layers report the first time they reach each risky step
+// (first TCP connection, Mbed TLS start, first handshake). The app records it so that, if the console
+// closes the app (CE-34878-0), the next start can say where it stopped. done = step finished.
+using NetTraceFn = void (*)(const char *step, bool done);
+void setNetTrace(NetTraceFn fn);
+void netTraceOnce(int id, const char *step, bool done);   // id 0..15, each reported once per run
+
 }  // namespace ml

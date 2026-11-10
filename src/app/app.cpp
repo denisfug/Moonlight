@@ -32,11 +32,30 @@ App::App(Platform &p)
 {
 }
 
+namespace {
+Platform *gCrumbPlatform = nullptr;   // plain pointer: no static constructor
+std::atomic_flag gCrumbLock = ATOMIC_FLAG_INIT;
+const char kStable[] = "estavel";
+
+void writeCrumb(const char *step, bool done)
+{
+    if (!gCrumbPlatform) return;
+    while (gCrumbLock.test_and_set(std::memory_order_acquire)) {}
+    gCrumbPlatform->fs().writeFile(gCrumbPlatform->dataDir() + "/startup.txt", done ? kStable : step);
+    gCrumbLock.clear(std::memory_order_release);
+}
+}  // namespace
+
+void App::crumb(const std::string &step) { writeCrumb(step.c_str(), false); }
+
 App::~App()
 {
+    setNetTrace(nullptr);
+    gCrumbPlatform = nullptr;
     remote->stop();
     audio.stop();
 }
+
 
 bool App::init(std::string *error)
 {
@@ -53,6 +72,14 @@ bool App::init(std::string *error)
     platform.afterAssetsLoaded();
     platform.fs().makeDirs(platform.dataDir());
     platform.fs().makeDirs(platform.dataDir() + "/music");
+    {
+        std::string prev;
+        if (platform.fs().readFile(platform.dataDir() + "/startup.txt", prev, 4096) && !prev.empty() && prev != kStable)
+            crashedAt_ = prev;
+        gCrumbPlatform = &platform;
+        crumb("abrindo o app (lendo dados e telas)");
+        setNetTrace(&writeCrumb);
+    }
     loadSettings();
     library.load();
     sources.load();
@@ -75,13 +102,20 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Sources)] = makeSources(*this);
     roots_[size_t(Section::Settings)] = makeSettings(*this);
     roots_[0]->onEnter();
-    now_ = last_ = platform.nowMs();
-    if (settings.remote) {
+    now_ = last_ = startMs_ = platform.nowMs();
+    if (!crashedAt_.empty()) {
+        // Safe start: what runs on its own (phone server, update check) stays off this time.
+        modal("O Moonlight fechou da ultima vez",
+              "Ele parou durante: " + crashedAt_ +
+                  ".\nNesta abertura a busca de atualizacao e o controle pelo celular ficam desligados."
+                  "\nMande esta mensagem (foto) para quem esta desenvolvendo o app.");
+        updateCheckDone_ = true;
+    } else if (settings.remote) {
         std::string e;
         if (remote->start(&e)) toast("Controle pelo celular: " + remote->address() + "  PIN " + remote->pin());
         else toast("Controle pelo celular nao ligou: " + e);
     }
-    if (platform.name() == "ps4") updater->check();   // quiet unless a new version exists
+    if (platform.name() != "ps4") updateCheckDone_ = true;   // the PC build never checks on its own
     return true;
 }
 
@@ -364,6 +398,9 @@ bool App::frame()
     uint32_t pressed = systemKeyboard_ ? 0 : input_.update(platform.input().read(), now_);
     if (pressed) { handleInput(pressed); dirty(); }
     if (remote->running()) serviceRemote();
+    if (!stableWritten_ && renderedLastFrame()) { writeCrumb(kStable, true); stableWritten_ = true; }
+    // Update check 6 s after start, once the screen is up (so a failure there is distinguishable).
+    if (!updateCheckDone_ && now_ > 6000 + startMs_) { updateCheckDone_ = true; updater->check(); }
     Updater::State us = updater->state();
     if (us.phase != lastUpdatePhase_) {
         if (us.phase == Updater::Phase::Available)

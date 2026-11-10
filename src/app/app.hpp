@@ -164,6 +164,12 @@ private:
     Screen &current();
     void handleInput(uint32_t pressed);
     void serviceRemote();
+    // Start-up diagnostics (see setNetTrace): last risky step in <data>/startup.txt.
+    void crumb(const std::string &step);
+    std::string crashedAt_;      // step the previous run stopped at ("" = closed normally)
+    bool stableWritten_ = false;
+    bool updateCheckDone_ = false;
+    uint64_t startMs_ = 0;
     std::string remoteState_;
     Updater::Phase lastUpdatePhase_ = Updater::Phase::Idle;
     void draw(ui::Canvas &c);

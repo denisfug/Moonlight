@@ -56,7 +56,7 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | Controle pelo celular (página web na rede local, PIN) | sim | sim | **01.09, aguardando teste** |
 | Vídeo HTTPS via cliente próprio (Range) | sim | Range testado | **01.09, aguardando teste** |
 | Catálogo em fileiras (catálogo/serviço e gênero), carga em segundo plano | sim | sim (servidor local) | **01.10, aguardando teste** |
-| Atualização pelo GitHub Releases | sim | busca/download sim; instalação só PS4 | **01.10, aguardando teste** |
+| Atualização (feed no branch claude/updates) | sim | busca/download/sha256 sim | **01.10 fechou ao abrir (CE-34878-0); 01.11 corrige o módulo Random, aguardando teste. Instalação automática desligada.** |
 | Streaming HTTP incremental (`HttpStream`) | sim | sim (servidor local real) | pendente |
 | Rádios: diretório Radio Browser (só MP3), abas por gênero/país, busca, favoritas | sim | sim (fixtures + servidor local) | pendente |
 | AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |

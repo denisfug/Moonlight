@@ -1,5 +1,7 @@
 #include "core/net.hpp"
 
+#include <atomic>
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -133,6 +135,20 @@ std::string checkUrlPolicy(const Url &u, const UrlPolicy &p)
     if (isLocalHost(u.host)) return "";
     if (p.allowPlainHttpRemote) return "";
     return "HTTP sem criptografia so e permitido para servidores da rede local";
+}
+
+namespace {
+std::atomic<NetTraceFn> gTrace{nullptr};
+std::atomic<unsigned> gTraced{0};
+}  // namespace
+
+void setNetTrace(NetTraceFn fn) { gTrace.store(fn); }
+
+void netTraceOnce(int id, const char *step, bool done)
+{
+    unsigned bit = 1u << (id & 15);
+    if (gTraced.fetch_or(bit) & bit) return;
+    if (NetTraceFn f = gTrace.load()) f(step, done);
 }
 
 }  // namespace ml
