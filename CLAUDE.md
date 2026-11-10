@@ -44,6 +44,7 @@ make test                         # PC: build + testes (deve terminar com "0 fai
 make live                         # testes de fontes contra servidor HTTP local
 make shots                        # capturas de tela em out/shots (confira visualmente)
 OO_PS4_TOOLCHAIN=... GOLDHEN_SDK=... make pkg     # PS4: out/Moonlight-HB_<versão>.pkg
+tools/publish_update.sh "notas"   # publica o PKG no branch claude/updates (o app se atualiza por ele)
 ```
 
 Para adicionar um teste: `TEST(nome) { CHECK(...); }` em `tests/test_*.cpp`.

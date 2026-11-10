@@ -1,9 +1,11 @@
 #include "app/updater.hpp"
 
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 
 #include "core/json.hpp"
+#include "mbedtls/sha256.h"
 
 namespace ml {
 
@@ -96,6 +98,22 @@ std::string Updater::parseRelease(const std::string &json, std::string *tag, std
     return "a versao " + *tag + " nao tem arquivo .pkg";
 }
 
+std::string Updater::parseFeed(const std::string &json, const std::string &feedUrl, State *out)
+{
+    JsonError err;
+    Json j = parseJson(json, &err, JsonLimits{256 * 1024, 16});
+    if (!err.ok()) return "update.json invalido";
+    std::string v = j["version"].str(""), pkg = j["pkg"].str("");
+    if (parseVersion(v) < 0 || pkg.empty()) return "update.json sem versao/pkg";
+    if (pkg.compare(0, 8, "https://") != 0) pkg = feedUrl.substr(0, feedUrl.rfind('/') + 1) + pkg;
+    out->latest = v.substr(v.find_first_of("0123456789"));
+    out->assetUrl = pkg;
+    out->size = j["size"].asInt(0);
+    out->sha256 = j["sha256"].str("");
+    out->notes = j["notes"].str("");
+    return "";
+}
+
 void Updater::runCheck()
 {
     State s = state();
@@ -107,6 +125,23 @@ void Updater::runCheck()
         busy_ = false;
         return;
     }
+    // 1. update.json on the updates branch
+    if (!feedUrl.empty()) {
+        HttpRequest f;
+        f.url = feedUrl;
+        f.timeoutMs = 15000;
+        f.maxBytes = 256 * 1024;
+        HttpResponse fr = http->get(f);
+        State n = s;
+        if (fr.ok() && parseFeed(fr.body, feedUrl, &n).empty()) {
+            n.error.clear();
+            n.phase = parseVersion(n.latest) > parseVersion(current_) ? Phase::Available : Phase::UpToDate;
+            set(n);
+            busy_ = false;
+            return;
+        }
+    }
+    // 2. latest GitHub Release
     HttpRequest q;
     q.url = apiBase + "/repos/" + repo_ + "/releases/latest";
     q.timeoutMs = 15000;
@@ -135,6 +170,7 @@ void Updater::runCheck()
             s.assetUrl = url;
             s.size = size;
             s.notes = title;
+            s.sha256.clear();
             s.phase = parseVersion(tag) > parseVersion(current_) ? Phase::Available : Phase::UpToDate;
         }
     }
@@ -168,6 +204,15 @@ void Updater::runDownload()
         }
         if (err.empty() && s.size > 0 && int64_t(data.size()) != s.size) err = "download incompleto";
         if (err.empty() && (data.size() < 4 || data.compare(0, 4, "\x7F" "CNT") != 0)) err = "o arquivo baixado nao e um PKG";
+        if (err.empty() && !s.sha256.empty()) {
+            unsigned char d[32];
+            mbedtls_sha256(reinterpret_cast<const unsigned char *>(data.data()), data.size(), d, 0);
+            char hex[65];
+            for (int i = 0; i < 32; i++) std::snprintf(hex + 2 * i, 3, "%02x", d[i]);
+            std::string want = s.sha256;
+            for (auto &ch : want) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            if (want != hex) err = "arquivo baixado diferente do publicado (sha256)";
+        }
     } else if (err.empty()) {
         err = "sem rede";
     }

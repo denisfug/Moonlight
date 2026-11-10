@@ -1,5 +1,6 @@
-// App updates from the project's public GitHub releases (denisfug/Moonlight, no credentials):
-//   1. check: GET api.github.com/repos/<repo>/releases/latest -> tag "vNN.NN" + the .pkg asset;
+// App updates from the project's public GitHub repository (denisfug/Moonlight, no credentials):
+//   1. check: update.json on the "claude/updates" branch (raw.githubusercontent.com: version, .pkg, size,
+//      sha256); if that is missing, the latest GitHub Release (tag "vNN.NN" + its .pkg asset);
 //   2. download: the .pkg to /data/pkg/ (where GoldHEN's Package Installer also finds it);
 //   3. install: Platform::installPackage (PS4: system background-install service), experimental.
 // Network work runs on a worker thread; the UI polls state().
@@ -24,6 +25,7 @@ public:
         std::string notes;       // release title/body, first line
         std::string path;        // downloaded file
         std::string error;
+        std::string sha256;      // expected hex digest ("" = not published)
         int64_t size = 0, done = 0;
     };
 
@@ -34,11 +36,15 @@ public:
     void download();    // starts downloading the available .pkg (ignored unless Available/Failed after one)
     State state();
     const std::string &current() const { return current_; }
-    std::string apiBase = "https://api.github.com";   // tests point this at a local server
+    std::string apiBase = "https://api.github.com";   // tests point these at a local server
+    std::string feedUrl = "https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/update.json";
 
     // Parses a GitHub "latest release" JSON; public for tests. "" or an error.
     static std::string parseRelease(const std::string &json, std::string *tag, std::string *assetUrl, int64_t *size,
                                     std::string *title);
+    // Parses update.json ({"version","pkg","size","sha256","notes"}); a relative "pkg" is resolved
+    // against feedUrl. "" or an error.
+    static std::string parseFeed(const std::string &json, const std::string &feedUrl, State *out);
 
 private:
     static void checkMain(void *self);

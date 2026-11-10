@@ -378,6 +378,7 @@ TEST(updater_check_and_download_local)
     host::HostPlatform p(t::scratch + "/upd", "");
     Updater u(p, "denisfug/Moonlight", "01.09");
     u.apiBase = base;
+    u.feedUrl = "";   // this test covers the Releases path
     u.check();
     for (int i = 0; i < 300 && (u.state().phase == Updater::Phase::Checking); i++) p.sleepMs(10);
     Updater::State st = u.state();
@@ -394,4 +395,38 @@ TEST(updater_check_and_download_local)
     CHECK(s.requests.size() == 3 && s.requests[0].find("GET /repos/denisfug/Moonlight/releases/latest") == 0);
     std::string e;
     CHECK_EQ(p.installPackage(st.path, false, &e), -1);   // only on the PS4
+}
+
+TEST(updater_feed_with_sha256)
+{
+    Updater::State st;
+    CHECK(Updater::parseFeed(R"({"version":"01.11","pkg":"Moonlight-HB_01.11.pkg","size":10,"sha256":"AB"})",
+                             "https://raw.githubusercontent.com/u/r/claude/updates/update.json", &st).empty());
+    CHECK_EQ(st.latest, std::string("01.11"));
+    CHECK_EQ(st.assetUrl, std::string("https://raw.githubusercontent.com/u/r/claude/updates/Moonlight-HB_01.11.pkg"));
+    CHECK(!Updater::parseFeed("{\"pkg\":\"x.pkg\"}", "https://a/b.json", &st).empty());
+
+    // feed served locally, then a corrupted download is refused by the sha256 check
+    std::string pkg = std::string("\x7F" "CNT") + std::string(3000, 'q');
+    ScriptServer s;
+    CHECK(s.open());
+    std::string feed = "{\"version\":\"99.02\",\"pkg\":\"x.pkg\",\"size\":" + std::to_string(pkg.size()) +
+                       ",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}";
+    s.replies = {
+        "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(feed.size()) + "\r\n\r\n" + feed,
+        "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(pkg.size()) + "\r\n\r\n" + pkg,
+    };
+    CHECK(s.launch());
+    host::HostFileSystem(t::scratch + "/upd2").makeDirs("/");
+    host::HostPlatform p(t::scratch + "/upd2", "");
+    Updater u(p, "denisfug/Moonlight", "01.10");
+    u.feedUrl = s.url("/claude/updates/update.json");
+    u.check();
+    for (int i = 0; i < 300 && u.state().phase == Updater::Phase::Checking; i++) p.sleepMs(10);
+    CHECK(u.state().phase == Updater::Phase::Available);
+    u.download();
+    for (int i = 0; i < 300 && u.state().phase == Updater::Phase::Downloading; i++) p.sleepMs(10);
+    CHECK(u.state().phase == Updater::Phase::Failed);
+    CHECK(u.state().error.find("sha256") != std::string::npos);
+    CHECK(s.requests.size() == 2 && s.requests[1].find("GET /claude/updates/x.pkg ") == 0);
 }
