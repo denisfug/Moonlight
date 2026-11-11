@@ -6,7 +6,7 @@ using namespace addon;
 
 static constexpr size_t kManifestMax = 512 * 1024;
 static constexpr size_t kResourceMax = 4 * 1024 * 1024;
-static constexpr int kTimeoutMs = 15000;
+static constexpr int kTimeoutMs = 25000;   // free hosting often needs 20 s+ to wake a sleeping addon
 
 void SourceManager::load()
 {
@@ -90,7 +90,8 @@ bool SourceManager::save()
     return store_.save("sources.json", root);
 }
 
-static std::string getJsonWith(HttpClient *http_, const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes)
+static std::string getJsonWith(HttpClient *http_, const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes,
+                               int timeoutMs = kTimeoutMs)
 {
     Url u = parseUrl(url);
     std::string why = checkUrlPolicy(u, pol);
@@ -99,7 +100,7 @@ static std::string getJsonWith(HttpClient *http_, const std::string &url, const 
     if (u.scheme == "https" && !http_->supportsHttps()) return "HTTPS ainda nao suportado por " + http_->name();
     HttpRequest req;
     req.url = u.str();
-    req.timeoutMs = kTimeoutMs;
+    req.timeoutMs = timeoutMs;
     req.maxBytes = maxBytes;
     req.headers.push_back({"Accept", "application/json"});
     HttpResponse r = http_->get(req);
@@ -114,6 +115,22 @@ static std::string getJsonWith(HttpClient *http_, const std::string &url, const 
 std::string SourceManager::getJson(const std::string &url, const UrlPolicy &pol, Json &out, size_t maxBytes)
 {
     return getJsonWith(http_, url, pol, out, maxBytes);
+}
+
+std::vector<SourceManager::ResourceRequest> SourceManager::resourceRequests(const std::string &resource, const std::string &type,
+                                                                           const std::string &id) const
+{
+    std::vector<ResourceRequest> out;
+    for (const auto &s : sources_) {
+        if (!s.enabled || !s.manifest.supports(resource, type, id)) continue;
+        out.push_back({s.manifest.name, baseFromManifestUrl(s.manifestUrl) + resourcePath(resource, type, id), policyFor(s)});
+    }
+    return out;
+}
+
+std::string SourceManager::fetchJsonAt(HttpClient *http, const std::string &url, const UrlPolicy &policy, Json &out, int timeoutMs)
+{
+    return getJsonWith(http, url, policy, out, kResourceMax, timeoutMs);
 }
 
 std::string SourceManager::catalogUrl(const CatalogRef &c, const std::vector<std::pair<std::string, std::string>> &extra,

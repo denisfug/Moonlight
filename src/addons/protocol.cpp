@@ -224,6 +224,7 @@ ParseResult parseStreams(const Json &j, std::vector<Stream> &out)
         const Json &bh = x["behaviorHints"];
         s.notWebReady = bh["notWebReady"].asBool();
         s.bingeGroup = bh["bingeGroup"].asString();
+        s.filename = bh["filename"].asString();
         const Json &rh = bh["proxyHeaders"]["request"];
         for (size_t k = 0; k < rh.size(); k++)
             if (rh.items()[k].isString()) s.requestHeaders.push_back({rh.keys()[k], rh.items()[k].asString()});

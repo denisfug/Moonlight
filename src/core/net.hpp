@@ -36,7 +36,10 @@ struct HttpRequest {
     std::string url;
     int timeoutMs = 15000;
     size_t maxBytes = 4 * 1024 * 1024;
-    std::vector<std::pair<std::string, std::string>> headers;
+    std::vector<std::pair<std::string, std::string>> headers;   // a User-Agent/Accept here replaces the default one
+    // Follow a redirect from https:// to http://. Off for everything that carries the user's data or
+    // decides what the app runs (sources, music server, updates); on only for reading a video file.
+    bool allowInsecureRedirect = false;
 };
 
 struct HttpResponse {

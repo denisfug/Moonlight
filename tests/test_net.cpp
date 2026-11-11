@@ -14,6 +14,7 @@
 #include "net/web_client.hpp"
 #include "platform/host/host_platform.hpp"
 #include "test.hpp"
+#include "test_servers.hpp"
 
 using namespace ml;
 
@@ -151,8 +152,8 @@ TEST(tls_verifies_certificates)
     std::string www = mkdtemp(tmpl);
     std::ofstream(www + "/hello.txt") << "secure hello";
     int port = 48100 + int(getpid() % 500);
-    auto serve = [&](const char *cert, const char *key, int p, const char *extra = "") {
-        std::string cmd = "cd " + www + " && openssl s_server " + extra + " -quiet -WWW -accept " + std::to_string(p) + " -cert " + dir + "/" +
+    auto serve = [&](const char *cert, const char *key, int p, const char *extra = "", const char *mode = "-WWW") {
+        std::string cmd = "cd " + www + " && openssl s_server " + extra + " -quiet " + mode + " -accept " + std::to_string(p) + " -cert " + dir + "/" +
                           cert + " -key " + dir + "/" + key + " >/dev/null 2>&1 & echo $!";
         FILE *f = popen(cmd.c_str(), "r");
         int pid = 0;
@@ -163,6 +164,12 @@ TEST(tls_verifies_certificates)
     int good = serve("server.pem", "server.key", port);
     int rogue = serve("rogue.pem", "rogue.key", port + 1);
     int tls12 = serve("server.pem", "server.key", port + 2, "-tls1_2");
+    // -HTTP: the file is the whole response, so this https server can answer with a redirect to http.
+    t::PathServer plain;
+    plain.files["/video.bin"] = "video bytes over plain http";
+    CHECK(plain.start(52000));
+    std::ofstream(www + "/redir") << "HTTP/1.0 302 Found\r\nLocation: " << plain.url("/video.bin") << "\r\n\r\n";
+    int redir = serve("server.pem", "server.key", port + 3, "", "-HTTP");
 
     host::HostHttp http;
     HttpRequest q;
@@ -190,6 +197,18 @@ TEST(tls_verifies_certificates)
     CHECK(r.error.empty());
     CHECK_EQ(r.body, std::string("secure hello"));
 
+    // https -> http redirect: refused by default (sources, music server, updates)...
+    q.url = "https://localhost:" + std::to_string(port + 3) + "/redir";
+    r = http.get(q);
+    CHECK(r.error.find("HTTP inseguro") != std::string::npos);
+    // ...and followed only when the request says so (reading a video file).
+    q.allowInsecureRedirect = true;
+    r = http.get(q);
+    CHECK(r.error.empty());
+    CHECK_EQ(r.body, std::string("video bytes over plain http"));
+    q.allowInsecureRedirect = false;
+
+    if (redir > 0) kill(redir, SIGTERM);
     if (tls12 > 0) kill(tls12, SIGTERM);
     if (good > 0) kill(good, SIGTERM);
     if (rogue > 0) kill(rogue, SIGTERM);
@@ -429,4 +448,75 @@ TEST(updater_feed_with_sha256)
     CHECK(u.state().phase == Updater::Phase::Failed);
     CHECK(u.state().error.find("sha256") != std::string::npos);
     CHECK(s.requests.size() == 2 && s.requests[1].find("GET /claude/updates/x.pkg ") == 0);
+}
+
+// ---------------------------------------------------------------- timeouts, header overrides, parallel fetch
+#include "app/multi_fetch.hpp"
+
+TEST(web_client_timeout_message_and_header_override)
+{
+    t::PathServer s;
+    s.files["/x.json"] = "{}";
+    s.files["/slow.json"] = "{}";
+    s.delayMs = 1500;
+    s.delayPath = "/slow";
+    CHECK(s.start(49000));
+    host::HostHttp http;
+    HttpRequest q;
+    q.url = s.url("/slow.json");
+    q.timeoutMs = 1000;
+    HttpResponse r = http.get(q);   // connects, sends, then the server stays silent
+    CHECK(r.error.find("nao respondeu em 1 s") != std::string::npos);
+    if (r.error.find("nao respondeu") == std::string::npos) std::printf("[%s] ", r.error.c_str());
+
+    q.url = s.url("/x.json");
+    q.timeoutMs = 4000;
+    q.headers = {{"User-Agent", "Agente/9"}, {"X-Evil", "a\r\nInjected: 1"}, {"Referer", "https://r.example/"}};
+    r = http.get(q);
+    CHECK(r.ok());
+    s.stop();
+    CHECK(s.requests.size() == 2);
+    if (s.requests.size() == 2) {
+        const std::string &req = s.requests[1];
+        CHECK(req.find("User-Agent: Agente/9\r\n") != std::string::npos);
+        CHECK(req.find("MoonlightHB/") == std::string::npos);            // the default one is replaced, not duplicated
+        CHECK(req.find("Referer: https://r.example/\r\n") != std::string::npos);
+        CHECK(req.find("Injected") == std::string::npos);                // a value with CR/LF is dropped
+    }
+}
+
+TEST(multi_fetch_parallel_sources)
+{
+    t::PathServer fast, slow;
+    fast.files["/a.json"] = "{\"v\":1}";
+    slow.files["/b.json"] = "{\"v\":2}";
+    slow.delayMs = 700;
+    CHECK(fast.start(49500));
+    CHECK(slow.start(50000));
+    host::HostFileSystem(t::scratch + "/mf").makeDirs("/");
+    host::HostPlatform p(t::scratch + "/mf", "");
+    auto mf = MultiFetch::start(p, {{"rapida", fast.url("/a.json"), UrlPolicy{true}, 3000},
+                                    {"lenta", slow.url("/b.json"), UrlPolicy{true}, 3000},
+                                    {"quebrada", fast.url("/nope.json"), UrlPolicy{true}, 3000}});
+    CHECK_EQ(mf->size(), size_t(3));
+    Json j;
+    std::string e;
+    int secs = -1;
+    for (int i = 0; i < 200 && mf->poll(0, &j, &e, &secs) == MultiFetch::State::Pending; i++) p.sleepMs(10);
+    CHECK_EQ(j["v"].asInt(0), int64_t(1));
+    CHECK(mf->poll(1, nullptr, nullptr, nullptr) == MultiFetch::State::Pending);   // the slow one does not hold the fast one
+    for (int i = 0; i < 400 && mf->pending() > 0; i++) p.sleepMs(10);
+    CHECK_EQ(mf->pending(), 0);
+    Json j2;
+    CHECK(mf->poll(1, &j2, &e, &secs) == MultiFetch::State::Done);
+    CHECK_EQ(j2["v"].asInt(0), int64_t(2));
+    CHECK(mf->poll(2, nullptr, &e, &secs) == MultiFetch::State::Failed);
+    CHECK(e.find("404") != std::string::npos);
+    Json again;
+    CHECK(mf->poll(0, &again, &e, &secs) == MultiFetch::State::Done);   // the JSON is handed out once
+    CHECK_EQ(again["v"].asInt(-1), int64_t(-1));
+    CHECK_EQ(mf->label(1), std::string("lenta"));
+    mf.reset();
+    for (int i = 0; i < 300 && MultiFetch::activeThreads() > 0; i++) p.sleepMs(10);
+    CHECK_EQ(MultiFetch::activeThreads(), 0);
 }

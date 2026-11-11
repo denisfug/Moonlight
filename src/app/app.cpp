@@ -1,4 +1,5 @@
 #include "app/app.hpp"
+#include "app/multi_fetch.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -50,6 +51,8 @@ void App::crumb(const std::string &step) { writeCrumb(step.c_str(), false); }
 
 App::~App()
 {
+    // background requests (title details, stream links) use the platform's HTTP client: let them end
+    for (int i = 0; i < 6000 && MultiFetch::activeThreads() > 0; i++) platform.sleepMs(10);
     setNetTrace(nullptr);
     gCrumbPlatform = nullptr;
     remote->stop();
@@ -330,10 +333,12 @@ void App::playStation(const radio::Station &s)
     toast("Conectando em " + s.name + "...");
 }
 
-void App::playVideo(const std::string &location, const std::string &title)
+void App::playVideo(const std::string &location, const std::string &title,
+                    const std::vector<std::pair<std::string, std::string>> &requestHeaders)
 {
     std::unique_ptr<VideoEngine> engine = platform.makeVideoEngine();
     if (!engine) { modal("Player de video", VideoPlayer::unavailableReason()); return; }
+    engine->setRequestHeaders(requestHeaders);
     audio.stop();   // one audio source at a time
     push(makePlayer(*this, std::move(engine), location, title));
 }

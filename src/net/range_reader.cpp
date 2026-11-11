@@ -16,7 +16,9 @@ std::string RangeReader::openAt(uint64_t pos)
     stream_.reset();
     HttpRequest q;
     q.url = url_;
-    q.timeoutMs = 20000;
+    q.timeoutMs = 30000;
+    q.allowInsecureRedirect = true;   // video bytes only: many file hosts hand https links over to http mirrors
+    q.headers = headers_;
     q.headers.push_back({"Range", "bytes=" + std::to_string(pos) + "-"});
     std::string e;
     ++requests_;

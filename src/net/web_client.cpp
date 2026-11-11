@@ -130,10 +130,21 @@ std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &
         if (!c) return fail(host + ": " + e);
     }
     bool defPort = (u.scheme == "https" && u.port == 443) || (u.scheme == "http" && u.port == 80);
+    bool ownUa = false, ownAccept = false;
+    for (const auto &h : req.headers) {
+        std::string k = lower(h.first);
+        ownUa = ownUa || k == "user-agent";
+        ownAccept = ownAccept || k == "accept";
+    }
     std::string q = "GET " + (u.path.empty() ? std::string("/") : u.path) + (u.query.empty() ? "" : "?" + u.query) +
-                    " HTTP/1.1\r\nHost: " + u.host + (defPort ? "" : ":" + std::to_string(u.port)) +
-                    "\r\nUser-Agent: " + ua_ + "\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n";
-    for (const auto &h : req.headers) q += h.first + ": " + h.second + "\r\n";
+                    " HTTP/1.1\r\nHost: " + u.host + (defPort ? "" : ":" + std::to_string(u.port)) + "\r\n" +
+                    (ownUa ? "" : "User-Agent: " + ua_ + "\r\n") + (ownAccept ? "" : "Accept: */*\r\n") +
+                    "Accept-Encoding: identity\r\nConnection: close\r\n";
+    for (const auto &h : req.headers) {
+        // one header per line: a value with CR/LF (from an addon's JSON) must not inject extra lines
+        if (h.first.find_first_of("\r\n:") != std::string::npos || h.second.find_first_of("\r\n") != std::string::npos) continue;
+        q += h.first + ": " + h.second + "\r\n";
+    }
     q += "\r\n";
     if (!sendAll(*c, q)) return fail(host + ": envio falhou (" + c->lastError() + ")");
 
@@ -143,7 +154,12 @@ std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &
     size_t he;
     while ((he = head.find("\r\n\r\n")) == std::string::npos) {
         long n = c->recv(buf, sizeof buf);
-        if (n < 0) return fail(host + ": sem resposta (" + c->lastError() + ")");
+        if (n < 0) {
+            // TcpConn reports a receive timeout as "tempo esgotado" (PS4: 0x80410123, seen on the console in 01.16)
+            if (c->lastError().find("tempo esgotado") != std::string::npos)
+                return fail(host + ": conectou, mas o servidor nao respondeu em " + std::to_string(req.timeoutMs / 1000) + " s");
+            return fail(host + ": sem resposta (" + c->lastError() + ")");
+        }
         if (n == 0) return fail(host + ": conexao fechada sem resposta");
         head.append(buf, size_t(n));
         if (head.size() > 64 * 1024) return fail(host + ": cabecalho grande demais");
@@ -193,7 +209,7 @@ std::unique_ptr<WebStream> WebClient::open(const HttpRequest &req, std::string *
         std::string next = resolveLocation(u, s->header("location"));
         Url nu = parseUrl(next);
         if (!nu.valid) { if (error) *error = u.host + ": redirecionamento invalido"; return nullptr; }
-        if (u.scheme == "https" && nu.scheme == "http") {
+        if (u.scheme == "https" && nu.scheme == "http" && !req.allowInsecureRedirect) {
             if (error) *error = u.host + ": recusado redirecionamento de HTTPS para HTTP inseguro (" + nu.host + ")";
             return nullptr;
         }

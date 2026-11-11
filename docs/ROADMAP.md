@@ -41,7 +41,7 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | SourceManager + persistência + segurança | sim | — |
 | Servidor HTTP local de teste | sim | — |
 | Cliente HTTP/HTTPS do PS4 (sceHttp/sceSsl) | — | ver Fase 3b |
-| Requisições em segundo plano (thread) | não | não |
+| Requisições em segundo plano (thread) | catálogos, pôsteres, atualização, detalhes e links (01.17): sim, testado com servidores locais; busca, adicionar fonte e servidor de música ainda na thread da interface | catálogos/pôsteres/atualização em uso desde 01.12; detalhes e links: aguardando teste (01.17) |
 | Imagens de pôster (stb_image + rede, thread própria, cache limitado) | sim (servidor local) | pendente (01.05) |
 | Importar fontes de `moonlight-fontes.txt` no pendrive (R1 em Fontes) + atalhos de URL no teclado | sim | relatado: não achou o arquivo (01.05) |
 | Importação tolerante a nome (`*.txt` com "fonte"/"moonlight", extensão dupla do Windows) | sim | pendente (01.06) |

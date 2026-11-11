@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "net/web_client.hpp"
 
@@ -13,7 +15,8 @@ namespace ml {
 
 class RangeReader {
 public:
-    RangeReader(WebClient *client, std::string url) : client_(client), url_(std::move(url)) {}
+    RangeReader(WebClient *client, std::string url, std::vector<std::pair<std::string, std::string>> headers = {})
+        : client_(client), url_(std::move(url)), headers_(std::move(headers)) {}
 
     // First request: learns the size and whether the server accepts Range. "" or an error.
     std::string open();
@@ -31,6 +34,7 @@ private:
 
     WebClient *client_;
     std::string url_;
+    std::vector<std::pair<std::string, std::string>> headers_;   // extra request headers (Stremio proxyHeaders.request)
     std::unique_ptr<WebStream> stream_;
     uint64_t streamPos_ = 0;
     int64_t size_ = -1;

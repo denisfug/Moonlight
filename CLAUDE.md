@@ -34,6 +34,7 @@ src/radio       diretório Radio Browser, estações, favoritas
 src/player      MediaPlayer, AudioPlayer (MP3), VideoPlayer (indisponível), mp3_core (C)
 src/ui          Canvas (software), Font (stb_truetype), widgets, teclado, InputMap, tema
 src/app         App (shell/navegação/overlays) + telas (screens_*.cpp) + demo_data + remote (controle pelo celular)
+                + catalog_loader / multi_fetch (rede em segundo plano) + updater
 src/platform    platform.hpp | host/ (PC) | ps4/{video,controller,audio,filesystem,network} + ps4_platform
 tests/          testes (framework próprio em test.hpp) + fixtures (addon de demonstração, M3U, MP3 de teste)
 toolchain/      build-libcxx.sh, overlay/math.h
@@ -60,6 +61,8 @@ Ver tabela em README.md. libc++ é gerada em `toolchain/libcxx` (não versionada
 ## Implementado / pendente / limitações
 
 Fonte da verdade: `docs/ROADMAP.md`. Resumo: UI completa com dados de demonstração, música MP3 local,
-fontes Stremio (PC), biblioteca e M3U funcionam no PC. Pendentes: teste no PS4 do HTTP/TLS próprio (01.09; o TLS do sistema
-falhou com 0x8095F00C), rádio dentro do plugin, motor de vídeo (`docs/MEDIA_ENGINE.md`), imagens de pôster, requisições em thread.
+fontes Stremio (PC), biblioteca e M3U funcionam no PC. No PS4 (01.13+): interface, música local e HTTP/TLS próprio funcionam
+(o TLS do sistema falhou com 0x8095F00C). Pendentes: vídeo pela internet tocar no console (nenhum vídeo tocou ainda; espera-se que o player
+do sistema só abra MP4 H.264 — ver `docs/MEDIA_ENGINE.md`), controle pelo celular conectar, gravação do PKG da atualização, rádio dentro do plugin, busca e
+"adicionar fonte" fora da thread da interface.
 Limitação conhecida: o PS4 fecha o app quando um jogo abre, então a música do app não toca durante jogos.

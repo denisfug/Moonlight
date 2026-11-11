@@ -76,6 +76,8 @@ public:
     explicit AvEngine(Ps4Platform &p) : plat_(p) {}
     ~AvEngine() override { stop(); }
 
+    void setRequestHeaders(const std::vector<std::pair<std::string, std::string>> &h) override { headers_ = h; }
+
     bool open(const std::string &location, std::string *error) override
     {
         stop();
@@ -96,7 +98,7 @@ public:
         bool remote = lower.compare(0, 7, "http://") == 0 || lower.compare(0, 8, "https://") == 0;
         if (remote && location.find(".m3u8") == std::string::npos) {
             log("conectando ao servidor do video");
-            reader_.reset(new RangeReader(&plat_.web(), location));
+            reader_.reset(new RangeReader(&plat_.web(), location, headers_));
             std::string e = reader_->open();
             if (!e.empty()) {
                 reader_.reset();
@@ -229,6 +231,7 @@ private:
     int64_t duration_ = 0;
     std::string status_;
     std::unique_ptr<RangeReader> reader_;
+    std::vector<std::pair<std::string, std::string>> headers_;
     std::string fmt_;
 
     static std::string extensionOf(const std::string &url)

@@ -6,6 +6,8 @@
 
 #include "app/app.hpp"
 #include "app/catalog_loader.hpp"
+#include "app/multi_fetch.hpp"
+#include "player/sniff.hpp"
 #include "app/demo_data.hpp"
 #include "ui/theme.hpp"
 
@@ -268,6 +270,233 @@ private:
     std::string query_;
 };
 
+// ---------------------------------------------------------------- playback options
+// Asks every source for links at the same time, in the background, and lists ALL of them as they
+// arrive (before 01.17: one source after the other on the UI thread, 15 s each, first 3 links only).
+// Each source's line says whether it answered, how many links it gave and how long it took, so a
+// failure can be told apart: the source did not answer / the link's server did not answer / the
+// format is one the PS4 player cannot open.
+class StreamPickerScreen : public Screen {
+public:
+    StreamPickerScreen(App &a, std::string type, std::string videoId, std::string title)
+        : Screen(a), type_(std::move(type)), videoId_(std::move(videoId)), title_(std::move(title)) {}
+    std::string title() const override { return "Opcoes de reproducao"; }
+
+    void onEnter() override
+    {
+        if (started_) return;
+        started_ = true;
+        startedMs_ = app.now();
+        std::vector<MultiFetch::Item> items;
+        for (const auto &r : app.sources.resourceRequests("stream", type_, videoId_)) {
+            items.push_back({r.source, r.url, r.policy, kTimeoutMs});
+            Src src;
+            src.label = r.source;
+            srcs_.push_back(src);
+        }
+        if (!items.empty()) fetch_ = MultiFetch::start(app.platform, std::move(items));
+    }
+
+    void update(float) override
+    {
+        if (!fetch_) return;
+        bool changed = false;
+        for (size_t i = 0; i < srcs_.size(); i++) {
+            Src &src = srcs_[i];
+            if (src.state != MultiFetch::State::Pending) continue;
+            Json j;
+            std::string e;
+            int secs = 0;
+            MultiFetch::State st = fetch_->poll(i, &j, &e, &secs);
+            if (st == MultiFetch::State::Pending) continue;
+            src.seconds = secs;
+            src.state = st;
+            if (st == MultiFetch::State::Done) {
+                std::vector<addon::Stream> part;
+                addon::ParseResult r = addon::parseStreams(j, part);
+                if (!r.ok()) { src.state = MultiFetch::State::Failed; src.error = r.error; }
+                src.count = int(part.size());
+                for (auto &p : part) {
+                    Entry en;
+                    en.id = nextId_++;
+                    en.source = src.label;
+                    en.fmt = p.playableHere() ? guessContainer(p.filename, p.url, p.description + "\n" + p.name) : "";
+                    en.rank = !p.playableHere() ? 3 : en.fmt == "mp4" ? 0 : (en.fmt == "mkv" || en.fmt == "avi") ? 2 : 1;
+                    if (p.name.empty()) p.name = src.label;
+                    en.s = std::move(p);
+                    entries_.push_back(std::move(en));
+                }
+            } else {
+                src.error = e;
+            }
+            changed = true;
+        }
+        if (changed) {
+            // what the PS4 can most likely play first (MP4), what it cannot open last; source order otherwise
+            int keep = sel_ < int(entries_.size()) ? entries_[size_t(sel_)].id : -1;
+            std::stable_sort(entries_.begin(), entries_.end(), [](const Entry &a, const Entry &b) { return a.rank < b.rank; });
+            if (userMoved_)
+                for (size_t i = 0; i < entries_.size(); i++) if (entries_[i].id == keep) sel_ = int(i);
+            app.dirty();
+        }
+        bool pending = false;
+        for (const auto &src : srcs_) pending = pending || src.state == MultiFetch::State::Pending;
+        if (!pending) fetch_.reset();
+    }
+    bool animating() const override { return fetch_ != nullptr; }   // elapsed seconds + polling
+
+    bool handle(uint32_t p) override
+    {
+        int n = int(entries_.size());
+        if (p & BtnUp) { if (sel_ > 0) { sel_--; userMoved_ = true; } return true; }
+        if (p & BtnDown) { if (sel_ + 1 < n) { sel_++; userMoved_ = true; } return true; }
+        if ((p & BtnCross) && sel_ < n) { play(entries_[size_t(sel_)]); return true; }
+        return false;
+    }
+
+    void draw(Canvas &c, Rect area) override
+    {
+        std::string sub = title_;
+        if (!entries_.empty()) sub += "   -   " + std::to_string(entries_.size()) + (entries_.size() == 1 ? " opcao" : " opcoes");
+        drawSectionHeader(app, c, area, "Opcoes de reproducao", app.fonts.regular->ellipsize(24, sub, area.w - 2 * theme::Margin));
+        int x = area.x + theme::Margin, w = area.w - 2 * theme::Margin;
+        int y = 176;
+        int waited = int((app.now() - startedMs_) / 1000);
+        if (srcs_.empty()) {
+            app.fonts.regular->draw(c, x, y, 24, "Nenhuma fonte ativa oferece links para este titulo. Veja suas fontes em Fontes.", theme::TextDim);
+            return;
+        }
+        for (const auto &src : srcs_) {   // one status line per source
+            std::string t = src.label + ": ";
+            Color col = theme::TextDim;
+            if (src.state == MultiFetch::State::Pending) {
+                t += "procurando... " + std::to_string(waited) + " s (espera ate " + std::to_string(kTimeoutMs / 1000) + " s)";
+            } else if (src.state == MultiFetch::State::Failed) {
+                t += src.error + " (" + std::to_string(src.seconds) + " s)";
+                col = theme::Warn;
+            } else if (src.count == 0) {
+                t += "respondeu sem nenhum link para este titulo (" + std::to_string(src.seconds) + " s)";
+            } else {
+                t += std::to_string(src.count) + (src.count == 1 ? " link (" : " links (") + std::to_string(src.seconds) + " s)";
+                col = theme::Good;
+            }
+            app.fonts.regular->draw(c, x, y, 22, app.fonts.regular->ellipsize(22, t, w), col);
+            y += 32;
+        }
+        y += 12;
+        if (entries_.empty()) {
+            if (!fetch_) app.fonts.regular->draw(c, x, y + 10, 26, "Nenhuma opcao de reproducao para este titulo.", theme::TextDim);
+            return;
+        }
+        const int rowH = 88;
+        int visible = std::max(1, (area.bottom() - y) / rowH);
+        if (sel_ < first_) first_ = sel_;
+        if (sel_ >= first_ + visible) first_ = sel_ - visible + 1;
+        c.pushClip({area.x, y, area.w, area.bottom() - y});
+        for (int i = first_; i < int(entries_.size()) && i < first_ + visible + 1; i++) {
+            const Entry &en = entries_[size_t(i)];
+            Rect r{x, y + (i - first_) * rowH, w, rowH - 8};
+            bool f = i == sel_ && !app.sidebarFocused();
+            if (f) {
+                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 100));
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
+                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253));
+            } else {
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+            }
+            const int rightW = 330;
+            app.fonts.bold->draw(c, r.x + 24, r.y + 10, 24, app.fonts.bold->ellipsize(24, oneLine(en.s.name), r.w - rightW - 48), theme::Text);
+            app.fonts.regular->draw(c, r.x + 24, r.y + 44, 19,
+                                    app.fonts.regular->ellipsize(19, oneLine(en.s.description.empty() ? "-" : en.s.description), r.w - rightW - 48),
+                                    theme::TextMute);
+            std::string badge;
+            Color bc = theme::TextDim;
+            if (!en.s.playableHere()) {
+                badge = en.s.kind == addon::StreamKind::Torrent ? "P2P: nao suportado"
+                        : en.s.kind == addon::StreamKind::YouTube ? "YouTube: nao suportado"
+                        : en.s.kind == addon::StreamKind::External ? "site externo: nao suportado" : "nao suportado";
+                bc = theme::Warn;
+            } else if (en.fmt == "mp4") { badge = "MP4"; bc = theme::Good; }
+            else if (en.fmt == "mkv") { badge = "MKV: o PS4 nao abre"; bc = theme::Warn; }
+            else if (en.fmt == "avi") { badge = "AVI: o PS4 nao abre"; bc = theme::Warn; }
+            else if (en.fmt == "hls") badge = "HLS (pode nao abrir)";
+            else if (en.fmt == "ts") badge = "TS (pode nao abrir)";
+            else badge = "formato: so abrindo";
+            int bw = app.fonts.bold->measure(19, badge);
+            app.fonts.bold->draw(c, r.right() - 24 - bw, r.y + 12, 19, badge, bc);
+            std::string from = app.fonts.regular->ellipsize(18, en.source, rightW - 30);
+            app.fonts.regular->draw(c, r.right() - 24 - app.fonts.regular->measure(18, from), r.y + 46, 18, from, theme::TextMute);
+        }
+        c.popClip();
+    }
+
+    Hints hints() const override { return {{BtnCross, "Assistir"}, {BtnCircle, "Voltar"}}; }
+
+    std::string describe() const override
+    {
+        int pending = 0, failed = 0;
+        for (const auto &src : srcs_) {
+            pending += src.state == MultiFetch::State::Pending;
+            failed += src.state == MultiFetch::State::Failed;
+        }
+        std::string d = "links=" + std::to_string(entries_.size()) + " pendentes=" + std::to_string(pending) + " falhas=" + std::to_string(failed);
+        if (sel_ < int(entries_.size())) d += " sel=" + oneLine(entries_[size_t(sel_)].s.name) + " fmt=" + entries_[size_t(sel_)].fmt;
+        return d;
+    }
+
+private:
+    static constexpr int kTimeoutMs = 40000;   // sources that look links up on demand often need more than 15 s
+    struct Src {
+        std::string label, error;
+        MultiFetch::State state = MultiFetch::State::Pending;
+        int seconds = 0, count = 0;
+    };
+    struct Entry {
+        addon::Stream s;
+        std::string source, fmt;
+        int id = 0, rank = 1;
+    };
+    std::string type_, videoId_, title_;
+    std::shared_ptr<MultiFetch> fetch_;
+    std::vector<Src> srcs_;
+    std::vector<Entry> entries_;
+    bool started_ = false, userMoved_ = false;
+    int sel_ = 0, first_ = 0, nextId_ = 1;
+    uint64_t startedMs_ = 0;
+
+    static std::string oneLine(const std::string &t)
+    {
+        std::string o;
+        for (char ch : t) {
+            if (ch == '\r') continue;
+            if (ch == '\n') { if (!o.empty() && o.back() != ' ') o += "  -  "; continue; }
+            o += ch;
+        }
+        return o;
+    }
+
+    void play(const Entry &en)
+    {
+        const addon::Stream &st = en.s;
+        if (!st.playableHere()) {
+            app.modal("Nao suportado",
+                      st.kind == addon::StreamKind::Torrent
+                          ? "Este link e P2P (torrent). O Moonlight HB nao tem motor P2P. Escolha um link direto (os marcados MP4 sao os que o PS4 abre)."
+                          : "Esse tipo de link nao abre dentro do Moonlight HB. Escolha um link direto (os marcados MP4 sao os que o PS4 abre).");
+            return;
+        }
+        // headers the source declares for this link (protocol: behaviorHints.proxyHeaders.request),
+        // except the ones the client itself must control
+        std::vector<std::pair<std::string, std::string>> headers;
+        for (const auto &h : st.requestHeaders) {
+            std::string k = lower(h.first);
+            if (k == "host" || k == "range" || k == "connection" || k == "content-length" || k == "accept-encoding" || k == "transfer-encoding") continue;
+            headers.push_back(h);
+        }
+        app.playVideo(st.url, title_ + "  -  " + oneLine(st.name), headers);
+    }
+};
+
 // ---------------------------------------------------------------- detail
 class DetailScreen : public Screen {
 public:
@@ -275,17 +504,57 @@ public:
         : Screen(a), type_(std::move(type)), id_(std::move(id)), fallbackName_(std::move(name)) {}
     std::string title() const override { return meta_.name.empty() ? fallbackName_ : meta_.name; }
 
+    // Details come in the background (01.16 fetched them here, one source after the other, and the
+    // screen froze until the last one answered or timed out). The first source that answers wins.
     void onEnter() override
     {
         if (loaded_) return;
         loaded_ = true;
-        if (demo::isDemo(id_)) demo::meta(id_, meta_);
-        else error_ = app.sources.fetchMeta(type_, id_, meta_);
+        meta_.name = fallbackName_;
+        if (demo::isDemo(id_)) { demo::meta(id_, meta_); applyMeta(); return; }
+        std::vector<MultiFetch::Item> items;
+        for (const auto &r : app.sources.resourceRequests("meta", type_, id_)) items.push_back({r.source, r.url, r.policy, 25000});
+        if (items.empty()) { error_ = "Nenhuma fonte ativa fornece detalhes para este titulo."; return; }
+        metaSeen_.assign(items.size(), 0);
+        metaFetch_ = MultiFetch::start(app.platform, std::move(items));
+    }
+
+    void applyMeta()
+    {
         if (meta_.name.empty()) meta_.name = fallbackName_;
         seasons_ = meta_.seasons();
         // resume where the user stopped
         if (const LibraryItem *li = app.library.progressFor(id_))
             for (size_t i = 0; i < seasons_.size(); i++) if (seasons_[i] == li->season) season_ = int(i);
+    }
+
+    void pollMeta()
+    {
+        bool pending = false;
+        for (size_t i = 0; i < metaSeen_.size(); i++) {
+            if (metaSeen_[i]) continue;
+            Json j;
+            std::string e;
+            MultiFetch::State st = metaFetch_->poll(i, &j, &e, nullptr);
+            if (st == MultiFetch::State::Pending) { pending = true; continue; }
+            metaSeen_[i] = 1;
+            if (st == MultiFetch::State::Done) {
+                addon::MetaDetail md;
+                addon::ParseResult r = addon::parseMeta(j, md);
+                if (r.ok()) {
+                    meta_ = std::move(md);
+                    error_.clear();
+                    applyMeta();
+                    metaFetch_.reset();   // the other answers are not needed
+                    app.dirty();
+                    return;
+                }
+                e = r.error;
+            }
+            error_ = metaFetch_->label(i) + ": " + e;
+            app.dirty();
+        }
+        if (!pending) metaFetch_.reset();
     }
 
     std::vector<const addon::Video *> episodes() const
@@ -313,6 +582,8 @@ public:
                 } else if (isSeries) {
                     const LibraryItem *li = app.library.progressFor(id_);
                     playVideo(li ? li->videoId : (eps.empty() ? "" : eps[0]->id));
+                } else if (metaFetch_ && type_ == "series") {
+                    app.toast("Carregando os episodios...");   // which episode to play is not known yet
                 } else {
                     playVideo(id_);
                 }
@@ -342,12 +613,13 @@ public:
 
     void update(float dt) override
     {
+        if (metaFetch_) pollMeta();
         float target = float(std::max(0, ep_ - 3) * 96);
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
         anim_ = std::fabs(target - scroll_) > 0.5f;
         scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
     }
-    bool animating() const override { return anim_; }
+    bool animating() const override { return anim_ || metaFetch_ != nullptr; }
 
     void draw(Canvas &c, Rect area) override
     {
@@ -371,7 +643,8 @@ public:
         if (!meta_.imdbRating.empty()) add("nota " + meta_.imdbRating);
         if (!seasons_.empty()) add(std::to_string(seasons_.size()) + (seasons_.size() == 1 ? " temporada" : " temporadas"));
         app.fonts.regular->draw(c, tx, 152, 24, line, theme::Glow);
-        auto lines = app.fonts.regular->wrap(25, meta_.description.empty() ? error_ : meta_.description, area.right() - tx - 80, 4);
+        std::string about = !meta_.description.empty() ? meta_.description : metaFetch_ ? std::string("Carregando detalhes...") : error_;
+        auto lines = app.fonts.regular->wrap(25, about, area.right() - tx - 80, 4);
         int y = 200;
         for (const auto &l : lines) { app.fonts.regular->draw(c, tx, y, 25, l, theme::TextDim); y += 36; }
         if (!meta_.cast.empty()) {
@@ -431,6 +704,8 @@ public:
 
 private:
     std::string type_, id_, fallbackName_, error_;
+    std::shared_ptr<MultiFetch> metaFetch_;
+    std::vector<char> metaSeen_;
     addon::MetaDetail meta_;
     std::vector<int> seasons_;
     bool loaded_ = false, anim_ = false;
@@ -455,29 +730,11 @@ private:
                       "Fontes para ver opcoes de reproducao reais.");
             return;
         }
-        std::vector<std::string> errs;
-        auto streams = app.sources.fetchStreams(type_, videoId, &errs);
-        if (streams.empty()) {
-            app.modal("Nenhuma opcao de reproducao", errs.empty() ? "Nenhuma fonte ativa ofereceu streams para este titulo." : errs[0]);
-            return;
-        }
-        std::vector<std::string> labels;
-        for (size_t i = 0; i < streams.size() && i < 3; i++) labels.push_back(streams[i].name.empty() ? "Opcao " + std::to_string(i + 1) : streams[i].name);
-        std::string body;
-        for (size_t i = 0; i < streams.size() && i < 3; i++) {
-            const auto &s = streams[i];
-            body += labels[i] + ": " + (s.description.empty() ? "-" : s.description);
-            if (!s.playableHere()) body += s.kind == addon::StreamKind::Torrent ? " (P2P: nao suportado)" : " (formato nao suportado)";
-            body += "\n";
-        }
-        auto st = std::make_shared<std::vector<addon::Stream>>(streams);
-        App *a = &app;
-        app.modal("Escolha a fonte", body, labels, [a, st](int choice) {
-            if (choice < 0) return;
-            const auto &s = (*st)[size_t(choice)];
-            if (!s.playableHere()) { a->modal("Nao suportado", "Esse tipo de stream nao e suportado pelo Moonlight HB."); return; }
-            a->playVideo(s.url, s.name.empty() ? "Video" : s.name);
-        });
+        std::string what = meta_.name;
+        for (const auto &e : meta_.videos)
+            if (e.id == videoId && (e.season > 0 || e.episode > 0))
+                what += "  T" + std::to_string(e.season) + "E" + std::to_string(e.episode) + (e.title.empty() ? "" : " " + e.title);
+        app.push(std::unique_ptr<Screen>(new StreamPickerScreen(app, type_, videoId, what)));
     }
 };
 

@@ -173,6 +173,12 @@ TEST(sniff_media_containers)
     CHECK_EQ(sniffContainer(mkv, sizeof mkv), std::string("mkv"));
     CHECK_EQ(sniffContainer(html, sizeof html - 1), std::string("html"));
     CHECK_EQ(sniffContainer(hls, sizeof hls - 1), std::string("hls"));
+    CHECK_EQ(guessContainer("Filme.2020.1080p.MKV", "https://h/x", ""), std::string("mkv"));
+    CHECK_EQ(guessContainer("", "https://h/v/abc.mp4?token=x.mkv", "qualquer"), std::string("mp4"));
+    CHECK_EQ(guessContainer("", "https://h/play/123", "Serie.S01E02.720p.WEB.x264.mkv\n1.2 GB"), std::string("mkv"));
+    CHECK_EQ(guessContainer("", "https://h/live/index.m3u8", ""), std::string("hls"));
+    CHECK_EQ(guessContainer("", "https://h/play/123", "Dublado 1080p"), std::string(""));
+    CHECK_EQ(guessContainerFromText("arquivo.tsx e x.tsunami"), std::string(""));
     CHECK(!containerProblem("mkv").empty());
     CHECK(containerProblem("mp4").empty());
 }

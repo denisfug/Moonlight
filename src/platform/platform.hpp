@@ -82,6 +82,8 @@ public:
 class VideoEngine {
 public:
     virtual ~VideoEngine() = default;
+    // Extra HTTP headers for an http(s) location (the source's proxyHeaders.request); call before open().
+    virtual void setRequestHeaders(const std::vector<std::pair<std::string, std::string>> &) {}
     virtual bool open(const std::string &location, std::string *error) = 0;   // starts playing
     virtual void pause() = 0;
     virtual void resume() = 0;

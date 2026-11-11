@@ -85,6 +85,8 @@ std::string netError(int code)
 {
     switch (unsigned(code)) {
     case 0x8041013Cu: return "tempo esgotado";
+    case 0x80410123u: return "tempo esgotado";   // EAGAIN: SO_RCVTIMEO/SO_SNDTIMEO expired (seen on the console)
+    case 0x80410120u: return "conexao fechada pelo servidor";   // EPIPE
     case 0x8041013Du: return "conexao recusada";
     case 0x80410136u: return "conexao reiniciada pelo servidor";
     case 0x80410141u: return "sem rota para o servidor";

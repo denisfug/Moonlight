@@ -43,6 +43,7 @@ public:
     virtual void draw(ui::Canvas &c, ui::Rect area) = 0;
     virtual Hints hints() const { return {{BtnCross, "Selecionar"}, {BtnCircle, "Voltar"}}; }
     virtual bool fullscreen() const { return false; }   // true: no sidebar/hint bar (video player)
+    virtual std::string describe() const { return ""; }   // short machine-readable state (tests)
 
 protected:
     App &app;
@@ -106,6 +107,10 @@ public:
                       std::function<void(const std::string &)> onDone);
     void dirty() { dirty_ = true; }
     bool modalOpen() const { return modal_.open; }
+    const std::string &modalTitle() const { return modal_.title; }   // tests
+    const std::string &modalBody() const { return modal_.body; }
+    std::string currentTitle() { return current().title(); }
+    std::string currentState() { return current().describe(); }
     // Demo movies/series only while there is no active source of the user's.
     bool videoDemo() const;
     // Source the user typed/imported/sent from the phone. An http:// address the user chose himself is
@@ -118,7 +123,8 @@ public:
     void togglePause();
     void playStation(const radio::Station &s);
     // Opens the full-screen video player, or explains why video is not available here.
-    void playVideo(const std::string &location, const std::string &title);
+    void playVideo(const std::string &location, const std::string &title,
+                   const std::vector<std::pair<std::string, std::string>> &requestHeaders = {});
     bool startTrack(size_t t, std::string *err);   // local file or server song
     std::string loadServerMusic();                 // playlists + random mix from the server (blocking)
     std::vector<size_t> searchServer(const std::string &q, std::string *err);

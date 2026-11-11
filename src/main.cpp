@@ -49,7 +49,7 @@ static uint32_t buttonByName(const std::string &n)
 }
 
 // usage: moonlight_host <sandbox> <assets> <outdir> "step step ..."
-//   steps: a button name (press+release), "wait:MS", "shot:NAME" (save PNG)
+//   steps: a button name (press+release), "wait:MS", "shot:NAME" (save PNG), "source:MANIFEST_URL"
 int main(int argc, char **argv)
 {
     if (argc < 5) {
@@ -68,6 +68,11 @@ int main(int argc, char **argv)
     for (char *tok = std::strtok(script, " "); tok; tok = std::strtok(nullptr, " ")) {
         std::string s = tok;
         if (s.compare(0, 5, "wait:") == 0) { runFrames(std::atoi(s.c_str() + 5) / 16 + 1); continue; }
+        if (s.compare(0, 7, "source:") == 0) {   // add a source by manifest URL (local test servers)
+            std::string e = app.addSourceByUser(s.substr(7));
+            if (!e.empty()) { std::fprintf(stderr, "source: %s\n", e.c_str()); return 3; }
+            continue;
+        }
         if (s.compare(0, 5, "shot:") == 0) {
             runFrames(30);   // let animations settle
             std::string path = outdir + "/" + s.substr(5) + ".png";

@@ -78,6 +78,7 @@ struct Stream {
     std::vector<Subtitle> subtitles;
     bool notWebReady = false;
     std::string bingeGroup;
+    std::string filename;      // behaviorHints.filename (tells the container: .mp4, .mkv...)
     std::vector<std::pair<std::string, std::string>> requestHeaders;   // behaviorHints.proxyHeaders.request
     bool playableHere() const { return kind == StreamKind::Url; }
 };

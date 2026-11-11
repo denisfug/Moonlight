@@ -59,6 +59,19 @@ public:
     static std::string fetchCatalogAt(HttpClient *http, const std::string &url, const UrlPolicy &policy,
                                       std::vector<addon::MetaPreview> &out);
 
+    // One request per enabled source that declares `resource` ("meta", "stream") for (type, id), in
+    // source order. Built on the UI thread; fetched in the background with fetchJsonAt (app/multi_fetch).
+    struct ResourceRequest {
+        std::string source;   // source name, for messages
+        std::string url;
+        UrlPolicy policy;
+    };
+    std::vector<ResourceRequest> resourceRequests(const std::string &resource, const std::string &type,
+                                                  const std::string &id) const;
+    // GET + JSON parse with the source's URL policy; touches no shared state (worker threads).
+    static std::string fetchJsonAt(HttpClient *http, const std::string &url, const UrlPolicy &policy, Json &out,
+                                   int timeoutMs);
+
     HttpClient *http() const { return http_; }
     UrlPolicy policyFor(const Source &s) const { return UrlPolicy{s.allowPlainHttp}; }
 
