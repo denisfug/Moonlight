@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace ml {
 
@@ -39,9 +40,9 @@ std::string RangeReader::openAt(uint64_t pos)
         streamPos_ = 0;
         if (pos > 0) {
             if (pos > 64ull * 1024 * 1024) { stream_.reset(); return "o servidor nao permite pular no video (sem Range)"; }
-            char tmp[16384];
+            std::vector<char> tmp(16384);   // heap: callers may run on small stacks
             while (streamPos_ < pos) {
-                long n = stream_->read(tmp, size_t(std::min<uint64_t>(sizeof tmp, pos - streamPos_)));
+                long n = stream_->read(tmp.data(), size_t(std::min<uint64_t>(tmp.size(), pos - streamPos_)));
                 if (n <= 0) { stream_.reset(); return "leitura falhou ao pular"; }
                 streamPos_ += uint64_t(n);
             }
@@ -68,9 +69,9 @@ long RangeReader::readAt(uint64_t pos, void *buf, size_t len)
     if (size_ >= 0 && pos >= uint64_t(size_)) { unlock(); return 0; }
     if (size_ >= 0 && pos + len > uint64_t(size_)) len = size_t(uint64_t(size_) - pos);
     if (stream_ && pos > streamPos_ && pos - streamPos_ <= kSkipLimit) {
-        char tmp[16384];
+        std::vector<char> tmp(16384);
         while (stream_ && streamPos_ < pos) {
-            long n = stream_->read(tmp, size_t(std::min<uint64_t>(sizeof tmp, pos - streamPos_)));
+            long n = stream_->read(tmp.data(), size_t(std::min<uint64_t>(tmp.size(), pos - streamPos_)));
             if (n <= 0) stream_.reset();
             else streamPos_ += uint64_t(n);
         }

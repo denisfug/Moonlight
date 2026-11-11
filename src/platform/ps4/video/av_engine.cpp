@@ -115,13 +115,21 @@ public:
                 if (error) *error = problem;
                 return false;
             }
+            fetchQuit_ = false;
+            fetchRunning_ = true;
+            if (!plat_.startThread(&AvEngine::fetchMain, this, "ml_av_fetch")) {
+                fetchRunning_ = false;
+                reader_.reset();
+                if (error) *error = "nao iniciou a leitura do video";
+                return false;
+            }
             init.file = {this, &AvEngine::fOpen, &AvEngine::fClose, &AvEngine::fRead, &AvEngine::fSize};
             source = "/ml_stream/video" + (fmt_ == "mp4" ? std::string(".mp4") : extensionOf(location));
             log("formato " + (fmt_.empty() ? std::string("desconhecido") : fmt_) + ", " +
                 std::to_string(reader_->size() / (1024 * 1024)) + " MB, abrindo no player do PS4");
         }
         h_ = sceAvPlayerInit(&init);
-        if (!h_) { reader_.reset(); log("sceAvPlayerInit falhou"); if (error) *error = "sceAvPlayerInit falhou"; return false; }
+        if (!h_) { stopFetch(); reader_.reset(); log("sceAvPlayerInit falhou", true); if (error) *error = "sceAvPlayerInit falhou"; return false; }
         int r = sceAvPlayerAddSource(h_, source.c_str());
         if (r < 0) {
             log("AddSource " + hex(r) + (unsigned(r) == 0x806A0002u ? " (o player do PS4 recusou o arquivo" +
@@ -131,7 +139,9 @@ public:
                          ")" + (fmt_ == "mp4" ? ". O MP4 pode usar um codec que o PS4 nao decodifica (ex. HEVC/x265)." : "");
             sceAvPlayerClose(h_);
             h_ = nullptr;
+            stopFetch();
             reader_.reset();
+            traceStep("video recusado", true);
             return false;
         }
         log("fonte adicionada, aguardando o decodificador");
@@ -153,7 +163,9 @@ public:
         sceAvPlayerClose(h_);
         h_ = nullptr;
         paused_ = false;
+        stopFetch();
         reader_.reset();
+        traceStep("video fechado", true);
     }
 
     bool seek(int64_t ms) override
@@ -229,16 +241,55 @@ private:
         return ext;
     }
 
-    // File-replacement callbacks (called from the player's own threads).
+    // File-replacement callbacks (called from the player's own threads). The network work (and a TLS
+    // handshake when the player jumps, e.g. to an index at the end of the file) runs on our own fetch
+    // thread with a known 1 MiB stack: the player's threads may have small stacks (suspected cause of
+    // the crash when starting a video in 01.14).
     static int32_t fOpen(void *, const char *) { return 0; }
     static int32_t fClose(void *) { return 0; }
     static int32_t fRead(void *obj, uint8_t *buf, uint64_t pos, uint32_t len)
     {
         auto *self = static_cast<AvEngine *>(obj);
-        if (!self->reader_) return -1;
-        long n = self->reader_->readAt(pos, buf, len);
+        if (!self->reader_ || !self->fetchRunning_.load()) return -1;
+        while (self->fetchLock_.test_and_set(std::memory_order_acquire)) sceKernelUsleep(200);   // one read at a time
+        self->jobBuf_ = buf;
+        self->jobPos_ = pos;
+        self->jobLen_ = len;
+        self->jobDone_.store(false);
+        self->jobReady_.store(true, std::memory_order_release);
+        while (!self->jobDone_.load(std::memory_order_acquire)) {
+            if (!self->fetchRunning_.load()) { self->fetchLock_.clear(); return -1; }
+            sceKernelUsleep(500);
+        }
+        long n = self->jobResult_;
+        self->fetchLock_.clear(std::memory_order_release);
         if (n < 0) self->log("rede: " + self->reader_->lastError());
         return int32_t(n);
+    }
+
+    static void fetchMain(void *p) { static_cast<AvEngine *>(p)->fetchLoop(); }
+    void fetchLoop()
+    {
+        while (!fetchQuit_.load()) {
+            if (!jobReady_.load(std::memory_order_acquire)) { sceKernelUsleep(500); continue; }
+            jobReady_.store(false);
+            jobResult_ = reader_ ? reader_->readAt(jobPos_, jobBuf_, jobLen_) : -1;
+            jobDone_.store(true, std::memory_order_release);
+        }
+        fetchRunning_ = false;
+    }
+    std::atomic_flag fetchLock_ = ATOMIC_FLAG_INIT;
+    std::atomic<bool> fetchRunning_{false}, fetchQuit_{false}, jobReady_{false}, jobDone_{false};
+    uint8_t *jobBuf_ = nullptr;
+    uint64_t jobPos_ = 0;
+    uint32_t jobLen_ = 0;
+    long jobResult_ = 0;
+
+    void stopFetch()
+    {
+        if (!fetchRunning_.load()) return;
+        fetchQuit_ = true;
+        for (int i = 0; i < 4000 && fetchRunning_.load(); i++) sceKernelUsleep(5000);   // a read can take its timeout
     }
     static uint64_t fSize(void *obj)
     {
@@ -248,11 +299,15 @@ private:
 
     std::atomic_flag statusLock_ = ATOMIC_FLAG_INIT;
     // Called from the UI thread and from the player's callback threads.
-    void log(const std::string &s)
+    void log(const std::string &s, bool settled = false)
     {
         while (statusLock_.test_and_set(std::memory_order_acquire)) {}
+        bool changed = status_ != s;
         status_ = s;
         statusLock_.clear(std::memory_order_release);
+        // Recorded as the "last step" so that, if the console closes the app (CE-34878-0), the next
+        // start shows where the player was.
+        if (changed) traceStep(("video: " + s).c_str(), settled);
     }
 
     static void onEvent(void *obj, int32_t ev, int32_t, void *)
@@ -260,7 +315,7 @@ private:
         auto *self = static_cast<AvEngine *>(obj);
         switch (ev) {
         case MlAvStateReady: self->log("pronto"); break;
-        case MlAvStatePlay: self->log("tocando"); break;
+        case MlAvStatePlay: self->log("tocando", true); break;
         case MlAvStateBuffering: self->log("carregando..."); break;
         case MlAvStateStop: self->log("parado"); break;
         case MlAvEncryption:

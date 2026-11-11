@@ -109,5 +109,6 @@ std::string checkUrlPolicy(const Url &u, const UrlPolicy &p);   // "" = allowed,
 using NetTraceFn = void (*)(const char *step, bool done);
 void setNetTrace(NetTraceFn fn);
 void netTraceOnce(int id, const char *step, bool done);   // id 0..15, each reported once per run
+void traceStep(const char *step, bool done);   // every call is recorded (use for rare events: player steps)
 
 }  // namespace ml

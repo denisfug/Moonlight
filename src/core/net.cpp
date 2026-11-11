@@ -144,6 +144,11 @@ std::atomic<unsigned> gTraced{0};
 
 void setNetTrace(NetTraceFn fn) { gTrace.store(fn); }
 
+void traceStep(const char *step, bool done)
+{
+    if (NetTraceFn f = gTrace.load()) f(step, done);
+}
+
 void netTraceOnce(int id, const char *step, bool done)
 {
     unsigned bit = 1u << (id & 15);
