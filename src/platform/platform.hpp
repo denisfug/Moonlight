@@ -72,6 +72,9 @@ public:
     virtual bool listDir(const std::string &path, std::vector<DirEntry> &out) = 0;
     virtual bool makeDirs(const std::string &path) = 0;
     virtual bool exists(const std::string &path) = 0;
+    // Why the last write/makeDirs failed (step + system code), "" if unknown. Not thread-safe:
+    // read it right after the failing call on the same thread.
+    virtual std::string lastError() const { return ""; }
 };
 
 // ---------------------------------------------------------------- video

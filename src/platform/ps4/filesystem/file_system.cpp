@@ -1,6 +1,8 @@
 // Files through libkernel (sceKernelOpen/Getdents...), the API set used by our earlier console-tested builds.
 #include <orbis/libkernel.h>
 
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 #include "platform/ps4/ps4_platform.hpp"
@@ -35,21 +37,37 @@ bool Files::readFile(const std::string &path, std::string &out, size_t maxBytes)
     return true;
 }
 
+static std::string hexCode(int v)
+{
+    char b[16];
+    std::snprintf(b, sizeof b, "0x%08X", unsigned(v));
+    return b;
+}
+
 bool Files::writeFile(const std::string &path, const std::string &data)
 {
     std::string tmp = path + ".tmp";
     int fd = sceKernelOpen(tmp.c_str(), kWrOnly | kCreat | kTrunc, 0666);
-    if (fd < 0) return false;
+    if (fd < 0) { err_ = "abrir " + tmp + " " + hexCode(fd); return false; }
     size_t off = 0;
     bool ok = true;
     while (off < data.size()) {
-        int64_t n = int64_t(sceKernelWrite(fd, data.data() + off, data.size() - off));
-        if (n <= 0) { ok = false; break; }
+        // in pieces: one very large write is refused by some filesystems
+        size_t chunk = std::min<size_t>(data.size() - off, 1 << 20);
+        int64_t n = int64_t(sceKernelWrite(fd, data.data() + off, chunk));
+        if (n <= 0) { ok = false; err_ = "gravar (" + std::to_string(off) + " bytes) " + hexCode(int(n)); break; }
         off += size_t(n);
     }
     sceKernelClose(fd);
     if (!ok) { sceKernelUnlink(tmp.c_str()); return false; }
-    return sceKernelRename(tmp.c_str(), path.c_str()) == 0;
+    int r = sceKernelRename(tmp.c_str(), path.c_str());
+    if (r != 0) {
+        // some PS4 filesystems do not rename over an existing file: remove it and try again
+        sceKernelUnlink(path.c_str());
+        r = sceKernelRename(tmp.c_str(), path.c_str());
+    }
+    if (r != 0) { err_ = "renomear " + hexCode(r); sceKernelUnlink(tmp.c_str()); return false; }
+    return true;
 }
 
 bool Files::listDir(const std::string &path, std::vector<DirEntry> &out)
@@ -88,7 +106,7 @@ bool Files::makeDirs(const std::string &path)
     for (size_t i = 1; i <= path.size(); i++) {
         if (i == path.size() || path[i] == '/') {
             int r = sceKernelMkdir(path.substr(0, i).c_str(), 0777);
-            if (r < 0 && uint32_t(r) != kEExist && i == path.size()) return false;
+            if (r < 0 && uint32_t(r) != kEExist && i == path.size()) { err_ = "criar pasta " + path + " " + hexCode(r); return false; }
         }
     }
     return true;

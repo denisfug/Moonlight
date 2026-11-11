@@ -570,7 +570,7 @@ private:
             return "Baixando " + u.latest + "... " + std::to_string(pct) + "%";
         }
         case Updater::Phase::Downloaded: return u.latest + " baixada em " + u.path + ". X mostra como instalar.";
-        case Updater::Phase::Failed: return "Falhou: " + u.error + ". X tenta de novo.";
+        case Updater::Phase::Failed: return "Falhou. X mostra o motivo e tenta de novo.";
         }
         return cur;
     }
@@ -580,7 +580,17 @@ private:
         Updater::State u = app.updater->state();
         switch (u.phase) {
         case Updater::Phase::Available: app.updater->download(); break;
-        case Updater::Phase::Failed: if (!u.assetUrl.empty()) app.updater->download(); else app.updater->check(); break;
+        case Updater::Phase::Failed: {
+            // the whole message (the line under the item is cut when long)
+            Updater *up = app.updater.get();
+            bool dl = !u.assetUrl.empty();
+            app.modal("Atualizar o Moonlight", "Falhou: " + u.error, {"Tentar de novo", "Fechar"}, [up, dl](int c) {
+                if (c != 0) return;
+                if (dl) up->download();
+                else up->check();
+            });
+            break;
+        }
         case Updater::Phase::Checking:
         case Updater::Phase::Downloading: app.toast("Aguarde..."); break;
         case Updater::Phase::Downloaded: install(u.path, false); break;

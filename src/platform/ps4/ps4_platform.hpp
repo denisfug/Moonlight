@@ -39,6 +39,10 @@ public:
     bool listDir(const std::string &path, std::vector<DirEntry> &out) override;
     bool makeDirs(const std::string &path) override;
     bool exists(const std::string &path) override;
+    std::string lastError() const override { return err_; }
+
+private:
+    std::string err_;
 };
 
 std::unique_ptr<AudioOut> makeAudioOut();

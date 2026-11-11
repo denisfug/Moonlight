@@ -217,10 +217,19 @@ void Updater::runDownload()
         err = "sem rede";
     }
     if (err.empty()) {
+        // 01.14 on the console: "nao gravou em /data/pkg". Try the usual places in order and report
+        // every failure with its system code.
         FileSystem &fs = platform_.fs();
-        fs.makeDirs("/data/pkg");
-        s.path = "/data/pkg/Moonlight-HB_" + s.latest + ".pkg";
-        if (!fs.writeFile(s.path, data)) err = "nao gravou em /data/pkg (espaco livre?)";
+        const char *dirs[] = {"/data/pkg", "/data/moonlight/pkg", "/mnt/usb0", "/mnt/usb1"};
+        std::string tried;
+        bool saved = false;
+        for (const char *d : dirs) {
+            if (!fs.makeDirs(d) && !fs.exists(d)) { tried += std::string(d) + ": " + fs.lastError() + "; "; continue; }
+            std::string path = std::string(d) + "/Moonlight-HB_" + s.latest + ".pkg";
+            if (fs.writeFile(path, data)) { s.path = path; saved = true; break; }
+            tried += std::string(d) + ": " + (fs.lastError().empty() ? std::string("falhou") : fs.lastError()) + "; ";
+        }
+        if (!saved) err = "nao gravou o arquivo (" + tried + "espaco livre?)";
     }
     if (err.empty()) {
         s.phase = Phase::Downloaded;
