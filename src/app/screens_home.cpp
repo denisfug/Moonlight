@@ -62,6 +62,11 @@ Rect cardSize(Shape s)
     }
 }
 
+struct Cont {
+    std::string id, type, name, sub;
+    double progress = 0;
+};
+
 class HomeScreen : public Screen {
 public:
     explicit HomeScreen(App &a) : Screen(a), loader_(new CatalogLoader(a.platform, a.platform.http())) {}
@@ -77,7 +82,6 @@ public:
             srcs_.clear();
             std::vector<int> perSource(app.sources.sources().size(), 0);
             for (const auto &ref : app.sources.browsableCatalogs()) {
-                // a taste of each source (2 catalogs); the full catalog is in Filmes/Series, per source
                 if (++perSource[ref.source] > 2) continue;
                 Src s;
                 s.title = ref.decl->name + " - " + app.sources.sources()[ref.source].manifest.name;
@@ -89,27 +93,41 @@ public:
             }
         }
         rebuild();
+        // entering Home: focus the continue panel when there is history (Left then reaches the sidebar),
+        // otherwise the hero. Background rebuilds (new catalogs) do not touch focus.
+        focus_ = continue_.empty() ? Zone::Hero : Zone::Cont;
+        contSel_ = 0;
     }
 
     void rebuild()
     {
         std::string keepTitle = rows_.empty() ? "" : rows_[size_t(rowSel_)].title;
-        rows_.clear();
-        auto cw = app.library.continueWatching(12);
-        if (!cw.empty()) {
-            Row r{"Continuar assistindo", Shape::Landscape};
-            for (const auto &i : cw) {
-                Card cd{i.id, i.type, i.name};
-                cd.subtitle = i.type == "series" ? "T" + std::to_string(i.season) + " E" + std::to_string(i.episode) + " - " + formatTime(i.positionMs)
-                                                 : formatTime(i.positionMs) + " de " + formatTime(i.durationMs);
-                cd.progress = i.progress();
-                r.cards.push_back(cd);
-            }
-            rows_.push_back(r);
+        // continue watching -> left panel
+        continue_.clear();
+        for (const auto &i : app.library.continueWatching(3)) {
+            Cont cd{i.id, i.type, i.name};
+            cd.sub = i.type == "series" ? "T" + std::to_string(i.season) + " E" + std::to_string(i.episode)
+                                        : formatTime(i.durationMs - i.positionMs) + " restantes";
+            cd.progress = i.progress();
+            continue_.push_back(cd);
         }
+        // demo mode with no real history: seed the panel so it matches the design (real use fills it in)
+        if (continue_.empty() && app.videoDemo()) {
+            const double pr[] = {0.48, 0.22, 0.71};
+            const char *sub[] = {"32 min restantes", "1 h 05 min restantes", "18 min restantes"};
+            auto dm = demo::movies();
+            for (size_t i = 0; i < dm.size() && i < 3; i++) {
+                Cont cd{dm[i].id, dm[i].type, dm[i].name};
+                cd.sub = sub[i];
+                cd.progress = pr[i];
+                continue_.push_back(cd);
+            }
+        }
+        if (contSel_ >= int(continue_.size())) contSel_ = std::max(0, int(continue_.size()) - 1);
+        // rows -> strip below the hero (no "Continuar assistindo" row: it is the left panel now)
+        rows_.clear();
         addMetaRow("Filmes em destaque", Shape::Poster, app.videoDemo() ? demo::movies() : std::vector<addon::MetaPreview>{});
         addMetaRow("Series para maratonar", Shape::Poster, app.videoDemo() ? demo::series() : std::vector<addon::MetaPreview>{});
-        // catalogs from the user's sources, as they arrive from the background loader
         for (const auto &s : srcs_)
             if (!s.metas.empty()) addMetaRow(s.title, Shape::Poster, s.metas);
         Row mus{"Sua musica", Shape::Square};
@@ -129,13 +147,37 @@ public:
         if (!live.cards.empty()) rows_.push_back(live);
         rowSel_ = 0;
         for (size_t i = 0; i < rows_.size(); i++) if (rows_[i].title == keepTitle) rowSel_ = int(i);
+        // featured = first poster card available
+        hasFeatured_ = false;
+        for (const auto &r : rows_)
+            if (!r.cards.empty() && (r.shape == Shape::Poster)) { featured_ = r.cards[0]; featuredSrc_ = r.title; hasFeatured_ = true; break; }
+        if (focus_ == Zone::Cont && continue_.empty()) focus_ = Zone::Hero;
     }
 
     bool handle(uint32_t p) override
     {
+        if (focus_ == Zone::Hero) {
+            if (p & BtnLeft) { if (!continue_.empty()) { focus_ = Zone::Cont; return true; } return false; }
+            if (p & BtnDown) { if (!rows_.empty()) { focus_ = Zone::Rows; rowSel_ = 0; return true; } return false; }
+            if (p & BtnCross) { if (hasFeatured_) open(featured_); return true; }
+            return false;
+        }
+        if (focus_ == Zone::Cont) {
+            if (p & BtnUp) { if (contSel_ > 0) contSel_--; return true; }
+            if (p & BtnDown) {
+                if (contSel_ + 1 < int(continue_.size())) { contSel_++; return true; }
+                if (!rows_.empty()) { focus_ = Zone::Rows; rowSel_ = 0; }
+                return true;
+            }
+            if (p & BtnRight) { focus_ = Zone::Hero; return true; }
+            if (p & BtnLeft) return false;   // to the sidebar
+            if (p & BtnCross) { openCont(contSel_); return true; }
+            return false;
+        }
+        // Zone::Rows
         if (rows_.empty()) return false;
         Row &r = rows_[size_t(rowSel_)];
-        if (p & BtnUp) { if (rowSel_ > 0) rowSel_--; return true; }
+        if (p & BtnUp) { if (rowSel_ > 0) { rowSel_--; return true; } focus_ = Zone::Hero; return true; }
         if (p & BtnDown) { if (rowSel_ + 1 < int(rows_.size())) rowSel_++; return true; }
         if (p & BtnLeft) { if (r.sel == 0) return false; r.sel--; return true; }
         if (p & BtnRight) { if (r.sel + 1 < int(r.cards.size())) r.sel++; return true; }
@@ -160,54 +202,33 @@ public:
             r.scrollTarget = float(std::max(0, r.sel - 1) * (cs.w + 28));
             ease(r.scroll, r.scrollTarget);
         }
-        float target = 0;
-        for (int i = 0; i < rowSel_; i++) target += rowHeight(rows_[size_t(i)]);
-        ease(vscroll_, target);
     }
     bool animating() const override { return anim_ || loader_->busy(); }
 
+    // ---- layout -------------------------------------------------------------
     void draw(Canvas &c, Rect area) override
     {
-        int x0 = area.x + theme::Margin;
-        if (rows_.empty()) {
-            drawSectionHeader(app, c, area, "Bem-vindo", "Nada para mostrar ainda: adicione musicas ou fontes.");
-            return;
-        }
-        const Card &f = rows_[size_t(rowSel_)].cards[size_t(rows_[size_t(rowSel_)].sel)];
-        drawHero(c, area, f);
-        // rows
-        const int top = 486;
-        c.pushClip({area.x, top - 40, area.w, area.bottom() - (top - 40)});
-        float y = top - vscroll_;
-        for (size_t i = 0; i < rows_.size(); i++) {
-            Row &r = rows_[i];
-            int h = rowHeight(r);
-            if (y + h > top - 60 && y < area.bottom()) {
-                bool rowFocus = int(i) == rowSel_ && !app.sidebarFocused();
-                app.fonts.bold->draw(c, x0, int(y), 28, r.title, rowFocus ? theme::Text : theme::TextDim);
-                Rect cs = cardSize(r.shape);
-                int cy = int(y) + 54;
-                c.pushClip({area.x, cy - 30, area.w, h});
-                for (size_t k = 0; k < r.cards.size(); k++) {
-                    int cx = x0 + int(k) * (cs.w + 28) - int(r.scroll);
-                    if (cx > area.right() || cx + cs.w < area.x) continue;
-                    const Card &cd = r.cards[k];
-                    drawPosterCard(app, c, {cx, cy, cs.w, cs.h}, cd.id, cd.title, r.shape == Shape::Poster ? cd.meta : cd.subtitle,
-                                   rowFocus && int(k) == r.sel, cd.progress, cd.poster);
-                }
-                c.popClip();
-            }
-            y += h;
-        }
-        c.popClip();
+        const int L = area.x + 52, R = theme::W - 56;
+        drawTopBar(c, L, R);
+        const int bandY = 134, bandH = 544, panelW = 372, gap = 28;
+        if (!continue_.empty()) drawContinuePanel(c, {L, bandY, panelW, bandH});
+        int heroX = continue_.empty() ? L : L + panelW + gap;
+        drawHeroCard(c, {heroX, bandY, R - heroX, bandH});
+        drawStrip(c, area, bandY + bandH + 26, R);
     }
 
     Hints hints() const override { return {{BtnUp | BtnDown | BtnLeft | BtnRight, "Navegar"}, {BtnCross, "Abrir"}, {BtnCircle, "Menu"}}; }
 
 private:
+    enum class Zone { Cont, Hero, Rows };
     std::vector<Row> rows_;
+    std::vector<Cont> continue_;
+    Card featured_;
+    std::string featuredSrc_;
+    bool hasFeatured_ = false;
+    Zone focus_ = Zone::Hero;
+    int contSel_ = 0;
     int rowSel_ = 0;
-    float vscroll_ = 0;
     bool anim_ = false;
     struct Src {
         std::string title;
@@ -218,7 +239,7 @@ private:
     std::vector<Src> srcs_;
     int seenVersion_ = -1;
 
-    static int rowHeight(const Row &r) { return cardSize(r.shape).h + 120; }
+    static int rowHeight(const Row &r) { return cardSize(r.shape).h + 96; }
 
     void addMetaRow(const std::string &title, Shape s, const std::vector<addon::MetaPreview> &metas)
     {
@@ -236,32 +257,157 @@ private:
         rows_.push_back(r);
     }
 
-    void drawHero(Canvas &c, Rect area, const Card &f)
+    void glassChip(Canvas &c, int x, int y, int w, int h, const std::string &text, int sz, bool solid)
     {
-        // backdrop art on the right, fading into the background on the left
-        Rect art{area.x + area.w / 3, 0, area.w - area.w / 3, 452};
-        drawGeneratedArt(c, app.fonts, art, 0, f.id + "#bg", f.title, false);
-        // fade the art into the page background (which is a vertical BgTop -> Bg gradient)
-        for (int y = 0; y < art.h; y += 4) {
-            Color bg = mix(theme::BgTop, theme::Bg, float(y) / float(theme::H));
-            c.fillGradient(art.x, y, art.w / 2, 4, 0, bg, withAlpha(bg, 0), 0);
+        if (solid) c.fillRoundRect(x, y, w, h, h / 2, withAlpha(theme::Text, 235));
+        else { c.fillRoundRect(x, y, w, h, h / 2, theme::Surface); c.strokeRoundRect(x, y, w, h, h / 2, 1, theme::Line); }
+        Color col = solid ? theme::Bg : theme::TextDim;
+        app.fonts.bold->draw(c, x + (w - app.fonts.bold->measure(sz, text)) / 2, y + (h - app.fonts.bold->lineHeight(sz)) / 2, sz, text, col);
+    }
+
+    void drawTopBar(Canvas &c, int L, int R)
+    {
+        int y = 40, h = 60;
+        // search field
+        int sw = 520;
+        c.fillRoundRect(L, y, sw, h, 30, theme::Surface);
+        c.strokeRoundRect(L, y, sw, h, 30, 1, theme::Line);
+        c.strokeCircle(float(L + 34), float(y + h / 2 - 2), 9, 2, theme::TextMute);
+        c.line(float(L + 41), float(y + h / 2 + 5), float(L + 48), float(y + h / 2 + 12), 2, theme::TextMute);
+        app.fonts.regular->draw(c, L + 62, y + (h - app.fonts.regular->lineHeight(22)) / 2, 22, "Buscar filmes e series", theme::TextMute);
+        // top tabs (content filters; the sidebar is the main nav)
+        const char *tabs[] = {"Inicio", "Filmes", "Series", "Musica"};
+        int tx = L + sw + 22;
+        for (int i = 0; i < 4; i++) {
+            int tw = app.fonts.bold->measure(21, tabs[i]) + 52;
+            glassChip(c, tx, y, tw, h, tabs[i], 21, i == 0);
+            tx += tw + 10;
         }
-        Color bottom = mix(theme::BgTop, theme::Bg, float(art.h) / float(theme::H));
-        c.fillGradient(art.x, art.h - 160, art.w, 160, 0, withAlpha(bottom, 0), bottom, 1);
-        int x = area.x + theme::Margin;
-        std::string kind = f.type == "movie" ? "FILME" : f.type == "series" ? "SERIE" : f.type == "music" ? "PLAYLIST" : f.type == "tv" ? "AO VIVO" : "";
-        if (!kind.empty()) {
-            int w = app.fonts.bold->measure(18, kind) + 28;
-            c.fillGradient(x, 64, w, 32, 16, theme::Violet, theme::Blue, 0);
-            app.fonts.bold->draw(c, x + 14, 64 + (32 - app.fonts.bold->lineHeight(18)) / 2, 18, kind, theme::Text);
+        // profile chip (no fake name)
+        int pw = 170, px = R - pw;
+        c.fillRoundRect(px, y, pw, h, 30, theme::Surface);
+        c.strokeRoundRect(px, y, pw, h, 30, 1, theme::Line);
+        c.fillGradient(px + 8, y + 8, 44, 44, 22, rgba(255, 154, 98), rgba(255, 95, 143), 2);
+        app.fonts.bold->draw(c, px + 62, y + 10, 19, "PS4", theme::Text);
+        app.fonts.regular->draw(c, px + 62, y + 33, 15, "GoldHEN", theme::TextMute);
+    }
+
+    void drawContinuePanel(Canvas &c, Rect r)
+    {
+        c.fillRoundRect(r.x, r.y, r.w, r.h, 30, theme::Surface);
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, 30, 1, theme::Line);
+        int pad = 24;
+        app.fonts.bold->draw(c, r.x + pad, r.y + 22, 24, "Continuar assistindo", theme::Text);
+        app.fonts.regular->draw(c, r.right() - pad - 20, r.y + 24, 18, std::to_string(continue_.size()), theme::TextMute);
+        int y = r.y + 70;
+        for (size_t i = 0; i < continue_.size(); i++) {
+            const Cont &it = continue_[i];
+            bool foc = focus_ == Zone::Cont && int(i) == contSel_ && !app.sidebarFocused();
+            Rect row{r.x + 12, y, r.w - 24, 86};
+            if (foc) { c.shadow(row.x, row.y, row.w, row.h, 16, 12, withAlpha(theme::Violet, 90)); c.fillRoundRect(row.x, row.y, row.w, row.h, 16, theme::SurfaceHi); }
+            Rect thumb{row.x + 12, row.y + 10, 116, 66};
+            drawGeneratedArt(c, app.fonts, thumb, 12, it.id + "#t", it.name, true);
+            int tx = thumb.right() + 16, tw = row.right() - tx - 12;
+            app.fonts.bold->draw(c, tx, row.y + 12, 19, app.fonts.bold->ellipsize(19, it.name, tw), theme::Text);
+            app.fonts.regular->draw(c, tx, row.y + 36, 15, it.sub, theme::TextMute);
+            drawProgress(c, tx, row.y + 60, tw, 6, it.progress, theme::Violet, withAlpha(theme::Text, 36));
+            y += 94;
         }
-        app.fonts.bold->draw(c, x, 112, 64, app.fonts.bold->ellipsize(64, f.title, 980), theme::Text);
-        std::string meta = !f.meta.empty() ? f.meta : f.subtitle;
-        app.fonts.regular->draw(c, x, 200, 24, meta, theme::Glow);
-        auto lines = app.fonts.regular->wrap(25, f.description, 860, 3);
-        int y = 250;
-        for (const auto &l : lines) { app.fonts.regular->draw(c, x, y, 25, l, theme::TextDim); y += 36; }
-        if (f.progress >= 0) drawProgress(c, x, 380, 420, 8, f.progress, theme::Blue, theme::SurfaceHi);
+        // now playing chip
+        size_t t = app.queue.current();
+        bool liveOn = app.audio.live() && (app.audio.state() == PlayState::Playing || app.audio.state() == PlayState::Paused);
+        bool musicOn = (app.audio.state() == PlayState::Playing || app.audio.state() == PlayState::Paused) && t < app.music.tracks().size();
+        if (liveOn || musicOn) {
+            Rect np{r.x + 12, r.bottom() - 84, r.w - 24, 72};
+            c.fillRoundRect(np.x, np.y, np.w, np.h, 18, withAlpha(theme::Text, 16));
+            c.fillGradient(np.x + 14, np.y + 14, 46, 46, 12, theme::Violet, theme::Blue, 2);
+            app.fonts.regular->draw(c, np.x + 74, np.y + 14, 15, "Tocando agora", theme::TextMute);
+            std::string nm = liveOn ? app.station.name : app.music.tracks()[t].title;
+            app.fonts.bold->draw(c, np.x + 74, np.y + 36, 18, app.fonts.bold->ellipsize(18, nm, np.w - 90), theme::Text);
+        }
+    }
+
+    void drawHeroCard(Canvas &c, Rect r)
+    {
+        c.fillGradient(r.x, r.y, r.w, r.h, 34, rgba(26, 18, 54), rgba(15, 35, 72), 2);
+        c.pushClip(r);
+        // moon, top-right
+        float mx = float(r.right() - 150), my = float(r.y + 150);
+        c.fillCircle(mx + 120, my - 120, 330, rgba(124, 92, 255, 26));
+        c.fillCircle(mx, my, 150, rgba(236, 232, 255, 150));
+        c.fillCircle(mx + 54, my - 26, 140, withAlpha(rgba(26, 18, 54), 210));
+        // left fade for text legibility
+        for (int i = 0; i < r.w; i += 6) {
+            int a = int(235 * std::max(0.0f, 1.0f - float(i) / float(r.w * 0.8f)));
+            c.fillRect(r.x + i, r.y, 6, r.h, withAlpha(theme::Bg, a));
+        }
+        c.popClip();
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, 34, 1, theme::Line);
+
+        if (!hasFeatured_) {
+            app.fonts.bold->draw(c, r.x + 48, r.y + r.h / 2, 34, "Adicione fontes para ver destaques", theme::TextDim);
+            return;
+        }
+        int x = r.x + 48, bottom = r.bottom() - 48;
+        // buttons (bottom), measured first so the text stacks above them
+        int by = bottom - 64;
+        bool foc = focus_ == Zone::Hero && !app.sidebarFocused();
+        int bw = app.fonts.bold->measure(22, "Assistir") + 84;
+        if (foc) c.shadow(x, by, bw, 64, 32, 16, withAlpha(theme::Violet, 150));
+        c.fillRoundRect(x, by, bw, 64, 32, foc ? theme::Text : withAlpha(theme::Text, 235));
+        drawIconPlay(c, x + 34, by + 32, 11, theme::Bg);
+        app.fonts.bold->draw(c, x + 54, by + (64 - app.fonts.bold->lineHeight(22)) / 2, 22, "Assistir", theme::Bg);
+        int lw = app.fonts.bold->measure(22, "Minha lista") + 76;
+        c.fillRoundRect(x + bw + 14, by, lw, 64, 32, theme::Surface);
+        c.strokeRoundRect(x + bw + 14, by, lw, 64, 32, 1, theme::Line);
+        app.fonts.bold->draw(c, x + bw + 14 + 38, by + (64 - app.fonts.bold->lineHeight(22)) / 2, 22, "Minha lista", theme::Text);
+        // title + meta + description stacked above the buttons
+        int ty = by - 24;
+        auto desc = app.fonts.regular->wrap(22, featured_.description, std::min(640, r.w - 96), 2);
+        ty -= int(desc.size()) * 32;
+        for (size_t i = 0; i < desc.size(); i++) app.fonts.regular->draw(c, x, ty + int(i) * 32, 22, desc[i], theme::TextDim);
+        ty -= 86;
+        app.fonts.bold->draw(c, x, ty, 72, app.fonts.bold->ellipsize(72, featured_.title, r.w - 96), theme::Text);
+        ty -= 44;
+        if (!featured_.meta.empty()) app.fonts.regular->draw(c, x, ty, 20, featured_.meta, theme::Glow);
+        ty -= 42;
+        std::string badge = "Em destaque";
+        int bgw = app.fonts.bold->measure(17, badge) + 32;
+        c.fillRoundRect(x, ty, bgw, 32, 16, withAlpha(theme::Text, 30));
+        app.fonts.bold->draw(c, x + 16, ty + (32 - app.fonts.bold->lineHeight(17)) / 2, 17, badge, theme::Text);
+        // carousel dots, bottom-right
+        for (int i = 0; i < 4; i++) {
+            int dw = i == 0 ? 32 : 8;
+            c.fillRoundRect(r.right() - 48 - (i == 0 ? 0 : 24 + (i - 1) * 16) - dw, r.bottom() - 40, dw, 8, 4, i == 0 ? theme::Text : withAlpha(theme::Text, 80));
+        }
+    }
+
+    void drawStrip(Canvas &c, Rect area, int top, int R)
+    {
+        if (rows_.empty()) return;
+        Row &r = rows_[size_t(rowSel_)];
+        bool rowFocus = focus_ == Zone::Rows && !app.sidebarFocused();
+        int x0 = area.x + 52;
+        app.fonts.bold->draw(c, x0, top, 30, r.title, rowFocus ? theme::Text : theme::TextDim);
+        if (rows_.size() > 1)
+            app.fonts.regular->draw(c, R - 150, top + 6, 18, "cima/baixo troca", theme::TextMute);
+        Rect cs = cardSize(r.shape);
+        int cy = top + 50;
+        c.pushClip({area.x, cy, area.w, area.bottom() - cy});
+        for (size_t k = 0; k < r.cards.size(); k++) {
+            int cx = x0 + int(k) * (cs.w + 24) - int(r.scroll);
+            if (cx > area.right() || cx + cs.w < area.x) continue;
+            const Card &cd = r.cards[k];
+            drawPosterCard(app, c, {cx, cy, cs.w, cs.h}, cd.id, cd.title, r.shape == Shape::Poster ? cd.meta : cd.subtitle,
+                           rowFocus && int(k) == r.sel, cd.progress, cd.poster);
+        }
+        c.popClip();
+    }
+
+    void drawIconPlay(Canvas &c, int cx, int cy, int s, Color col)
+    {
+        float xy[6] = {float(cx - s + 3), float(cy - s), float(cx - s + 3), float(cy + s), float(cx + s), float(cy)};
+        c.fillConvex(xy, 3, col);
     }
 
     void open(const Card &cd)
@@ -274,6 +420,13 @@ private:
             return;
         }
         if (cd.type == "tv") { app.goSection(Section::Live, true); return; }
+    }
+
+    void openCont(int i)
+    {
+        if (i < 0 || i >= int(continue_.size())) return;
+        const Cont &it = continue_[size_t(i)];
+        if (it.type == "movie" || it.type == "series") app.push(makeDetail(app, it.type, it.id, it.name));
     }
 };
 
