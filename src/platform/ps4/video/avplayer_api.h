@@ -6,6 +6,7 @@
 // Status: compiles; NOT yet validated on a console (see docs/MEDIA_ENGINE.md).
 #pragma once
 #include <cstddef>
+#include <cstdarg>
 #include <cstdint>
 
 extern "C" {
@@ -134,6 +135,11 @@ int32_t sceAvPlayerStreamCount(MlAvPlayerHandle h);
 int32_t sceAvPlayerGetStreamInfo(MlAvPlayerHandle h, uint32_t streamId, MlAvStreamInfo *info);
 bool sceAvPlayerGetVideoDataEx(MlAvPlayerHandle h, MlAvFrameInfoEx *info);
 bool sceAvPlayerGetAudioData(MlAvPlayerHandle h, MlAvFrameInfo *info);
+
+// Log callback (shadPS4 avplayer.h: int (*)(void *user, const char *format, va_list args);
+// sceAvPlayerSetLogCallback(cb, user)). Used only by the video test's second attempt.
+typedef int (*MlAvLogCallback)(void *user, const char *format, va_list args);
+int32_t sceAvPlayerSetLogCallback(MlAvLogCallback cb, void *user);
 
 }  // extern "C"
 

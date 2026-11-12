@@ -468,6 +468,64 @@ private:
     std::vector<uint8_t> modules_;
 };
 
+// ---------------------------------------------------------------- external link -> phone
+class LinkQrScreen : public Screen {
+public:
+    LinkQrScreen(App &a, std::string title, std::string from, std::string url)
+        : Screen(a), title_(std::move(title)), from_(std::move(from)), url_(std::move(url))
+    {
+        uint8_t tmp[qrcodegen_BUFFER_LEN_MAX], qr[qrcodegen_BUFFER_LEN_MAX];
+        if (url_.size() < 1200 && qrcodegen_encodeText(url_.c_str(), tmp, qr, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
+                                                       qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true)) {
+            size_ = qrcodegen_getSize(qr);
+            modules_.assign(size_t(size_ * size_), 0);
+            for (int y = 0; y < size_; y++)
+                for (int x = 0; x < size_; x++) modules_[size_t(y * size_ + x)] = qrcodegen_getModule(qr, x, y) ? 1 : 0;
+        }
+    }
+    std::string title() const override { return "Abrir no celular"; }
+    bool handle(uint32_t) override { return false; }   // O goes back
+
+    void draw(Canvas &c, Rect area) override
+    {
+        drawSectionHeader(app, c, area, "Abrir no celular", title_);
+        const int quiet = 4;
+        int px = size_ > 0 ? std::max(3, std::min(16, 620 / (size_ + 2 * quiet))) : 0;
+        int side = (size_ + 2 * quiet) * px;
+        int qx = area.x + theme::Margin, qy = 200;
+        if (size_ > 0) {
+            c.fillRoundRect(qx - 8, qy - 8, side + 16, side + 16, 20, rgba(255, 255, 255));
+            for (int y = 0; y < size_; y++)
+                for (int x = 0; x < size_; x++)
+                    if (modules_[size_t(y * size_ + x)]) c.fillRect(qx + (x + quiet) * px, qy + (y + quiet) * px, px, px, rgba(0, 0, 0));
+        }
+        int tx = qx + side + 80, ty = qy + 10, tw = area.right() - theme::Margin - tx;
+        app.fonts.bold->draw(c, tx, ty, 36, "Este link abre fora do Moonlight", theme::Text);
+        ty += 66;
+        for (const auto &l : app.fonts.regular->wrap(26, "O PS4 nao toca este tipo de link dentro do app. Aponte a camera do celular para o codigo e "
+                                                         "assista no celular (ou espelhe na TV).", tw, 4)) {
+            app.fonts.regular->draw(c, tx, ty, 26, l, theme::TextDim);
+            ty += 38;
+        }
+        ty += 24;
+        app.fonts.regular->draw(c, tx, ty, 22, app.fonts.regular->ellipsize(22, from_, tw), theme::TextMute);
+        ty += 34;
+        for (const auto &l : app.fonts.regular->wrap(20, url_, tw, 4)) {
+            app.fonts.regular->draw(c, tx, ty, 20, l, theme::TextMute);
+            ty += 28;
+        }
+        if (size_ == 0) app.fonts.regular->draw(c, qx, qy, 24, "Link grande demais para QR code.", theme::Warn);
+    }
+
+    Hints hints() const override { return {{BtnCircle, "Voltar"}}; }
+    std::string describe() const override { return "link=" + url_; }
+
+private:
+    std::string title_, from_, url_;
+    int size_ = 0;
+    std::vector<uint8_t> modules_;
+};
+
 class SettingsScreen : public Screen {
 public:
     using Screen::Screen;
@@ -475,7 +533,7 @@ public:
 
     bool handle(uint32_t p) override
     {
-        const int n = 9;
+        const int n = kItems;
         if (p & BtnUp) { if (sel_ > 0) sel_--; return true; }
         if (p & BtnDown) { if (sel_ + 1 < n) sel_++; return true; }
         if (p & BtnCross) {
@@ -499,7 +557,9 @@ public:
             case 5: toggleRemote(); break;
             case 6: updateAction(); break;
             case 7: testInternet(); break;
-            case 8:
+            case 8: app.push(makeVideoTest(app)); break;
+            case 9: app.push(makeProblems(app)); break;
+            case 10:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -518,6 +578,9 @@ public:
         remoteDesc_ = app.remote->running() ? "Ligado. X mostra o QR code (" + app.remote->address() + "  PIN " + app.remote->pin() + ")"
                                              : "Use o celular (mesmo Wi-Fi) como controle e teclado. Desligado.";
         updateDesc_ = describeUpdate();
+        size_t np = app.problems.entries().size();
+        problemsDesc_ = np == 0 ? "Nada anotado. Quando algo nao tocar, o nome, a capa e o motivo aparecem aqui."
+                                : std::to_string(np) + (np == 1 ? " anotado" : " anotados") + ". Nome, capa e motivo de cada um, para foto.";
         drawSectionHeader(app, c, area, "Configuracoes", "Dados em " + app.platform.dataDir());
         int x = area.x + theme::Margin, y = 186, w = 1000;
         struct Item { const char *title, *desc; int toggle; };
@@ -530,9 +593,17 @@ public:
             {"Controle pelo celular", remoteDesc_.c_str(), app.remote->running() ? 1 : 0},
             {"Atualizar o Moonlight", updateDesc_.c_str(), -1},
             {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
+            {"Testar video", "Baixa um video de teste e toca do HD e pela internet, mostrando o codigo de cada passo.", -1},
+            {"Problemas ao reproduzir", problemsDesc_.c_str(), -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
-        for (int i = 0; i < 9; i++, y += 90) {
+        // the list scrolls: 9 rows fit
+        const int visible = 9;
+        if (sel_ < first_) first_ = sel_;
+        if (sel_ >= first_ + visible) first_ = sel_ - visible + 1;
+        if (first_ > 0) app.fonts.regular->draw(c, x + w + 24, 196, 20, "mais acima", theme::TextMute);
+        if (first_ + visible < kItems) app.fonts.regular->draw(c, x + w + 24, 186 + (visible - 1) * 90 + 30, 20, "mais abaixo", theme::TextMute);
+        for (int i = first_; i < kItems && i < first_ + visible; i++, y += 90) {
             Rect r{x, y, w, 82};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
             app.fonts.bold->draw(c, r.x + 30, r.y + 12, 27, items[i].title, theme::Text);
@@ -550,8 +621,9 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    int sel_ = 0;
-    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_;
+    static constexpr int kItems = 11;
+    int sel_ = 0, first_ = 0;
+    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_;
     std::string testHeader_, testResult_;
     std::atomic<bool> testBusy_{false}, testDone_{false};
     bool testOk_ = false;
@@ -662,7 +734,7 @@ private:
         report += roots > 0 ? "Seguranca propria (Mbed TLS): " + std::to_string(roots) + " certificados raiz.\n"
                             : "Seguranca propria nao iniciou: " + te + "\n";
         bool secure = probe("Site seguro (HTTPS)", "https://example.com/");
-        if (secure) report += "Tudo certo.\nQuer testar o video pela internet? (MP4 de teste do proprio Moonlight, 20 s)";
+        if (secure) report += "Tudo certo.\nQuer fazer o teste de video agora? (baixa 4 MB e toca 20 s de teste)";
         else if (plain) report += "A rede funciona; o site seguro falhou no passo mostrado acima.";
         else report += "Nem o site comum abriu: verifique a conexao do console.";
         testOk_ = secure;
@@ -677,10 +749,7 @@ private:
             if (testOk_) {
                 App *a = &app;
                 app.modal("Testar internet", testHeader_ + testResult_, {"OK", "Testar video"}, [a](int choice) {
-                    // Known-good H.264/AAC MP4 published next to the updates (tools/publish_update.sh).
-                    if (choice == 1)
-                        a->playVideo("https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4",
-                                     "Video de teste do Moonlight");
+                    if (choice == 1) a->push(makeVideoTest(*a));
                 });
             } else {
                 app.modal("Testar internet", testHeader_ + testResult_);
@@ -718,6 +787,11 @@ private:
 std::unique_ptr<Screen> makeLive(App &a) { return std::unique_ptr<Screen>(new LiveScreen(a)); }
 std::unique_ptr<Screen> makeLibrary(App &a) { return std::unique_ptr<Screen>(new LibraryScreen(a)); }
 std::unique_ptr<Screen> makeSources(App &a) { return std::unique_ptr<Screen>(new SourcesScreen(a)); }
+std::unique_ptr<Screen> makeLinkQr(App &a, const std::string &title, const std::string &from, const std::string &url)
+{
+    return std::unique_ptr<Screen>(new LinkQrScreen(a, title, from, url));
+}
+
 std::unique_ptr<Screen> makeSettings(App &a) { return std::unique_ptr<Screen>(new SettingsScreen(a)); }
 
 }  // namespace ml

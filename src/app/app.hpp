@@ -13,6 +13,7 @@
 #include "platform/platform.hpp"
 #include "player/player.hpp"
 #include "radio/radio.hpp"
+#include "app/problem_log.hpp"
 #include "app/remote.hpp"
 #include "app/updater.hpp"
 #include "music/subsonic.hpp"
@@ -84,6 +85,15 @@ public:
     std::string serverStatus; // "" = not loaded yet
     Settings settings;
     ui::Fonts fonts;
+    ProblemLog problems;
+    // Waiting times of the player and of the video test (tests shorten them), and where the known-good
+    // test video lives (published next to the updates by tools/publish_update.sh).
+    struct Tuning {
+        uint64_t firstFrameMs = 25000;   // player: no picture after this -> reported as a problem
+        uint64_t testWaitMs = 15000;     // video test: wait for the first picture
+        uint64_t testPlayMs = 4000;      // video test: let it play a little
+    } tuning;
+    std::string videoTestUrl = "https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4";
     ui::ImageLoader images;
     ui::Keyboard keyboard;
     std::unique_ptr<RemoteControl> remote;
@@ -123,8 +133,16 @@ public:
     void togglePause();
     void playStation(const radio::Station &s);
     // Opens the full-screen video player, or explains why video is not available here.
-    void playVideo(const std::string &location, const std::string &title,
-                   const std::vector<std::pair<std::string, std::string>> &requestHeaders = {});
+    // ctx.title is what the screen and the problem log show; a failure is recorded with ctx.
+    void playVideo(const std::string &location, const PlayContext &ctx);
+    void playVideo(const std::string &location, const std::string &title)
+    {
+        PlayContext ctx;
+        ctx.title = title;
+        playVideo(location, ctx);
+    }
+    // Records a playback problem (console clock) and tells the user where to find it.
+    void reportProblem(Problem p);
     bool startTrack(size_t t, std::string *err);   // local file or server song
     std::string loadServerMusic();                 // playlists + random mix from the server (blocking)
     std::vector<size_t> searchServer(const std::string &q, std::string *err);
@@ -192,7 +210,10 @@ std::unique_ptr<Screen> makeDetail(App &, const std::string &type, const std::st
 std::unique_ptr<Screen> makeMusic(App &);
 std::unique_ptr<Screen> makeRadio(App &);
 std::unique_ptr<Screen> makeVideos(App &);
-std::unique_ptr<Screen> makePlayer(App &, std::unique_ptr<VideoEngine> engine, const std::string &location, const std::string &title);
+std::unique_ptr<Screen> makePlayer(App &, std::unique_ptr<VideoEngine> engine, const std::string &location, const PlayContext &ctx);
+std::unique_ptr<Screen> makeVideoTest(App &);   // step-by-step check of the system player
+std::unique_ptr<Screen> makeProblems(App &);    // Configuracoes > Problemas ao reproduzir
+std::unique_ptr<Screen> makeLinkQr(App &, const std::string &title, const std::string &from, const std::string &url);
 std::unique_ptr<Screen> makeLive(App &);
 std::unique_ptr<Screen> makeLibrary(App &);
 std::unique_ptr<Screen> makeSources(App &);

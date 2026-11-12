@@ -8,6 +8,7 @@
 // outlive the workers: App's destructor waits for MultiFetch::activeThreads() == 0.
 #pragma once
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -38,6 +39,10 @@ public:
     State poll(size_t i, Json *json, std::string *error, int *seconds);
 
     static int activeThreads();   // workers still running, over all instances
+
+    // Runs fn on its own thread, counted in activeThreads() (so App's destructor waits for it).
+    // fn must only touch state it owns (shared_ptr) and the platform. false = thread not started.
+    static bool runDetached(Platform &p, std::function<void()> fn);
 
 private:
     struct Slot {

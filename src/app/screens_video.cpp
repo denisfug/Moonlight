@@ -124,8 +124,8 @@ private:
 // ---------------------------------------------------------------- full-screen player
 class PlayerScreen : public Screen {
 public:
-    PlayerScreen(App &a, std::unique_ptr<VideoEngine> e, std::string location, std::string title)
-        : Screen(a), engine_(std::move(e)), location_(std::move(location)), title_(std::move(title))
+    PlayerScreen(App &a, std::unique_ptr<VideoEngine> e, std::string location, PlayContext ctx)
+        : Screen(a), engine_(std::move(e)), location_(std::move(location)), title_(ctx.title), ctx_(std::move(ctx))
     {
         frame_.w = theme::W;
         frame_.h = theme::H;
@@ -167,11 +167,33 @@ public:
             if (drawn_ < 2) return;   // let "Abrindo o video..." reach the screen first
             opened_ = true;
             std::string err;
-            if (!engine_->open(location_, &err)) error_ = err;
+            if (!engine_->open(location_, &err)) fail(err);
+            openedAt_ = app.now();
             overlayUntil_ = app.now() + 4000;
             return;
         }
-        if (error_.empty() && engine_->updateFrame(frame_.fb())) newFrame_ = true;
+        if (!error_.empty()) return;
+        if (engine_->updateFrame(frame_.fb())) { newFrame_ = true; gotFrame_ = true; }
+        // The player took the file but shows nothing: say so instead of a black screen forever.
+        if (!gotFrame_ && app.now() - openedAt_ > app.tuning.firstFrameMs)
+            fail("o player aceitou o arquivo, mas nenhuma imagem chegou em " + std::to_string(app.tuning.firstFrameMs / 1000) +
+                 " s (parou em: " + engine_->status() + ")");
+    }
+
+    // Records the problem (name, poster, source, reason, technical details) and stops the engine.
+    void fail(const std::string &reason)
+    {
+        error_ = reason;
+        Problem p;
+        p.title = ctx_.title;
+        p.poster = ctx_.poster;
+        p.source = ctx_.source;
+        p.where = hostForLog(location_);
+        p.reason = reason;
+        std::string diag = engine_->diagnostics();
+        p.details = "ultimo passo: " + engine_->status() + (diag.empty() ? "" : "\n" + diag);
+        app.reportProblem(p);
+        engine_->stop();
     }
     bool animating() const override { return true; }   // keep polling for decoded frames
 
@@ -194,7 +216,8 @@ public:
             auto lines = app.fonts.regular->wrap(28, "Nao foi possivel tocar: " + error_, theme::W - 400, 5);
             int y = theme::H / 2 - 40;
             for (const auto &l : lines) { app.fonts.regular->draw(c, 200, y, 28, l, theme::Warn); y += 40; }
-            app.fonts.regular->draw(c, 200, y + 20, 22, "O para voltar", theme::TextDim);
+            app.fonts.regular->draw(c, 200, y + 20, 22, "Ficou anotado em Configuracoes > Problemas ao reproduzir (com os detalhes para foto).", theme::TextDim);
+            app.fonts.regular->draw(c, 200, y + 56, 22, "O para voltar", theme::TextDim);
             return;
         }
         int64_t pos = engine_->positionMs(), dur = engine_->durationMs();
@@ -212,18 +235,19 @@ public:
 private:
     std::unique_ptr<VideoEngine> engine_;
     std::string location_, title_, error_;
+    PlayContext ctx_;
     Image frame_;
-    bool started_ = false, newFrame_ = false, details_ = false, opened_ = false;
+    bool started_ = false, newFrame_ = false, details_ = false, opened_ = false, gotFrame_ = false;
     int drawn_ = 0;
-    uint64_t overlayUntil_ = 0;
+    uint64_t overlayUntil_ = 0, openedAt_ = 0;
 };
 
 }  // namespace
 
 std::unique_ptr<Screen> makeVideos(App &a) { return std::unique_ptr<Screen>(new VideosScreen(a)); }
-std::unique_ptr<Screen> makePlayer(App &a, std::unique_ptr<VideoEngine> engine, const std::string &location, const std::string &title)
+std::unique_ptr<Screen> makePlayer(App &a, std::unique_ptr<VideoEngine> engine, const std::string &location, const PlayContext &ctx)
 {
-    return std::unique_ptr<Screen>(new PlayerScreen(a, std::move(engine), location, title));
+    return std::unique_ptr<Screen>(new PlayerScreen(a, std::move(engine), location, ctx));
 }
 
 }  // namespace ml

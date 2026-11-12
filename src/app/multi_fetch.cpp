@@ -63,6 +63,25 @@ void MultiFetch::run(size_t index)
     unlock();
 }
 
+bool MultiFetch::runDetached(Platform &p, std::function<void()> fn)
+{
+    auto *heap = new std::function<void()>(std::move(fn));
+    gActive++;
+    bool ok = p.startThread(
+        [](void *arg) {
+            auto *f = static_cast<std::function<void()> *>(arg);
+            (*f)();
+            delete f;
+            gActive--;
+        },
+        heap, "ml_task");
+    if (!ok) {
+        gActive--;
+        delete heap;
+    }
+    return ok;
+}
+
 int MultiFetch::pending()
 {
     int n = 0;

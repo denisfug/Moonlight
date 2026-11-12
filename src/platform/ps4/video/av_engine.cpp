@@ -7,6 +7,8 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -64,6 +66,9 @@ void avFreeTex(void *, void *mem)
         }
 }
 
+class AvEngine;
+AvEngine *g_logEngine = nullptr;   // engine receiving the player's internal log (plain pointer)
+
 std::string hex(int v)
 {
     char b[16];
@@ -73,8 +78,15 @@ std::string hex(int v)
 
 class AvEngine : public VideoEngine {
 public:
-    explicit AvEngine(Ps4Platform &p) : plat_(p) {}
-    ~AvEngine() override { stop(); }
+    explicit AvEngine(Ps4Platform &p) : plat_(p)
+    {
+        for (auto &e : events_) e = 0;
+    }
+    ~AvEngine() override
+    {
+        stop();
+        if (g_logEngine == this) g_logEngine = nullptr;
+    }
 
     void setRequestHeaders(const std::vector<std::pair<std::string, std::string>> &h) override { headers_ = h; }
 
@@ -83,7 +95,7 @@ public:
         stop();
         MlAvInitData init;
         std::memset(&init, 0, sizeof init);
-        init.memory = {this, avAlloc, avFree, avAllocTex, avFreeTex};
+        init.memory = {this, &AvEngine::alloc, &AvEngine::free_, &AvEngine::allocTex, &AvEngine::freeTex};
         init.event = {this, &AvEngine::onEvent};
         init.debugLevel = 0;
         init.basePriority = 700;
@@ -130,8 +142,15 @@ public:
             log("formato " + (fmt_.empty() ? std::string("desconhecido") : fmt_) + ", " +
                 std::to_string(reader_->size() / (1024 * 1024)) + " MB, abrindo no player do PS4");
         }
+        if (internalLog_) {
+            g_logEngine = this;
+            int lr = sceAvPlayerSetLogCallback(&AvEngine::onSysLog, this);
+            log("log interno do player: " + (lr < 0 ? "recusado " + hex(lr) : std::string("ligado")));
+        }
+        log("iniciando o player do sistema (sceAvPlayerInit)");
         h_ = sceAvPlayerInit(&init);
         if (!h_) { stopFetch(); reader_.reset(); log("sceAvPlayerInit falhou", true); if (error) *error = "sceAvPlayerInit falhou"; return false; }
+        log("entregando o arquivo ao player (sceAvPlayerAddSource)");
         int r = sceAvPlayerAddSource(h_, source.c_str());
         if (r < 0) {
             log("AddSource " + hex(r) + (unsigned(r) == 0x806A0002u ? " (o player do PS4 recusou o arquivo" +
@@ -201,6 +220,7 @@ public:
         MlAvFrameInfoEx f;
         std::memset(&f, 0, sizeof f);
         if (!sceAvPlayerGetVideoDataEx(h_, &f) || !f.data) return false;
+        frames_++;
         const MlAvVideoEx &v = f.details.video;
         Nv12Frame src;
         src.data = static_cast<const uint8_t *>(f.data);
@@ -213,6 +233,30 @@ public:
             log("video " + std::to_string(src.width) + "x" + std::to_string(src.height) + " pitch " + std::to_string(src.pitch));
         }
         return nv12ToArgb(src, fb);
+    }
+
+    void setInternalLog(bool on) override { internalLog_ = on; }
+
+    std::string diagnostics() override
+    {
+        while (statusLock_.test_and_set(std::memory_order_acquire)) {}
+        std::string d = "passos do player:";
+        for (const auto &j : journal_) d += "\n  - " + j;
+        std::vector<std::string> sys = sysLog_;
+        statusLock_.clear(std::memory_order_release);
+        d += "\nmemoria de video: " + std::to_string(texOk_.load()) + " blocos ok, " + std::to_string(texFail_.load()) + " recusados (" +
+             std::to_string(texBytes_.load() / (1024 * 1024)) + " MB)";
+        d += "\nmemoria comum: " + std::to_string(memFail_.load()) + " pedidos recusados";
+        d += "\nleituras pelo app: " + std::to_string(reads_.load()) + " (" + std::to_string(readBytes_.load() / 1024) + " KB), " +
+             std::to_string(readFails_.load()) + " com erro";
+        d += "\nquadros de video: " + std::to_string(frames_.load()) + ", blocos de audio: " + std::to_string(audioBlocks_.load());
+        d += "\neventos do player:";
+        for (int i = 0; i < 16; i++) if (events_[i].load()) d += " " + hex(eventIds_[i]) + "x" + std::to_string(events_[i].load());
+        if (internalLog_) {
+            d += "\nmensagens internas do player (" + std::to_string(sys.size()) + "):";
+            for (const auto &l : sys) d += "\n  " + l;
+        }
+        return d;
     }
 
     std::string status() override
@@ -265,6 +309,9 @@ private:
             sceKernelUsleep(500);
         }
         long n = self->jobResult_;
+        self->reads_++;
+        if (n < 0) self->readFails_++;
+        else self->readBytes_ += n;
         self->fetchLock_.clear(std::memory_order_release);
         if (n < 0) self->log("rede: " + self->reader_->lastError());
         return int32_t(n);
@@ -300,6 +347,53 @@ private:
         return self->reader_ && self->reader_->size() > 0 ? uint64_t(self->reader_->size()) : 0;
     }
 
+    // ---- diagnostics counters (callbacks run on the player's threads)
+    std::vector<std::string> journal_, sysLog_;   // guarded by statusLock_
+    bool internalLog_ = false;
+    std::atomic<int> texOk_{0}, texFail_{0}, memFail_{0}, reads_{0}, readFails_{0}, frames_{0}, audioBlocks_{0};
+    std::atomic<long long> texBytes_{0}, readBytes_{0};
+    int32_t eventIds_[16] = {0};
+    std::atomic<int> events_[16];
+    std::atomic<int> eventSlots_{0};
+
+    void countEvent(int32_t ev)
+    {
+        int n = eventSlots_.load();
+        for (int i = 0; i < n && i < 16; i++)
+            if (eventIds_[i] == ev) { events_[i]++; return; }
+        int slot = eventSlots_.fetch_add(1);
+        if (slot < 16) { eventIds_[slot] = ev; events_[slot] = 1; }
+    }
+
+    static void *alloc(void *obj, uint32_t align, uint32_t size)
+    {
+        void *p = avAlloc(obj, align, size);
+        if (!p) static_cast<AvEngine *>(obj)->memFail_++;
+        return p;
+    }
+    static void free_(void *obj, void *mem) { avFree(obj, mem); }
+    static void *allocTex(void *obj, uint32_t align, uint32_t size)
+    {
+        auto *self = static_cast<AvEngine *>(obj);
+        void *p = avAllocTex(obj, align, size);
+        if (p) { self->texOk_++; self->texBytes_ += size; }
+        else self->texFail_++;
+        return p;
+    }
+    static void freeTex(void *obj, void *mem) { avFreeTex(obj, mem); }
+
+    static int onSysLog(void *user, const char *format, va_list args)
+    {
+        auto *self = static_cast<AvEngine *>(user ? user : g_logEngine);
+        if (!self || !format) return 0;
+        char b[200];
+        std::vsnprintf(b, sizeof b, format, args);
+        while (self->statusLock_.test_and_set(std::memory_order_acquire)) {}
+        if (self->sysLog_.size() < 30) self->sysLog_.push_back(b);
+        self->statusLock_.clear(std::memory_order_release);
+        return 0;
+    }
+
     std::atomic_flag statusLock_ = ATOMIC_FLAG_INIT;
     // Called from the UI thread and from the player's callback threads.
     void log(const std::string &s, bool settled = false)
@@ -307,6 +401,7 @@ private:
         while (statusLock_.test_and_set(std::memory_order_acquire)) {}
         bool changed = status_ != s;
         status_ = s;
+        if (changed && journal_.size() < 40) journal_.push_back(s);   // every step, for diagnostics()
         statusLock_.clear(std::memory_order_release);
         // Recorded as the "last step" so that, if the console closes the app (CE-34878-0), the next
         // start shows where the player was.
@@ -316,6 +411,7 @@ private:
     static void onEvent(void *obj, int32_t ev, int32_t, void *)
     {
         auto *self = static_cast<AvEngine *>(obj);
+        self->countEvent(ev);
         switch (ev) {
         case MlAvStateReady: self->log("pronto"); break;
         case MlAvStatePlay: self->log("tocando", true); break;
@@ -356,6 +452,7 @@ private:
             }
             while (ok && pending.size() >= block * 2) {
                 out->write(pending.data());
+                audioBlocks_++;
                 pending.erase(pending.begin(), pending.begin() + long(block * 2));
             }
         }
@@ -366,9 +463,23 @@ private:
 
 }  // namespace
 
+// The module is loaded once per run. 01.17 on the console: the video test said the player engine was
+// not working although 01.13 had reached sceAvPlayerAddSource; a second LoadModule call reporting an
+// error for an already-loaded module is one possible cause, so it is asked only when not loaded yet.
 std::unique_ptr<VideoEngine> Ps4Platform::makeVideoEngine()
 {
-    if (sceSysmoduleLoadModule(ORBIS_SYSMODULE_AV_PLAYER) < 0) return nullptr;
+    if (avLoaded_ == 0) {
+        int loaded = sceSysmoduleIsLoaded(ORBIS_SYSMODULE_AV_PLAYER);
+        int r = loaded == 0 ? 0 : sceSysmoduleLoadModule(ORBIS_SYSMODULE_AV_PLAYER);
+        if (r < 0 && sceSysmoduleIsLoaded(ORBIS_SYSMODULE_AV_PLAYER) == 0) r = 0;   // reported an error but it is there
+        if (r < 0) {
+            avLoaded_ = -1;
+            avErr_ = "modulo AvPlayer: carregar " + hex(r) + ", consulta " + hex(loaded);
+        } else {
+            avLoaded_ = 1;
+        }
+    }
+    if (avLoaded_ < 0) return nullptr;
     return std::unique_ptr<VideoEngine>(new AvEngine(*this));
 }
 

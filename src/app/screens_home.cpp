@@ -75,7 +75,10 @@ public:
             seenVersion_ = app.sourcesVersion;
             loader_->cancelAll();
             srcs_.clear();
+            std::vector<int> perSource(app.sources.sources().size(), 0);
             for (const auto &ref : app.sources.browsableCatalogs()) {
+                // a taste of each source (2 catalogs); the full catalog is in Filmes/Series, per source
+                if (++perSource[ref.source] > 2) continue;
                 Src s;
                 s.title = ref.decl->name + " - " + app.sources.sources()[ref.source].manifest.name;
                 UrlPolicy pol;

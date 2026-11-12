@@ -95,7 +95,13 @@ public:
     virtual bool finished() = 0;
     // If a new decoded frame is due, converts it into `fb` (scaled to fit) and returns true.
     virtual bool updateFrame(Framebuffer fb) = 0;
-    virtual std::string status() = 0;   // diagnostics shown in the player overlay
+    virtual std::string status() = 0;   // current step, shown in the player overlay
+    // Technical report for the problem log / video test: every step with its system code, memory and
+    // read counters, events received. Several lines; "" when the engine has nothing to add.
+    virtual std::string diagnostics() { return ""; }
+    // Ask the engine to capture the system player's own log lines (shown in diagnostics()). Only used
+    // by the video test after a first failure: the callback's signature is not verified on a console.
+    virtual void setInternalLog(bool) {}
 };
 
 // ---------------------------------------------------------------- everything together
@@ -109,6 +115,8 @@ public:
     virtual std::unique_ptr<AudioOut> makeAudioOut() = 0;
     virtual HttpClient *http() = 0;               // nullptr = no network implementation yet
     virtual Sockets *sockets() { return nullptr; } // raw TCP (phone remote server); nullptr = unavailable
+    // Why makeVideoEngine() returned nullptr (system codes), "" when unknown.
+    virtual std::string videoEngineError() { return ""; }
     // Installs a .pkg already on disk. 0 = installation started (system notification shows progress),
     // 1 = this app is already installed (call again with replaceInstalled), -1 = error in *err.
     virtual int installPackage(const std::string &path, bool replaceInstalled, std::string *err)

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 
 #include "app/demo_data.hpp"
 #include "ui/theme.hpp"
@@ -28,7 +29,7 @@ const NavItem kNav[] = {
 
 App::App(Platform &p)
     : platform(p), store(p.fs(), p.dataDir()), library(store), sources(store, p.http()), audio(p),
-      radio(p.http()), radioFavorites(store), images(p, p.http()), remote(new RemoteControl(p)),
+      radio(p.http()), radioFavorites(store), problems(store), images(p, p.http()), remote(new RemoteControl(p)),
       updater(new Updater(p, "denisfug/Moonlight", ML_VERSION))
 {
 }
@@ -85,6 +86,7 @@ bool App::init(std::string *error)
     }
     loadSettings();
     library.load();
+    problems.load();
     sources.load();
     radioFavorites.load();
     crumb("abrindo o app (musicas e canais)");
@@ -333,14 +335,31 @@ void App::playStation(const radio::Station &s)
     toast("Conectando em " + s.name + "...");
 }
 
-void App::playVideo(const std::string &location, const std::string &title,
-                    const std::vector<std::pair<std::string, std::string>> &requestHeaders)
+void App::reportProblem(Problem p)
+{
+    p.when = int64_t(std::time(nullptr));
+    problems.add(std::move(p));
+}
+
+void App::playVideo(const std::string &location, const PlayContext &ctx)
 {
     std::unique_ptr<VideoEngine> engine = platform.makeVideoEngine();
-    if (!engine) { modal("Player de video", VideoPlayer::unavailableReason()); return; }
-    engine->setRequestHeaders(requestHeaders);
+    if (!engine) {
+        std::string why = platform.videoEngineError();
+        Problem p;
+        p.title = ctx.title;
+        p.poster = ctx.poster;
+        p.source = ctx.source;
+        p.where = hostForLog(location);
+        p.reason = "o player de video do sistema nao carregou";
+        p.details = why.empty() ? std::string("sem detalhes") : why;
+        reportProblem(p);
+        modal("Player de video", std::string(VideoPlayer::unavailableReason()) + (why.empty() ? "" : "\n" + why));
+        return;
+    }
+    engine->setRequestHeaders(ctx.requestHeaders);
     audio.stop();   // one audio source at a time
-    push(makePlayer(*this, std::move(engine), location, title));
+    push(makePlayer(*this, std::move(engine), location, ctx));
 }
 
 std::string App::addSourceByUser(const std::string &url)

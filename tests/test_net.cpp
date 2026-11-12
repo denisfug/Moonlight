@@ -247,11 +247,6 @@ TEST(remote_pin_and_commands)
     rc.setState("Filmes", true, "Buscar", "aba", false);
     CHECK(rc.handle(req("GET", "/api/state", rc.pin(), ""), 1000).find("\"title\":\"Buscar\"") != std::string::npos);
 
-    // 5 wrong PINs lock the API for 60 s, even for the right PIN.
-    for (int i = 0; i < 5; i++) rc.handle(req("GET", "/api/state", "9999x", ""), 2000);
-    CHECK(rc.handle(req("GET", "/api/state", rc.pin(), ""), 3000).compare(0, 12, "HTTP/1.1 403") == 0);
-    CHECK(rc.handle(req("GET", "/api/state", rc.pin(), ""), 63000).compare(0, 12, "HTTP/1.1 200") == 0);
-
     // Over the real socket, with the app's own client.
     host::HostHttp http;
     HttpRequest q;
@@ -262,6 +257,11 @@ TEST(remote_pin_and_commands)
     HttpResponse r = http.get(q);
     CHECK(r.ok());
     CHECK(r.body.find("Filmes") != std::string::npos);
+    // 5 wrong PINs lock the API for 60 s, even for the right PIN.
+    for (int i = 0; i < 5; i++) rc.handle(req("GET", "/api/state", "9999x", ""), 1000000002000ull);
+    CHECK(rc.handle(req("GET", "/api/state", rc.pin(), ""), 1000000003000ull).compare(0, 12, "HTTP/1.1 403") == 0);
+    CHECK(rc.handle(req("GET", "/api/state", rc.pin(), ""), 1000000063000ull).compare(0, 12, "HTTP/1.1 200") == 0);
+
     rc.stop();
     CHECK(!rc.running());
 }
