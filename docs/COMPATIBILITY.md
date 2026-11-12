@@ -55,3 +55,12 @@ quando algo muda.
 
 Firmware do console não informado. O PKG é um "fake PKG" homebrew (PAID 0x3800000000000011) instalado pelo
 **GoldHEN → Package Installer** (pendrive ou `/data/pkg`). Nenhuma alteração de firmware é feita.
+
+| 01.19 | Instalação automática religada: ao clicar instalar, o app carrega `libSceAppInstUtil.sprx` com `sceKernelLoadStartModule`, resolve os símbolos com `sceKernelDlsym` e chama `sceAppInstUtilAppInstallPkg`. Nada é linkado no load (evita o crash de abertura). Se qualquer passo falhar, volta a instrução manual. **Aguardando teste no console.** |
+
+## Plugin DevHub (projeto separado)
+
+O Moonlight **não contém** código do DevHub; ele só lê a pasta `/data/devhub/Music` e reaproveita conceitos
+já validados ali. Se o plugin GoldHEN do DevHub estiver injetando dentro do Moonlight e atrapalhando, isso se
+resolve no **`plugins.ini` do GoldHEN** — removendo o DevHub da seção global ou do titleId do Moonlight —, não
+no código deste repositório.

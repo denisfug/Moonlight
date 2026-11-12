@@ -83,6 +83,7 @@ public:
     void afterAssetsLoaded() override;   // GoldHEN jailbreak for /data and USB access
     std::unique_ptr<VideoEngine> makeVideoEngine() override;   // libSceAvPlayer (experimental)
     std::string videoEngineError() override { return avErr_; }
+    int installPackage(const std::string &path, bool replaceInstalled, std::string *err) override;
     std::vector<std::string> videoDirs() const override;
     bool startTextInput(const std::string &title, const std::string &initial, bool url) override;
     int pollTextInput(std::string *out) override;
@@ -99,6 +100,7 @@ private:
     bool imeReady_ = false;
     int avLoaded_ = 0;      // 0 not tried, 1 loaded, -1 failed (code in avErr_)
     std::string avErr_;
+    int installMod_ = 0;    // libSceAppInstUtil handle (loaded lazily on first install), <=0 = not loaded
     uint16_t imeText_[2049];
     uint16_t imeTitle_[128];
 };

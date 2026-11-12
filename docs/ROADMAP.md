@@ -56,7 +56,8 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | Controle pelo celular (página web na rede local, PIN) | sim | sim | **01.09, aguardando teste** |
 | Vídeo HTTPS via cliente próprio (Range) | sim | Range testado | **01.09, aguardando teste** |
 | Catálogo em fileiras (catálogo/serviço e gênero), carga em segundo plano | sim | sim (servidor local) | **01.10, aguardando teste** |
-| Atualização (feed no branch claude/updates) | sim | busca/download/sha256 sim | **01.10 fechou ao abrir (CE-34878-0); 01.11 corrige o módulo Random, aguardando teste. Instalação automática desligada.** |
+| Atualização (feed no branch claude/updates) | sim | busca/download/sha256 sim | **01.10 fechou ao abrir (CE-34878-0); 01.11 corrige o módulo Random, aguardando teste.** |
+| Instalação automática do PKG | sim (contrato; sem motor no PC) | — | **01.19: religada via libSceAppInstUtil carregada dinamicamente (sceKernelLoadStartModule+Dlsym, nada linkado no load, sem crash na abertura). sceAppInstUtilAppInstallPkg(caminho). Fallback manual se falhar. AGUARDANDO TESTE no console. Causa de 01.10 provavelmente foi o libSceRandom, não o instalador.** |
 | Streaming HTTP incremental (`HttpStream`) | sim | sim (servidor local real) | pendente |
 | Rádios: diretório Radio Browser (só MP3), abas por gênero/país, busca, favoritas | sim | sim (fixtures + servidor local) | pendente |
 | AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |

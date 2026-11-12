@@ -7,7 +7,7 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.18")
+set(ML_VERSION "01.19")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
@@ -83,6 +83,7 @@ if(ML_PS4)
         src/platform/ps4/filesystem/file_system.cpp
         src/platform/ps4/network/http_client.cpp
         src/platform/ps4/controller/ime.cpp
+        src/platform/ps4/system/installer.cpp
     )
     target_link_libraries(moonlight PRIVATE ml_ui)
     target_compile_definitions(moonlight PRIVATE ML_PLATFORM_PS4 ML_VERSION="${ML_VERSION}")

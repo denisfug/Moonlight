@@ -641,7 +641,7 @@ private:
             int pct = u.size > 0 ? int(u.done * 100 / u.size) : 0;
             return "Baixando " + u.latest + "... " + std::to_string(pct) + "%";
         }
-        case Updater::Phase::Downloaded: return u.latest + " baixada em " + u.path + ". X mostra como instalar.";
+        case Updater::Phase::Downloaded: return u.latest + " baixada. X para instalar (o PS4 mostra a instalacao).";
         case Updater::Phase::Failed: return "Falhou. X mostra o motivo e tenta de novo.";
         }
         return cur;
@@ -670,13 +670,28 @@ private:
         }
     }
 
-    void install(const std::string &path, bool)
+    // 01.19: try the real system installer (ps4: libSceAppInstUtil, loaded dynamically). On any failure
+    // it returns <0 and we fall back to the manual Package-Installer instructions, so nothing regresses.
+    void install(const std::string &path, bool replace)
     {
-        // Automatic install is off since 01.11 (the system installer link crashed 01.10 on start).
+        std::string e;
+        int r = app.platform.installPackage(path, replace, &e);
+        if (r == 0) {
+            app.modal("Atualizar o Moonlight",
+                      "Instalacao iniciada. Veja a notificacao do PS4 na tela inicial e espere terminar; depois "
+                      "abra a versao nova.\nSeus dados (fontes, favoritos) em /data/moonlight nao se perdem.");
+            return;
+        }
+        if (r == 1) {
+            app.modal("Atualizar o Moonlight",
+                      "O Moonlight ja esta instalado. Substituir pela versao " + app.updater->state().latest + "?",
+                      {"Substituir", "Cancelar"}, [this, path](int c) { if (c == 0) install(path, true); });
+            return;
+        }
         app.modal("Atualizar o Moonlight",
-                  "Versao nova baixada em " + path + ".\nPara instalar: feche o Moonlight e instale esse arquivo do mesmo "
-                  "jeito que voce instala o app (Package Installer do GoldHEN, que le /data/pkg).\nSeus dados (fontes, favoritos) ficam em /data/moonlight "
-                  "e nao se perdem.");
+                  "Versao nova baixada em " + path + ".\n(Instalacao automatica indisponivel: " + e + ")\n"
+                  "Para instalar na mao: feche o Moonlight e instale esse arquivo pelo Package Installer do GoldHEN "
+                  "(que le /data/pkg).\nSeus dados (fontes, favoritos) ficam em /data/moonlight e nao se perdem.");
     }
 
     void toggleRemote()
