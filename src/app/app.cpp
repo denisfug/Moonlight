@@ -560,63 +560,56 @@ Section App::step(Section from, int dir) const
 }
 
 // ---------------------------------------------------------------- drawing
-static void drawLogo(App &app, Canvas &c, int x, int y)
-{
-    // crescent: violet->blue disc with a background-coloured disc cut out
-    c.shadow(x, y, 56, 56, 28, 22, withAlpha(theme::Violet, 90));
-    c.fillGradient(x, y, 56, 56, 28, theme::Glow, theme::Blue, 2);
-    c.fillCircle(x + 40, y + 18, 24, theme::Sidebar);
-    c.fillCircle(x + 46, y + 44, 2.5f, rgba(255, 255, 255, 200));
-    app.fonts.bold->draw(c, x + 72, y + 2, 30, "MOONLIGHT", theme::Text);
-    int w = app.fonts.bold->measure(30, "MOONLIGHT");
-    c.fillGradient(x + 72, y + 40, 46, 22, 11, theme::Violet, theme::Blue, 0);
-    app.fonts.bold->draw(c, x + 82, y + 41, 16, "HB", rgba(255, 255, 255));
-    (void)w;
-}
 
 void App::drawSidebar(Canvas &c)
 {
-    c.fillRect(0, 0, theme::SidebarW, theme::H, theme::Sidebar);
-    c.fillRect(theme::SidebarW - 1, 0, 1, theme::H, theme::Line);
-    drawLogo(*this, c, 32, 44);
-    int y = 170;
+    // Floating glass pill with icon-only buttons (the new interface). Labels are dropped to match the
+    // design; the current section is also shown in each screen's own header, so the place stays clear.
+    const int px = 18, pw = 96, pr = 48;
+    const int pcx = px + pw / 2;
+    const int top = 24, bot = theme::H - 24;
+    c.shadow(px, top, pw, bot - top, pr, 26, rgba(0, 0, 0, 120));
+    c.fillRoundRect(px, top, pw, bot - top, pr, theme::Surface);
+    c.strokeRoundRect(px, top, pw, bot - top, pr, 1, theme::Line);
+
+    // moon mark at the top of the pill
+    {
+        int mx = pcx - 24, my = top + 24;
+        c.shadow(mx, my, 48, 48, 24, 16, withAlpha(theme::Violet, 90));
+        c.fillGradient(mx, my, 48, 48, 24, theme::Glow, theme::Blue, 2);
+        c.fillCircle(float(mx + 34), float(my + 15), 20, theme::Bg);
+        c.fillCircle(float(mx + 38), float(my + 38), 2.2f, rgba(255, 255, 255, 200));
+    }
+
+    int y = top + 112;
+    const int step = 72, btn = 60;
     for (const auto &it : kNav) {
         if (!visible(it.s)) continue;
         bool cur = it.s == section_;
         bool foc = sidebarFocus_ && int(it.s) == sidebarSel_;
-        Rect r{20, y, theme::SidebarW - 40, 64};
+        int bx = pcx - btn / 2, by = y;
         if (foc) {
-            c.shadow(r.x, r.y, r.w, r.h, 18, 18, withAlpha(theme::Violet, 120));
-            c.fillGradient(r.x, r.y, r.w, r.h, 18, theme::Violet, theme::Indigo, 0);
+            c.shadow(bx, by, btn, btn, 22, 16, withAlpha(theme::Violet, 130));
+            c.fillGradient(bx, by, btn, btn, 22, theme::Violet, theme::Blue, 2);
         } else if (cur) {
-            c.fillRoundRect(r.x, r.y, r.w, r.h, 18, theme::SurfaceHi);
-            c.fillRoundRect(r.x, r.y + 16, 5, 32, 2, theme::Glow);
+            c.fillRoundRect(bx, by, btn, btn, 22, theme::SurfaceHi);
         }
-        Color col = foc ? theme::Text : (cur ? theme::Text : theme::TextDim);
-        drawIcon(c, it.icon, float(r.x + 42), float(r.y + 32), 28, col);
-        (foc || cur ? fonts.bold : fonts.regular)->draw(c, r.x + 78, r.y + (64 - fonts.regular->lineHeight(25)) / 2, 25, it.label, col);
-        y += 74;
+        drawIcon(c, it.icon, float(pcx), float(by + btn / 2), 26, (foc || cur) ? theme::Text : theme::TextDim);
+        y += step;
     }
-    // now playing mini status
+
+    // compact now-playing chip at the bottom of the pill
     size_t t = queue.current();
     bool liveOn = audio.live() && (audio.state() == PlayState::Playing || audio.state() == PlayState::Paused);
-    if (liveOn) {
-        Rect r{20, theme::H - 150, theme::SidebarW - 40, 112};
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 18, theme::Surface);
-        drawIcon(c, audio.state() == PlayState::Playing ? Icon::Live : Icon::Pause, float(r.x + 34), float(r.y + 38), 24, theme::Glow);
-        fonts.bold->draw(c, r.x + 62, r.y + 18, 20, fonts.bold->ellipsize(20, station.name, r.w - 76), theme::Text);
-        fonts.regular->draw(c, r.x + 62, r.y + 46, 17, "AO VIVO  -  " + std::to_string(station.bitrate) + " kbps", theme::TextDim);
-        c.fillRoundRect(r.x + 18, r.y + 86, r.w - 36, 6, 3, theme::Violet);
-    } else if ((audio.state() == PlayState::Playing || audio.state() == PlayState::Paused) && t < music.tracks().size()) {
-        Rect r{20, theme::H - 150, theme::SidebarW - 40, 112};
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 18, theme::Surface);
-        drawIcon(c, audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(r.x + 34), float(r.y + 38), 24, theme::Glow);
-        fonts.bold->draw(c, r.x + 62, r.y + 18, 20, fonts.bold->ellipsize(20, music.tracks()[t].title, r.w - 76), theme::Text);
-        fonts.regular->draw(c, r.x + 62, r.y + 46, 17, fonts.regular->ellipsize(17, music.tracks()[t].artist, r.w - 76), theme::TextDim);
-        double d = double(audio.getDuration());
-        drawProgress(c, r.x + 18, r.y + 86, r.w - 36, 6, d > 0 ? audio.getPosition() / d : 0, theme::Blue, theme::SurfaceHi);
-    } else {
-        fonts.regular->draw(c, 32, theme::H - 56, 18, std::string("v") + ML_VERSION + "  -  " + platform.name(), theme::TextMute);
+    bool musicOn = (audio.state() == PlayState::Playing || audio.state() == PlayState::Paused) && t < music.tracks().size();
+    if (liveOn || musicOn) {
+        int cy = bot - 90;
+        c.fillRoundRect(pcx - 34, cy, 68, 68, 22, theme::SurfaceHi);
+        Icon ic = audio.state() == PlayState::Paused ? Icon::Pause : (liveOn ? Icon::Live : Icon::Music);
+        drawIcon(c, ic, float(pcx), float(cy + 28), 24, theme::Glow);
+        double frac = 1;
+        if (musicOn) { double d = double(audio.getDuration()); frac = d > 0 ? audio.getPosition() / d : 0; }
+        drawProgress(c, pcx - 24, cy + 52, 48, 5, frac, theme::Blue, withAlpha(theme::Text, 40));
     }
 }
 
@@ -654,8 +647,9 @@ void App::draw(Canvas &c)
         background_.px.assign(size_t(theme::W) * theme::H, 0xFF000000u);
         Canvas bc(background_.fb());
         bc.fillGradient(0, 0, theme::W, theme::H, 0, theme::BgTop, theme::Bg, 1);
-        bc.fillCircle(1780, -40, 260, rgba(139, 92, 246, 14));
-        bc.fillCircle(1780, -40, 170, rgba(139, 92, 246, 12));
+        // dual radial glow: violet top-right, blue bottom-left (soft concentric discs)
+        for (int i = 0; i < 7; i++) bc.fillCircle(1770, 30, 560.0f - i * 68, rgba(139, 108, 255, 9));
+        for (int i = 0; i < 7; i++) bc.fillCircle(90, 1050, 470.0f - i * 66, rgba(79, 140, 255, 7));
     }
     c.drawImage(background_, 0, 0);
     if (current().fullscreen()) {   // video player: the screen owns the whole display

@@ -25,7 +25,6 @@ using FnInit = int32_t (*)(void);
 using FnInstall = int32_t (*)(const char *pkgPath, void *reserved);
 using FnTitle = int32_t (*)(const char *pkgPath, char *titleId, int32_t *isApp);
 using FnExists = int32_t (*)(const char *titleId, int32_t *exists);
-using FnPrepare = int32_t (*)(const char *pkgPath);
 
 void *sym(int32_t mod, const char *name)
 {
@@ -53,22 +52,23 @@ int Ps4Platform::installPackage(const std::string &path, bool replaceInstalled, 
     auto install = (FnInstall)sym(installMod_, "sceAppInstUtilAppInstallPkg");
     auto getTitle = (FnTitle)sym(installMod_, "sceAppInstUtilGetTitleIdFromPkg");
     auto appExists = (FnExists)sym(installMod_, "sceAppInstUtilAppExists");
-    auto prepare = (FnPrepare)sym(installMod_, "sceAppInstUtilAppPrepareOverwritePkg");
     if (!init || !install) return fail("simbolos do instalador nao encontrados");
 
     init();   // "already initialised" is harmless
 
-    // If the title is already on the console, overwrite only when the caller confirmed it (return 1 first).
-    if (getTitle && appExists) {
+    // SAFETY (01.20): we NEVER uninstall first. 01.19 called sceAppInstUtilAppPrepareOverwritePkg,
+    // which removes the app before installing; when the install did not complete the app was gone
+    // (owner reported "apagou o app"). Here, if the title is already installed we only ask the caller
+    // to confirm (return 1), then install directly over it. sceAppInstUtilAppInstallPkg overwrites a
+    // fake PKG of the same title in place; if it refuses, it returns an error and we fall back to the
+    // manual path with the app still installed. A failed install can no longer delete the app.
+    if (!replaceInstalled && getTitle && appExists) {
         char titleId[64];
         std::memset(titleId, 0, sizeof titleId);
         int32_t isApp = 0;
         if (getTitle(path.c_str(), titleId, &isApp) >= 0 && titleId[0]) {
             int32_t exists = 0;
-            if (appExists(titleId, &exists) >= 0 && exists) {
-                if (!replaceInstalled) return 1;
-                if (prepare) prepare(path.c_str());
-            }
+            if (appExists(titleId, &exists) >= 0 && exists) return 1;
         }
     }
 
