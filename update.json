@@ -1,0 +1,7 @@
+{
+ "version": "01.23",
+ "pkg": "Moonlight-HB_01.23.pkg",
+ "size": 6619136,
+ "sha256": "ba1fed1b9fe6b6cfe1a5699e8f12167137992459f59f96e1ea3647c25c682902",
+ "notes": "01.23 - menos travamento nas animacoes (cortei sombras e desenho pesado por quadro). Dica: Config > Animacoes desliga a transicao."
+}
