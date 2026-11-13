@@ -1,0 +1,8 @@
+[
+ {"stationuuid":"aaaa-1","name":"  Radio Lua Cheia FM ","url":"http://127.0.0.1:8765/tone.mp3","url_resolved":"","homepage":"https://example.org","favicon":"","tags":"pop,sertanejo","countrycode":"BR","language":"portuguese","codec":"MP3","bitrate":128,"votes":"512","hls":0,"lastcheckok":1},
+ {"stationuuid":"aaaa-2","name":"Orbita AAC","url_resolved":"http://127.0.0.1:8765/aac","codec":"AAC","bitrate":64,"hls":0,"lastcheckok":1},
+ {"stationuuid":"aaaa-3","name":"Lista HLS","url_resolved":"http://127.0.0.1:8765/live.m3u8","codec":"MP3","bitrate":128,"hls":1,"lastcheckok":1},
+ {"stationuuid":"aaaa-4","name":"Fora do Ar","url_resolved":"http://127.0.0.1:8765/off.mp3","codec":"MP3","bitrate":128,"hls":0,"lastcheckok":0},
+ {"stationuuid":"aaaa-5","name":"Noite Azul","url_resolved":"http://127.0.0.1:8765/tone.mp3","codec":"mp3","bitrate":"96","hls":false,"lastcheckok":true,"countrycode":"PT"},
+ {"name":"sem uuid"}
+]
