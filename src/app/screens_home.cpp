@@ -336,11 +336,8 @@ private:
         c.fillCircle(mx + 120, my - 120, 330, rgba(124, 92, 255, 26));
         c.fillCircle(mx, my, 150, rgba(236, 232, 255, 150));
         c.fillCircle(mx + 54, my - 26, 140, withAlpha(rgba(26, 18, 54), 210));
-        // left fade for text legibility
-        for (int i = 0; i < r.w; i += 6) {
-            int a = int(235 * std::max(0.0f, 1.0f - float(i) / float(r.w * 0.8f)));
-            c.fillRect(r.x + i, r.y, 6, r.h, withAlpha(theme::Bg, a));
-        }
+        // left fade for text legibility (one gradient instead of ~200 per-column fills)
+        c.fillGradient(r.x, r.y, int(r.w * 0.78f), r.h, 0, withAlpha(theme::Bg, 235), withAlpha(theme::Bg, 0), 0);
         c.popClip();
         c.strokeRoundRect(r.x, r.y, r.w, r.h, 34, 1, theme::Line);
 

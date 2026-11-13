@@ -456,7 +456,7 @@ bool App::frame()
     images.trim();
     if (images.takeUpdated()) dirty();
     current().update(dt);
-    if (fade_ > 0) { fade_ = std::max(0.0f, fade_ - dt * 6.0f); dirty(); }
+    if (fade_ > 0) { fade_ = std::max(0.0f, fade_ - dt * 11.0f); dirty(); }   // shorter transition = fewer heavy redraws
     if (current().animating()) dirty();
     if (!toast_.text.empty() && now_ > toast_.until) { toast_.text.clear(); dirty(); }
 
@@ -568,7 +568,8 @@ void App::drawSidebar(Canvas &c)
     const int px = 18, pw = 96, pr = 48;
     const int pcx = px + pw / 2;
     const int top = 24, bot = theme::H - 24;
-    c.shadow(px, top, pw, bot - top, pr, 26, rgba(0, 0, 0, 120));
+    // No soft shadow on the whole pill: blurring a 96x1032 region every frame was a big cost on the
+    // PS4 CPU during animations. The border below gives enough separation.
     c.fillRoundRect(px, top, pw, bot - top, pr, theme::Surface);
     c.strokeRoundRect(px, top, pw, bot - top, pr, 1, theme::Line);
 
