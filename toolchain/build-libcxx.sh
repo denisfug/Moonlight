@@ -28,7 +28,7 @@ if [ ! -d "$W/src/.git" ]; then
   git -C "$W/src" sparse-checkout set libcxx libcxxabi libunwind runtimes cmake llvm/cmake llvm/utils/llvm-lit
 fi
 
-F="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc \
+F="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc -fno-threadsafe-statics \
    -isystem $here/overlay -isystem $T/include -isystem $RES"
 rm -rf "$W/build" && mkdir -p "$W/build"
 cmake -S "$W/src/runtimes" -B "$W/build" -G "Unix Makefiles" \

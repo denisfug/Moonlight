@@ -20,7 +20,7 @@ if(NOT EXISTS "${LIBCXX}/lib/libc++.a")
 endif()
 execute_process(COMMAND clang -print-resource-dir OUTPUT_VARIABLE CLANG_RES OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set(ML_PS4_BASE "--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc")
+set(ML_PS4_BASE "--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc -fno-threadsafe-statics")
 set(ML_PS4_SYS "-isystem ${ML_ROOT}/toolchain/overlay -isystem ${OO}/include -isystem ${CLANG_RES}/include")
 set(CMAKE_C_FLAGS_INIT "${ML_PS4_BASE} ${ML_PS4_SYS}")
 # libc++ headers must come before the C library headers

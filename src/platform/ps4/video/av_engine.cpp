@@ -32,39 +32,14 @@ void *avAlloc(void *, uint32_t align, uint32_t size)
 }
 void avFree(void *, void *mem) { std::free(mem); }
 
-// Decoder output must live in direct (GPU-visible) memory.
-struct TexAlloc {
-    void *addr;
-    off_t off;
-    size_t len;
-};
-TexAlloc g_tex[64];   // plain array: no static constructor
-
-void *avAllocTex(void *, uint32_t align, uint32_t size)
-{
-    const size_t page = 64 * 1024;
-    size_t a = align < page ? page : align;
-    size_t len = (size + page - 1) / page * page;
-    off_t off = 0;
-    if (sceKernelAllocateDirectMemory(0, off_t(sceKernelGetDirectMemorySize()), len, a, 3, &off) < 0) return nullptr;
-    void *addr = nullptr;
-    if (sceKernelMapDirectMemory(&addr, len, 0x33, 0, off, a) < 0) { sceKernelReleaseDirectMemory(off, len); return nullptr; }
-    for (auto &t : g_tex)
-        if (!t.addr) { t = {addr, off, len}; return addr; }
-    sceKernelMunmap(addr, len);
-    sceKernelReleaseDirectMemory(off, len);
-    return nullptr;
-}
-void avFreeTex(void *, void *mem)
-{
-    for (auto &t : g_tex)
-        if (t.addr == mem) {
-            sceKernelMunmap(t.addr, t.len);
-            sceKernelReleaseDirectMemory(t.off, t.len);
-            t = {nullptr, 0, 0};
-            return;
-        }
-}
+// Decoder output buffers. 01.24: plain aligned memory, like the working PS4-IPTV-Player reference
+// (Rissx223) whose AvPlayer path decodes H.264 on real hardware. 01.13-01.23 used GPU direct memory
+// here (sceKernelAllocateDirectMemory + Map); on the console the player reserved the buffers but never
+// produced a frame (video test: "62 MB, aguardando o decodificador, parado", 0 quadros). AvPlayer
+// copies the decoded NV12 into these buffers, so plain CPU-readable memory is what it needs; the
+// direct-memory mapping is the suspected cause of the stall.
+void *avAllocTex(void *obj, uint32_t align, uint32_t size) { return avAlloc(obj, align, size); }
+void avFreeTex(void *obj, void *mem) { avFree(obj, mem); }
 
 class AvEngine;
 AvEngine *g_logEngine = nullptr;   // engine receiving the player's internal log (plain pointer)
@@ -98,8 +73,8 @@ public:
         init.memory = {this, &AvEngine::alloc, &AvEngine::free_, &AvEngine::allocTex, &AvEngine::freeTex};
         init.event = {this, &AvEngine::onEvent};
         init.debugLevel = 0;
-        init.basePriority = 700;
-        init.numOutputVideoFramebuffers = 2;
+        init.basePriority = 160;   // 01.24: was 700 (low). The working reference uses 160 (higher) so the
+        init.numOutputVideoFramebuffers = 4;   // decoder threads are not starved; and 4 buffers, not 2.
         init.autoStart = true;
         init.defaultLanguage = "por";
         // http(s): the system player would use the system TLS, which refuses modern sites on older
