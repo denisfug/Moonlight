@@ -1,7 +1,7 @@
 {
- "version": "01.24",
- "pkg": "Moonlight-HB_01.24.pkg",
- "size": 6619136,
- "sha256": "7fd6be2391e9b4b614a057fc8f62c794512a5a08c55523ac96f2c17123fcb8ad",
- "notes": "01.24 - conserto do decodificador de video (memoria de textura comum + prioridade + buffers, comparado com player que funciona). Teste de video usa MP4 Baseline. Instale pelo GoldHEN na mao."
+ "version": "01.23",
+ "pkg": "Moonlight-HB_01.23.pkg",
+ "size": 0,
+ "sha256": "",
+ "notes": "Versao estavel. As builds 01.24/01.25 travam no boot (problema de toolchain do ambiente). Nao atualize por aqui."
 }
