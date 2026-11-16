@@ -22,6 +22,8 @@ TEST(archive_urls)
     CHECK(u.find(' ') == std::string::npos);
     CHECK_EQ(metadataUrl("gd1977-05-08.sbd_x"), std::string("https://archive.org/metadata/gd1977-05-08.sbd_x"));
     CHECK(metadataUrl("a/../b").empty());
+    CHECK_EQ(coverUrl("abc-1"), std::string("https://archive.org/services/img/abc-1"));
+    CHECK(coverUrl("a b").empty());
     CHECK(metadataUrl("").empty());
     CHECK(validId("abc-1.2_3") && !validId("a b") && !validId("a?b"));
 }
@@ -110,6 +112,7 @@ TEST(archive_live_local_server)
     h.app.frame();
     CHECK(h.app.remote->start(&err));
     std::string pin = h.app.remote->pin();
+    size_t coversBefore = h.app.images.cached();
     h.press(BtnOptions);                               // search keyboard
     CHECK(h.app.keyboard.active());
     h.app.remote->handle("POST /api/text HTTP/1.1\r\nX-Pin: " + pin + "\r\n\r\nzzz-sem-resultado-local", h.plat.nowMs());
@@ -120,6 +123,11 @@ TEST(archive_live_local_server)
     CHECK(h.app.currentState().find("list=1") != std::string::npos);
     h.press(BtnCross);                                 // open it: file list fetched in the background
     CHECK(h.waitFor("tracks=2"));
+    {   // the album cover is fetched by the image loader (background) and ends up in its cache
+        bool got = false;
+        for (int i = 0; i < 600 && !got; i++) { h.app.dirty(); h.app.frame(); h.plat.sleepMs(5); got = h.app.images.cached() > coversBefore; }
+        CHECK(got);
+    }
     CHECK(h.app.currentState().find("zone=1") != std::string::npos);   // focus moved to the tracks
     h.press(BtnCross);                                 // play track 1 from the "download" address
     if (const char *dir = std::getenv("ML_SHOT_DIR")) {   // optional picture of the screen for a visual check

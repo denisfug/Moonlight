@@ -27,6 +27,7 @@ constexpr const char *kHost = "https://archive.org";
 // base is only replaced by the tests (local fixture server).
 std::string searchUrl(const std::string &query, int rows = 30, const std::string &base = kHost);
 std::string metadataUrl(const std::string &id, const std::string &base = kHost);
+std::string coverUrl(const std::string &id, const std::string &base = kHost);   // item thumbnail (JPEG/PNG)
 bool validId(const std::string &id);   // letters, digits, . _ - only (what the Archive itself allows)
 
 std::vector<Item> parseSearch(const Json &root);

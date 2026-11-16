@@ -90,6 +90,11 @@ std::string metadataUrl(const std::string &id, const std::string &base)
     return validId(id) ? base + "/metadata/" + id : std::string();
 }
 
+std::string coverUrl(const std::string &id, const std::string &base)
+{
+    return validId(id) ? base + "/services/img/" + id : std::string();
+}
+
 std::vector<Item> parseSearch(const Json &root)
 {
     std::vector<Item> v;

@@ -89,6 +89,8 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 | Busca de música mostra álbuns do Archive; X abre o álbum; faixa toca por streaming | sim | sim (`archive_live_local_server`: servidor local, não o archive.org de verdade) | pendente |
 | Rede fora da thread da interface (MultiFetch) para a busca e para abrir o álbum | sim | sim | pendente |
 | Teste contra o archive.org real (sintaxe da busca, redirecionamento para o servidor de dados, certificado) | — | **não feito** (o ambiente de build não alcança archive.org) | pendente |
+| Capas dos álbuns (`/services/img/<id>`) na lista, no cabeçalho do álbum e no "tocando agora"; lista de resultados acompanha a seleção (01.29) | sim | sim (servidor local) | pendente |
+| 01.28 no console: busca no archive.org real, abrir álbum e tocar | — | — | **sim** (relato do dono, 16/11: tocou um álbum) |
 | Jamendo (precisa de chave do usuário) | — | não iniciado | — |
 
 A busca no servidor Subsonic continua na thread da interface (pendente, como antes).

@@ -147,6 +147,7 @@ public:
                     t.artist = s.artist;
                     t.album = s.album;
                     t.durationMs = int64_t(s.durationSec) * 1000;
+                    t.art = archive::coverUrl(al.item.id, app.archiveBase);
                     tracks.push_back(std::move(t));
                 }
                 al.tracks = app.music.addRemote("", tracks, false);
@@ -233,7 +234,7 @@ public:
             app.dirty();
         }
         pollArchive();
-        float target = float(std::max(0, tr_ - 5) * 74);
+        float target = float(std::max(0, tr_ - (albumAt(pl_) >= 0 ? 4 : 5)) * 74);   // album header leaves fewer rows
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
         anim_ = std::fabs(target - scroll_) > 0.5f;
         scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
@@ -261,14 +262,21 @@ public:
         // playlists column
         int pw = 420;
         c.fillRoundRect(x, top, pw, listH, 22, theme::Surface);
-        app.fonts.bold->draw(c, x + 26, top + 22, 22, "PLAYLISTS", theme::TextMute);
+        app.fonts.bold->draw(c, x + 26, top + 22, 22, search_.empty() ? "PLAYLISTS" : "RESULTADOS", theme::TextMute);
+        // The list follows the selection (a search brings up to 30 albums; before, rows past the panel
+        // could be selected without being visible).
+        int rows = std::max(1, (listH - 66 - 8) / 66);
+        int first = std::clamp(pl_ - rows + 2, 0, std::max(0, int(lists()) - rows));
         int y = top + 66;
-        for (int i = 0; i < int(lists()) && y < top + listH - 60; i++, y += 66) {
+        for (int i = first; i < int(lists()) && i < first + rows; i++, y += 66) {
             bool on = i == pl_;
             Rect r{x + 12, y, pw - 24, 58};
             if (on && zone_ == 0 && !app.sidebarFocused()) c.fillGradient(r.x, r.y, r.w, r.h, 14, theme::Violet, theme::Indigo, 0);
             else if (on) c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::SurfaceHi);
-            drawGeneratedArt(c, app.fonts, {r.x + 8, r.y + 7, 44, 44}, 8, "pl:" + nameOf(i), "", false);
+            const Image *cover = nullptr;
+            if (int a = albumAt(i); a >= 0) cover = app.images.get(archive::coverUrl(arch_[size_t(a)].item.id, app.archiveBase), 44, 44);
+            if (cover) c.drawImage(*cover, r.x + 8, r.y + 7, 8);
+            else drawGeneratedArt(c, app.fonts, {r.x + 8, r.y + 7, 44, 44}, 8, "pl:" + nameOf(i), "", false);
             app.fonts.bold->draw(c, r.x + 66, r.y + 6, 22, app.fonts.bold->ellipsize(22, nameOf(i), r.w - 80), theme::Text);
             app.fonts.regular->draw(c, r.x + 66, r.y + 32, 17, app.fonts.regular->ellipsize(17, countOf(i), r.w - 80), on ? theme::Text : theme::TextMute);
         }
@@ -276,20 +284,34 @@ public:
         int tx = x + pw + 28, tw = area.right() - theme::Margin - tx;
         c.fillRoundRect(tx, top, tw, listH, 22, theme::Surface);
         auto tr = tracksOf(pl_);
-        app.fonts.bold->draw(c, tx + 26, top + 22, 22, lists() ? nameOf(pl_) : "", theme::TextMute);
+        int head = 62;   // height of the panel header; taller for an album (cover + names)
+        if (int a = albumAt(pl_); a >= 0) {
+            const Album &al = arch_[size_t(a)];
+            head = 176;
+            Rect art{tx + 26, top + 22, 140, 140};
+            if (const Image *img = app.images.get(archive::coverUrl(al.item.id, app.archiveBase), art.w, art.h)) c.drawImage(*img, art.x, art.y, 14);
+            else drawGeneratedArt(c, app.fonts, art, 14, "pl:" + al.item.title, "", false);
+            int hx = art.right() + 26, hw = tw - (hx - tx) - 26;
+            app.fonts.regular->draw(c, hx, top + 30, 17, "ALBUM  -  INTERNET ARCHIVE", theme::TextMute);
+            app.fonts.bold->draw(c, hx, top + 56, 34, app.fonts.bold->ellipsize(34, al.item.title, hw), theme::Text);
+            app.fonts.regular->draw(c, hx, top + 104, 22, app.fonts.regular->ellipsize(22, al.item.creator.empty() ? "Artista nao informado" : al.item.creator, hw), theme::TextDim);
+            if (al.state == Album::Loaded) app.fonts.regular->draw(c, hx, top + 136, 19, std::to_string(al.tracks.size()) + " faixas", theme::TextMute);
+        } else {
+            app.fonts.bold->draw(c, tx + 26, top + 22, 22, lists() ? nameOf(pl_) : "", theme::TextMute);
+        }
         if (int a = albumAt(pl_); a >= 0 && arch_[size_t(a)].state != Album::Loaded) {
             const Album &al = arch_[size_t(a)];
-            app.fonts.regular->draw(c, tx + 26, top + 80, 22,
+            app.fonts.regular->draw(c, tx + 26, top + head + 18, 22,
                                     al.state == Album::Loading ? "Abrindo o album no Internet Archive..."
                                     : al.state == Album::Failed ? "Nao foi possivel abrir este album. Aperte X para tentar de novo."
                                                                 : "Album do Internet Archive. Aperte X para ver as faixas.",
                                     theme::TextDim);
         }
-        c.pushClip({tx, top + 62, tw, listH - 70});
-        int ty = top + 66 - int(scroll_);
+        c.pushClip({tx, top + head, tw, listH - head - 8});
+        int ty = top + head + 4 - int(scroll_);
         size_t playing = app.queue.current();
         for (int i = 0; i < int(tr.size()); i++, ty += 74) {
-            if (ty + 74 < top + 60 || ty > top + listH) continue;
+            if (ty + 74 < top + head || ty > top + listH) continue;
             const music::Track &t = app.music.tracks()[tr[size_t(i)]];
             bool f = zone_ == 1 && i == tr_ && !app.sidebarFocused();
             bool isPlaying = tr[size_t(i)] == playing && app.audio.state() != PlayState::Idle && !t.demo;
@@ -336,8 +358,10 @@ private:
         c.strokeRoundRect(r.x, r.y, r.w, r.h, 24, 1, theme::Line);
         size_t t = app.queue.current();
         bool active = t < app.music.tracks().size() && app.audio.state() != PlayState::Idle && app.audio.state() != PlayState::Error;
-        drawGeneratedArt(c, app.fonts, {r.x + 20, r.y + 20, r.h - 40, r.h - 40}, 14,
-                         active ? "al:" + app.music.tracks()[t].album : "idle", "", false);
+        Rect art{r.x + 20, r.y + 20, r.h - 40, r.h - 40};
+        const Image *cover = active && !app.music.tracks()[t].art.empty() ? app.images.get(app.music.tracks()[t].art, art.w, art.h) : nullptr;
+        if (cover) c.drawImage(*cover, art.x, art.y, 14);
+        else drawGeneratedArt(c, app.fonts, art, 14, active ? "al:" + app.music.tracks()[t].album : "idle", "", false);
         int x = r.x + r.h;
         if (!active) {
             app.fonts.bold->draw(c, x, r.y + 30, 26, "Nada tocando", theme::Text);
