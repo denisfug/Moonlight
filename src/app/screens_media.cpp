@@ -225,7 +225,8 @@ public:
             else r.scrollX = tx;
         }
     }
-    bool animating() const override { return anim_ || loading(); }
+    bool animating() const override { return anim_; }
+    bool busy() const override { return loading(); }
     bool loading() const
     {
         for (const auto &r : rows_) if (r.state == Row::Loading) return true;
@@ -413,7 +414,7 @@ public:
             if (playable() == 0 && !noted_) noteNothingPlayable();
         }
     }
-    bool animating() const override { return fetch_ != nullptr; }   // elapsed seconds + polling
+    bool busy() const override { return fetch_ != nullptr; }   // elapsed seconds + polling
 
     bool handle(uint32_t p) override
     {
@@ -815,7 +816,8 @@ public:
         anim_ = std::fabs(target - scroll_) > 0.5f;
         scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
     }
-    bool animating() const override { return anim_ || metaFetch_ != nullptr; }
+    bool animating() const override { return anim_; }
+    bool busy() const override { return metaFetch_ != nullptr; }
 
     void draw(Canvas &c, Rect area) override
     {

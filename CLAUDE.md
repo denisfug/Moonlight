@@ -28,7 +28,7 @@ src/net         HTTP/1.1 + TLS próprios (Mbed TLS 3.6.4 em third_party/mbedtls)
 src/storage     JsonStore (escrita atômica)
 src/addons      protocolo Stremio (protocol.*) + SourceManager
 src/library     favoritos / histórico / progresso
-src/music       biblioteca MP3, ID3, fila, cliente Subsonic/Navidrome (subsonic.*)
+src/music       biblioteca MP3, ID3, fila, cliente Subsonic/Navidrome (subsonic.*), Internet Archive (archive.*)
 src/live        parser M3U
 src/radio       diretório Radio Browser, estações, favoritas
 src/player      MediaPlayer, AudioPlayer (MP3), VideoPlayer (indisponível), mp3_core (C)

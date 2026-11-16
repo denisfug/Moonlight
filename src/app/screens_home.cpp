@@ -203,7 +203,8 @@ public:
             ease(r.scroll, r.scrollTarget);
         }
     }
-    bool animating() const override { return anim_ || loader_->busy(); }
+    bool animating() const override { return anim_; }
+    bool busy() const override { return loader_->busy(); }
 
     // ---- layout -------------------------------------------------------------
     void draw(Canvas &c, Rect area) override

@@ -391,7 +391,7 @@ public:
         build();
         app.remote->selfTest();
     }
-    bool animating() const override { return true; }   // live counters
+    bool busy() const override { return true; }   // live counters
     std::string title() const override { return "Controle pelo celular"; }
 
     void build()
@@ -553,17 +553,18 @@ public:
                 break;
             }
             case 3: configureServer(); break;
-            case 4: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 5: toggleRemote(); break;
-            case 6: updateAction(); break;
-            case 7: testInternet(); break;
-            case 8: app.push(makeVideoTest(app)); break;
-            case 9: app.push(makeProblems(app)); break;
-            case 10:
+            case 4: app.settings.archive = !app.settings.archive; app.saveSettings(); break;
+            case 5: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
+            case 6: toggleRemote(); break;
+            case 7: updateAction(); break;
+            case 8: testInternet(); break;
+            case 9: app.push(makeVideoTest(app)); break;
+            case 10: app.push(makeProblems(app)); break;
+            case 11:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
-                          "Decodificador MP3: minimp3 (CC0). Texto: stb_truetype (dominio publico).");
+                          "Musica livre: Internet Archive (archive.org). Decodificador MP3: minimp3 (CC0). Texto: stb_truetype (dominio publico).");
                 break;
             }
             return true;
@@ -589,6 +590,7 @@ public:
             {"Conteudo de demonstracao", "Mostra filmes, series, canais e playlists ficticios enquanto nao ha fontes reais.", app.settings.showDemo ? 1 : 0},
             {"Procurar musicas de novo", "Rele /data/music, /data/moonlight/music, /data/devhub/Music e o pendrive (Music/).", -1},
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
+            {"Musica do Internet Archive", "A busca de musica tambem procura albuns livres (dominio publico / Creative Commons) em archive.org.", app.settings.archive ? 1 : 0},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
             {"Controle pelo celular", remoteDesc_.c_str(), app.remote->running() ? 1 : 0},
             {"Atualizar o Moonlight", updateDesc_.c_str(), -1},
@@ -621,7 +623,7 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    static constexpr int kItems = 11;
+    static constexpr int kItems = 12;
     int sel_ = 0, first_ = 0;
     std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_;
     std::string testHeader_, testResult_;

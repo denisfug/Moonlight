@@ -3,6 +3,8 @@
 #include <cmath>
 
 #include "app/app.hpp"
+#include "app/multi_fetch.hpp"
+#include "music/archive.hpp"
 #include "ui/theme.hpp"
 
 namespace ml {
@@ -15,6 +17,12 @@ class MusicScreen : public Screen {
 public:
     using Screen::Screen;
     std::string title() const override { return "Musica"; }
+    std::string describe() const override
+    {
+        std::string s = "albums=" + std::to_string(arch_.size()) + " list=" + std::to_string(pl_) + " zone=" + std::to_string(zone_);
+        if (int a = albumAt(pl_); a >= 0) s += " tracks=" + std::to_string(arch_[size_t(a)].tracks.size());
+        return s;
+    }
 
     void onEnter() override
     {
@@ -23,14 +31,25 @@ public:
         if (pl_ >= int(lists())) pl_ = 0;
     }
 
-    size_t lists() const { return app.music.playlists().size() + (search_.empty() ? 0 : 1); }
+    // Left column while a search is active: [0] local/server results, [1..] Internet Archive albums,
+    // then the playlists. Without a search: only the playlists.
+    int albums() const { return search_.empty() ? 0 : int(arch_.size()); }
+    size_t lists() const { return app.music.playlists().size() + (search_.empty() ? 0 : 1) + size_t(albums()); }
+    // Index into arch_ when row i is an Internet Archive album, else -1.
+    int albumAt(int i) const
+    {
+        if (search_.empty()) return -1;
+        i--;
+        return i >= 0 && i < albums() ? i : -1;
+    }
 
-    // index 0 = search results when a search is active
     std::vector<size_t> tracksOf(int i) const
     {
         if (!search_.empty()) {
             if (i == 0) return results_;
             i--;
+            if (i < albums()) return arch_[size_t(i)].tracks;
+            i -= albums();
         }
         if (i < 0 || i >= int(app.music.playlists().size())) return {};
         return app.music.playlists()[size_t(i)].tracks;
@@ -40,8 +59,106 @@ public:
         if (!search_.empty()) {
             if (i == 0) return "Busca: " + search_;
             i--;
+            if (i < albums()) return arch_[size_t(i)].item.title;
+            i -= albums();
         }
         return app.music.playlists()[size_t(i)].name;
+    }
+    std::string countOf(int i) const
+    {
+        int a = albumAt(i);
+        if (a < 0) return std::to_string(tracksOf(i).size()) + " faixas";
+        const Album &al = arch_[size_t(a)];
+        std::string who = al.item.creator.empty() ? "Internet Archive" : al.item.creator;
+        switch (al.state) {
+        case Album::Loading: return "abrindo...";
+        case Album::Loaded: return std::to_string(al.tracks.size()) + " faixas - " + who;
+        case Album::Failed: return "nao abriu (X tenta de novo)";
+        default: return who;
+        }
+    }
+
+    // Asks the Archive for the album's files (background thread); the tracks appear when it answers.
+    void openAlbum(int a)
+    {
+        Album &al = arch_[size_t(a)];
+        if (al.state == Album::Loading || al.state == Album::Loaded) return;
+        std::string url = archive::metadataUrl(al.item.id, app.archiveBase);
+        if (url.empty()) { al.state = Album::Failed; return; }
+        MultiFetch::Item it;
+        it.label = al.item.id;
+        it.url = url;
+        it.policy.allowPlainHttpRemote = app.archiveBase.compare(0, 7, "http://") == 0;   // tests only
+        al.fetch = MultiFetch::start(app.platform, {it});
+        al.state = Album::Loading;
+    }
+
+    void startArchiveSearch(const std::string &q)
+    {
+        arch_.clear();
+        archSearch_.reset();
+        archBusy_ = false;
+        if (q.empty() || !app.settings.archive || !app.platform.http()) return;
+        MultiFetch::Item it;
+        it.label = "Internet Archive";
+        it.url = archive::searchUrl(q, 30, app.archiveBase);
+        it.policy.allowPlainHttpRemote = app.archiveBase.compare(0, 7, "http://") == 0;   // tests only
+        archSearch_ = MultiFetch::start(app.platform, {it});
+        archBusy_ = true;
+    }
+
+    // Collects answers of the background requests (called every frame; cheap when nothing is pending).
+    void pollArchive()
+    {
+        if (archSearch_) {
+            Json j;
+            std::string e;
+            MultiFetch::State st = archSearch_->poll(0, &j, &e, nullptr);
+            if (st != MultiFetch::State::Pending) {
+                archSearch_.reset();
+                archBusy_ = false;
+                if (st == MultiFetch::State::Done) {
+                    for (auto &it : archive::parseSearch(j)) {
+                        Album al;
+                        al.item = std::move(it);
+                        arch_.push_back(std::move(al));
+                    }
+                    if (arch_.empty() && results_.empty()) app.toast("Nada encontrado para \"" + search_ + "\"");
+                } else {
+                    app.toast("Internet Archive: " + e);
+                }
+                app.dirty();
+            }
+        }
+        for (size_t a = 0; a < arch_.size(); a++) {
+            Album &al = arch_[a];
+            if (al.state != Album::Loading || !al.fetch) continue;
+            Json j;
+            std::string e;
+            MultiFetch::State st = al.fetch->poll(0, &j, &e, nullptr);
+            if (st == MultiFetch::State::Pending) continue;
+            al.fetch.reset();
+            if (st == MultiFetch::State::Done) {
+                std::vector<music::Track> tracks;
+                for (const auto &s : archive::parseItem(j, app.archiveBase)) {
+                    music::Track t;
+                    t.url = s.url;
+                    t.title = s.title;
+                    t.artist = s.artist;
+                    t.album = s.album;
+                    t.durationMs = int64_t(s.durationSec) * 1000;
+                    tracks.push_back(std::move(t));
+                }
+                al.tracks = app.music.addRemote("", tracks, false);
+                al.state = al.tracks.empty() ? Album::Failed : Album::Loaded;
+                if (al.tracks.empty()) app.toast("\"" + al.item.title + "\" nao tem faixas em MP3");
+                else if (albumAt(pl_) == int(a) && zone_ == 0 && !app.sidebarFocused()) { zone_ = 1; tr_ = 0; }
+            } else {
+                al.state = Album::Failed;
+                app.toast("Internet Archive: " + e);
+            }
+            app.dirty();
+        }
     }
 
     bool handle(uint32_t p) override
@@ -78,10 +195,11 @@ public:
                     results_.insert(results_.end(), remote.begin(), remote.end());
                     if (!e.empty()) app.toast("Busca no servidor: " + e);
                 }
+                startArchiveSearch(q);
                 pl_ = 0;
                 tr_ = 0;
-                zone_ = search_.empty() ? 0 : 1;
-                if (!search_.empty() && results_.empty()) app.toast("Nada encontrado para \"" + q + "\"");
+                zone_ = (search_.empty() || results_.empty()) ? 0 : 1;
+                if (!search_.empty() && results_.empty() && !archBusy_) app.toast("Nada encontrado para \"" + q + "\"");
             });
             return true;
         }
@@ -89,7 +207,12 @@ public:
         if (zone_ == 0) {
             if (p & BtnUp) { if (pl_ > 0) { pl_--; tr_ = 0; } return true; }
             if (p & BtnDown) { if (pl_ + 1 < n) { pl_++; tr_ = 0; } return true; }
-            if (p & (BtnRight | BtnCross)) { if (!tr.empty()) zone_ = 1; return true; }
+            if (p & (BtnRight | BtnCross)) {
+                int a = albumAt(pl_);
+                if (a >= 0 && arch_[size_t(a)].state != Album::Loaded) openAlbum(a);
+                else if (!tr.empty()) zone_ = 1;
+                return true;
+            }
             return false;
         }
         if (p & BtnUp) { if (tr_ > 0) tr_--; return true; }
@@ -109,18 +232,26 @@ public:
             if (pl_ >= int(lists())) pl_ = 0;
             app.dirty();
         }
+        pollArchive();
         float target = float(std::max(0, tr_ - 5) * 74);
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
         anim_ = std::fabs(target - scroll_) > 0.5f;
         scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
     }
     bool animating() const override { return anim_ || serverPending_; }
+    bool busy() const override
+    {
+        if (archBusy_) return true;
+        for (const auto &al : arch_) if (al.state == Album::Loading) return true;
+        return false;
+    }
 
     void draw(Canvas &c, Rect area) override
     {
         size_t localTracks = 0;
         for (const auto &t : app.music.tracks()) if (!t.demo && !t.remote) localTracks++;
         std::string sub = localTracks ? std::to_string(localTracks) + " faixas no HD/pendrive" : "Nenhum MP3 local";
+        if (archBusy_) sub += "  -  procurando no Internet Archive...";
         if (serverPending_) { sub += "  -  conectando ao servidor..."; drawnLoading_ = true; }
         else if (app.server.configured()) sub += "  -  servidor " + app.serverStatus;
         else sub += "  -  configure seu servidor (Navidrome) em Configuracoes";
@@ -139,13 +270,21 @@ public:
             else if (on) c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::SurfaceHi);
             drawGeneratedArt(c, app.fonts, {r.x + 8, r.y + 7, 44, 44}, 8, "pl:" + nameOf(i), "", false);
             app.fonts.bold->draw(c, r.x + 66, r.y + 6, 22, app.fonts.bold->ellipsize(22, nameOf(i), r.w - 80), theme::Text);
-            app.fonts.regular->draw(c, r.x + 66, r.y + 32, 17, std::to_string(tracksOf(i).size()) + " faixas", on ? theme::Text : theme::TextMute);
+            app.fonts.regular->draw(c, r.x + 66, r.y + 32, 17, app.fonts.regular->ellipsize(17, countOf(i), r.w - 80), on ? theme::Text : theme::TextMute);
         }
         // tracks
         int tx = x + pw + 28, tw = area.right() - theme::Margin - tx;
         c.fillRoundRect(tx, top, tw, listH, 22, theme::Surface);
         auto tr = tracksOf(pl_);
         app.fonts.bold->draw(c, tx + 26, top + 22, 22, lists() ? nameOf(pl_) : "", theme::TextMute);
+        if (int a = albumAt(pl_); a >= 0 && arch_[size_t(a)].state != Album::Loaded) {
+            const Album &al = arch_[size_t(a)];
+            app.fonts.regular->draw(c, tx + 26, top + 80, 22,
+                                    al.state == Album::Loading ? "Abrindo o album no Internet Archive..."
+                                    : al.state == Album::Failed ? "Nao foi possivel abrir este album. Aperte X para tentar de novo."
+                                                                : "Album do Internet Archive. Aperte X para ver as faixas.",
+                                    theme::TextDim);
+        }
         c.pushClip({tx, top + 62, tw, listH - 70});
         int ty = top + 66 - int(scroll_);
         size_t playing = app.queue.current();
@@ -162,7 +301,7 @@ public:
             app.fonts.regular->draw(c, r.x + 66, r.y + 38, 18, app.fonts.regular->ellipsize(18, t.artist, r.w / 2 - 80), theme::TextDim);
             app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 22, 19, app.fonts.regular->ellipsize(19, t.album, r.w / 2 - 140), theme::TextMute);
             if (t.demo) app.fonts.bold->draw(c, r.right() - 104, r.y + 22, 16, "DEMO", theme::Warn);
-            else if (t.remote) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, t.durationMs > 0 ? formatTime(t.durationMs) : "rede", theme::TextMute);
+            else if (t.remote || !t.url.empty()) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, t.durationMs > 0 ? formatTime(t.durationMs) : "rede", theme::TextMute);
         }
         c.popClip();
         drawNowPlaying(c, {x, area.bottom() - bottomPanel, area.right() - theme::Margin - x, bottomPanel - 16});
@@ -180,6 +319,16 @@ private:
     bool anim_ = false, serverPending_ = false, drawnLoading_ = false;
     std::string search_;
     std::vector<size_t> results_;
+    struct Album {
+        enum State { Closed, Loading, Loaded, Failed };
+        archive::Item item;
+        State state = Closed;
+        std::vector<size_t> tracks;          // indices into the music library once loaded
+        std::shared_ptr<MultiFetch> fetch;   // request for the album's files
+    };
+    std::vector<Album> arch_;                 // Internet Archive albums of the current search
+    std::shared_ptr<MultiFetch> archSearch_;
+    bool archBusy_ = false;
 
     void drawNowPlaying(Canvas &c, Rect r)
     {

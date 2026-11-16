@@ -77,6 +77,50 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 | Configuração pelo teclado na tela (Configurações) | sim | sim | pendente |
 | Seek em faixas do servidor | não | não | — |
 
+## Fase 3d — Música livre: Internet Archive (01.27)
+
+Áudio de domínio público / Creative Commons de archive.org: sem conta, sem chave, sem DRM. Só MP3
+(decodificador minimp3); itens que só existem em OGG/FLAC não mostram faixas. O Archive busca **álbuns**
+(itens), não faixas soltas. Liga/desliga em Configurações > "Música do Internet Archive".
+
+| Item | Compila PS4 | PC | PS4 |
+|---|---|---|---|
+| URLs e leitura das respostas (`advancedsearch.php`, `/metadata/<id>`, `/download/<id>/<arquivo>`) | ver "Builds 01.24+" abaixo | sim (fixtures) | pendente |
+| Busca de música mostra álbuns do Archive; X abre o álbum; faixa toca por streaming | idem | sim (`archive_live_local_server`: servidor local, não o archive.org de verdade) | pendente |
+| Rede fora da thread da interface (MultiFetch) para a busca e para abrir o álbum | idem | sim | pendente |
+| Teste contra o archive.org real (sintaxe da busca, redirecionamento para o servidor de dados, certificado) | — | **não feito** (o ambiente de build não alcança archive.org) | pendente |
+| Jamendo (precisa de chave do usuário) | — | não iniciado | — |
+
+A busca no servidor Subsonic continua na thread da interface (pendente, como antes).
+
+## Desempenho do desenho (01.27)
+
+Medido no PC com `render_cost_report` e callgrind (tela inicial, 20 quadros). No PS4: **não medido**.
+
+| Mudança | PC |
+|---|---|
+| `strokeRoundRect` só percorre a borda (antes: o retângulo inteiro, 2 testes de distância por pixel) | imagens idênticas pixel a pixel (`make shots`, 5 telas) |
+| `shape`: recorte uma vez, cantos separados do miolo; gradiente horizontal/vertical com tabela; diagonal sem refazer a separação dos canais; `fillCircle` com miolo direto | idem |
+| Total | 8,8 bi -> 2,0 bi instruções; 32 -> 10 ms por quadro no PC |
+| Tela só "carregando" (sem movimento) e capas chegando: no máximo ~5 redesenhos por segundo (`Screen::busy()`), em vez de um por quadro disputando CPU com as threads de rede | testes passam; efeito no console não medido |
+
+## Builds 01.24, 01.25 e 01.26: fecham na abertura (CE-34878-0)
+
+O ambiente de build foi reiniciado e o toolchain v0.5.4 (compilado da fonte) se perdeu. A reconstrução usa
+o pacote v0.5.2 (único com binários) + cabeçalhos v0.5.4. As três builds compilam, ligam, têm `.init_array`
+vazio, e fecham no console ao abrir:
+
+| Build | Diferença | Console |
+|---|---|---|
+| 01.24 | crt/link.x v0.5.2, clang/lld 18 | fecha ao abrir |
+| 01.25 | link.x + crtlib v0.5.4, clang/lld 18 | fecha ao abrir |
+| 01.26 | idem, clang/lld 16 | fecha ao abrir |
+
+Não testado: bibliotecas stub da Sony geradas para v0.5.4 (as usadas são v0.5.2). O dono relatou que
+"reiniciou o console e funcionou", sem dizer qual versão abriu: **a confirmar**. A 01.23 é a última que abre
+com certeza; o feed de atualização aponta para ela. O conserto do vídeo (av_engine: memória de textura comum,
+prioridade 160, 4 buffers) está no código desde a 01.24 e **nunca rodou no console**.
+
 ## Fase 4 — Reprodução
 
 | Item | PC | PS4 |

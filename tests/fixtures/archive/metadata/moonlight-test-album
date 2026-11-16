@@ -1,0 +1,9 @@
+{"created":1700000000,"d1":"ia800000.us.archive.org","dir":"/1/items/moonlight-test-album","server":"ia800000.us.archive.org",
+ "metadata":{"identifier":"moonlight-test-album","title":"Album de teste","creator":"Moonlight","mediatype":"audio"},
+ "files":[
+  {"name":"02-second.mp3","source":"original","format":"VBR MP3","length":"0:03","track":"2/2","size":"1000"},
+  {"name":"01 Tom de teste.mp3","source":"original","format":"VBR MP3","title":"Tom de teste","artist":"Gerador","album":"Disco","length":"3.02","track":"1"},
+  {"name":"01 Tom de teste_64kb.mp3","source":"derivative","format":"64Kbps MP3","length":"3.02","track":"1"},
+  {"name":"01 Tom de teste.flac","source":"original","format":"Flac"},
+  {"name":"secret.mp3","format":"VBR MP3","private":"true"},
+  {"name":"moonlight-test-album_meta.xml","source":"metadata","format":"Metadata"}]}

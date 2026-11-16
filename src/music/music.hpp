@@ -15,6 +15,7 @@ struct Track {
     uint64_t sizeBytes = 0;
     bool demo = false;   // demonstration entry without an audio file
     bool remote = false; // streamed from the user's music server (path = server song id)
+    std::string url;     // streamed from a public address (Internet Archive); wins over path when set
     int64_t durationMs = 0;
 };
 

@@ -52,23 +52,48 @@ void Canvas::blendPixel(int x, int y, Color c, int cov)
     d = 0xFF000000u | rb | g;
 }
 
+namespace {
+// Same arithmetic as Canvas::blendPixel, for callers that already clipped (no bounds test per pixel).
+inline void blendInto(uint32_t &d, Color c, int cov)
+{
+    uint32_t a = ((c >> 24) * uint32_t(cov) + 127) / 255;
+    if (a == 0) return;
+    if (a >= 255) { d = c | 0xFF000000u; return; }
+    uint32_t ia = 255 - a;
+    uint32_t rb = (((c & 0xFF00FF) * a + (d & 0xFF00FF) * ia) >> 8) & 0xFF00FF;
+    uint32_t g = (((c & 0x00FF00) * a + (d & 0x00FF00) * ia) >> 8) & 0x00FF00;
+    d = 0xFF000000u | rb | g;
+}
+}  // namespace
+
 // Rasterises a rounded rectangle with 1-px anti-aliased corners; colorAt(px, py) gives the colour.
+// The rectangle is clipped once; only the corner columns of the corner rows pay for the distance
+// test, everything else is a plain span (this is the inner loop of almost every panel on screen).
 template <class F> void Canvas::shape(int x, int y, int w, int h, int radius, F colorAt)
 {
     if (w <= 0 || h <= 0) return;
     float r = float(std::min(radius, std::min(w, h) / 2));
     int y0 = std::max(y, clip_.y), y1 = std::min(y + h, clip_.bottom());
     int x0c = std::max(x, clip_.x), x1c = std::min(x + w, clip_.right());
+    if (x1c <= x0c) return;
+    // columns whose pixel centre lies in a corner zone: px + 0.5 < x + r  /  px + 0.5 > x + w - r
+    int leftEnd = std::clamp(int(std::ceil(x + r - 0.5f)), x0c, x1c);          // [x0c, leftEnd) is left corner
+    int rightStart = std::clamp(int(std::floor(x + w - r - 0.5f)) + 1, leftEnd, x1c);   // [rightStart, x1c) is right corner
     for (int py = y0; py < y1; py++) {
         float fy = py + 0.5f;
         // vertical distance into a corner zone
         float dy = 0;
         if (fy < y + r) dy = (y + r) - fy;
         else if (fy > y + h - r) dy = fy - (y + h - r);
-        for (int px = x0c; px < x1c; px++) {
-            float fx = px + 0.5f;
-            int cov = 255;
-            if (r > 0 && dy > 0) {
+        uint32_t *row = fb_.pixels + size_t(py) * fb_.stride;
+        if (!(r > 0 && dy > 0)) {
+            for (int px = x0c; px < x1c; px++) blendInto(row[px], colorAt(px, py), 255);
+            continue;
+        }
+        auto corner = [&](int from, int to) {
+            for (int px = from; px < to; px++) {
+                float fx = px + 0.5f;
+                int cov = 255;
                 float dx = 0;
                 if (fx < x + r) dx = (x + r) - fx;
                 else if (fx > x + w - r) dx = fx - (x + w - r);
@@ -78,9 +103,12 @@ template <class F> void Canvas::shape(int x, int y, int w, int h, int radius, F 
                     if (c <= 0) continue;
                     if (c < 1) cov = int(c * 255);
                 }
+                blendInto(row[px], colorAt(px, py), cov);
             }
-            blendPixel(px, py, colorAt(px, py), cov);
-        }
+        };
+        corner(x0c, leftEnd);
+        for (int px = leftEnd; px < rightStart; px++) blendInto(row[px], colorAt(px, py), 255);
+        corner(rightStart, x1c);
     }
 }
 
@@ -103,10 +131,30 @@ void Canvas::fillRoundRect(int x, int y, int w, int h, int radius, Color c)
 
 void Canvas::fillGradient(int x, int y, int w, int h, int radius, Color c0, Color c1, int dir)
 {
+    if (w <= 0 || h <= 0) return;
     float iw = w > 1 ? 1.0f / float(w - 1) : 0, ih = h > 1 ? 1.0f / float(h - 1) : 0;
+    // Horizontal and vertical gradients have one colour per column / per row: computed once per call
+    // instead of a float mix per pixel (same values as before).
+    if (dir == 0 || dir == 1) {
+        int n = dir == 0 ? w : h;
+        std::vector<Color> lut(static_cast<size_t>(n));
+        float step = dir == 0 ? iw : ih;
+        for (int i = 0; i < n; i++) lut[size_t(i)] = mix(c0, c1, float(i) * step);
+        const Color *t = lut.data();
+        if (dir == 0) shape(x, y, w, h, radius, [t, x](int px, int) { return t[px - x]; });
+        else shape(x, y, w, h, radius, [t, y](int, int py) { return t[py - y]; });
+        return;
+    }
+    // Diagonal: one mix per pixel, with the channel values taken apart once (same arithmetic as mix()).
+    float a0[4], d0[4];
+    for (int k = 0; k < 4; k++) {
+        a0[k] = float((c0 >> (k * 8)) & 0xFF);
+        d0[k] = float((c1 >> (k * 8)) & 0xFF) - a0[k];
+    }
     shape(x, y, w, h, radius, [&](int px, int py) {
-        float t = dir == 0 ? (px - x) * iw : dir == 1 ? (py - y) * ih : 0.5f * ((px - x) * iw + (py - y) * ih);
-        return mix(c0, c1, t);
+        float t = std::clamp(0.5f * ((px - x) * iw + (py - y) * ih), 0.0f, 1.0f);
+        return uint32_t(a0[0] + d0[0] * t + 0.5f) | (uint32_t(a0[1] + d0[1] * t + 0.5f) << 8) |
+               (uint32_t(a0[2] + d0[2] * t + 0.5f) << 16) | (uint32_t(a0[3] + d0[3] * t + 0.5f) << 24);
     });
 }
 
@@ -130,26 +178,59 @@ void Canvas::strokeRoundRect(int x, int y, int w, int h, int radius, int t, Colo
         float edge = std::min({fx - bx, fy - by, bx + bw - fx, by + bh - fy});
         return std::clamp(edge + 0.5f, 0.0f, 1.0f);
     };
-    for (int py = y0; py < y1; py++)
-        for (int px = x0; px < x1; px++) {
+    auto span = [&](int py, int from, int to) {
+        from = std::max(from, x0);
+        to = std::min(to, x1);
+        for (int px = from; px < to; px++) {
             float fx = px + 0.5f, fy = py + 0.5f;
             float o = cover(fx, fy, float(x), float(y), float(w), float(h), ro);
             float i = cover(fx, fy, float(x + t), float(y + t), float(w - 2 * t), float(h - 2 * t), ri);
             float c2 = o - i;
             if (c2 > 0.003f) blendPixel(px, py, c, int(c2 * 255));
         }
+    };
+    // Only the ring is visited. Inside it both shapes fully cover the pixel (difference 0), so the
+    // interior of a panel border no longer costs two distance tests per pixel.
+    int band = int(std::ceil(ro)) + 1;   // rows/columns that can touch a rounded corner
+    for (int py = y0; py < y1; py++) {
+        if (t <= 0 || w <= 2 * (t + 1) || py < y + t + 1 || py >= y + h - t - 1) {
+            span(py, x0, x1);   // top / bottom edge (or a shape too thin to have an interior)
+        } else {
+            int side = (py < y + band || py >= y + h - band) ? std::max(band, t + 1) : t + 1;
+            if (2 * side >= w) { span(py, x0, x1); continue; }
+            span(py, x0, x + side);
+            span(py, x + w - side, x1);
+        }
+    }
 }
 
 void Canvas::fillCircle(float cx, float cy, float r, Color c)
 {
-    int x0 = int(std::floor(cx - r - 1)), x1 = int(std::ceil(cx + r + 1));
-    int y0 = int(std::floor(cy - r - 1)), y1 = int(std::ceil(cy + r + 1));
-    for (int py = y0; py < y1; py++)
-        for (int px = x0; px < x1; px++) {
-            float dx = px + 0.5f - cx, dy = py + 0.5f - cy;
+    int x0 = std::max(int(std::floor(cx - r - 1)), clip_.x), x1 = std::min(int(std::ceil(cx + r + 1)), clip_.right());
+    int y0 = std::max(int(std::floor(cy - r - 1)), clip_.y), y1 = std::min(int(std::ceil(cy + r + 1)), clip_.bottom());
+    auto edge = [&](int py, int from, int to) {
+        float dy = py + 0.5f - cy;
+        for (int px = from; px < to; px++) {
+            float dx = px + 0.5f - cx;
             float cov = std::clamp(r - std::sqrt(dx * dx + dy * dy) + 0.5f, 0.0f, 1.0f);
             if (cov > 0) blendPixel(px, py, c, int(cov * 255));
         }
+    };
+    for (int py = y0; py < y1; py++) {
+        // Columns certainly inside the disc (full coverage) are a plain span; only the rim is tested.
+        float dy = py + 0.5f - cy, in = r - 0.5f;
+        float h2 = in * in - dy * dy;
+        float half = h2 > 4.0f ? std::sqrt(h2) - 0.05f : 0;
+        int i0 = x1, i1 = x1;
+        if (half > 1.0f) {
+            i0 = std::clamp(int(std::ceil(cx - half - 0.5f)), x0, x1);
+            i1 = std::clamp(int(std::floor(cx + half - 0.5f)) + 1, i0, x1);
+        }
+        edge(py, x0, i0);
+        uint32_t *row = fb_.pixels + size_t(py) * fb_.stride;
+        for (int px = i0; px < i1; px++) blendInto(row[px], c, 255);
+        edge(py, i1, x1);
+    }
 }
 
 void Canvas::strokeCircle(float cx, float cy, float r, float t, Color c)

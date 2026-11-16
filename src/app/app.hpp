@@ -40,7 +40,10 @@ public:
     // unused Left at the content edge / Circle on a section root moves focus to the sidebar.
     virtual bool handle(uint32_t pressed) = 0;
     virtual void update(float dt) {}
-    virtual bool animating() const { return false; }
+    virtual bool animating() const { return false; }   // something is moving: redraw every frame
+    // Waiting for the network with nothing moving: the screen is redrawn a few times a second only,
+    // so the software renderer does not compete with the download/TLS threads for the CPU.
+    virtual bool busy() const { return false; }
     virtual void draw(ui::Canvas &c, ui::Rect area) = 0;
     virtual Hints hints() const { return {{BtnCross, "Selecionar"}, {BtnCircle, "Voltar"}}; }
     virtual bool fullscreen() const { return false; }   // true: no sidebar/hint bar (video player)
@@ -57,6 +60,7 @@ struct Settings {
     bool showDemo = true;
     bool showRadio = false;   // Radios section is opt-in (Configuracoes)
     bool remote = false;      // phone remote server (opt-in)
+    bool archive = true;      // music search also asks the Internet Archive (free/public-domain audio)
     int volume = 80;
 };
 
@@ -94,6 +98,7 @@ public:
         uint64_t testPlayMs = 4000;      // video test: let it play a little
     } tuning;
     std::string videoTestUrl = "https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4";
+    std::string archiveBase = "https://archive.org";   // tests point it at a local fixture server
     ui::ImageLoader images;
     ui::Keyboard keyboard;
     std::unique_ptr<RemoteControl> remote;
@@ -170,6 +175,9 @@ private:
     uint64_t now_ = 0, last_ = 0;
     float animT_ = 0;
     float fade_ = 0;   // screen transition (1 -> 0)
+    uint64_t lastDrawMs_ = 0;      // when the last frame was rendered
+    bool wasBusy_ = false;         // current().busy() on the previous frame
+    bool imagesPending_ = false;   // covers arrived, redraw not done yet (several arrivals share one redraw)
     ui::Image background_;   // pre-rendered page background (copied each frame)
 
     struct Toast { std::string text; uint64_t until = 0; } toast_;

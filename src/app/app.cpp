@@ -134,6 +134,7 @@ void App::loadSettings()
     settings.showDemo = j["showDemo"].asBool(true);
     settings.showRadio = j["showRadio"].asBool(false);
     settings.remote = j["remote"].asBool(false);
+    settings.archive = j["archive"].asBool(true);
     settings.volume = int(j["volume"].asInt(80));
 }
 
@@ -144,6 +145,7 @@ void App::saveSettings()
     j.set("showDemo", Json::boolean(settings.showDemo));
     j.set("showRadio", Json::boolean(settings.showRadio));
     j.set("remote", Json::boolean(settings.remote));
+    j.set("archive", Json::boolean(settings.archive));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);
 }
@@ -255,7 +257,10 @@ bool App::startTrack(size_t t, std::string *err)
     if (t >= music.tracks().size() || music.tracks()[t].demo) { if (err) *err = "faixa sem audio"; return false; }
     const music::Track &tr = music.tracks()[t];
     bool ok;
-    if (tr.remote) {
+    if (!tr.url.empty()) {
+        // public file (Internet Archive): https only, redirects to the data server stay on https
+        ok = audio.openStream(tr.url, platform.http(), err, false, tr.durationMs);
+    } else if (tr.remote) {
         subsonic::Client cl(platform.http(), server);
         ok = audio.openStream(cl.streamUrl(tr.path), platform.http(), err, false, tr.durationMs);
     } else {
@@ -454,10 +459,19 @@ bool App::frame()
     if (pos != lastAudioPos_) { lastAudioPos_ = pos; dirty(); }
 
     images.trim();
-    if (images.takeUpdated()) dirty();
     current().update(dt);
     if (fade_ > 0) { fade_ = std::max(0.0f, fade_ - dt * 11.0f); dirty(); }   // shorter transition = fewer heavy redraws
     if (current().animating()) dirty();
+    // Loading without motion, and covers arriving one by one, used to redraw the whole 1920x1080
+    // screen on every frame while the network threads needed the CPU. Now: at most ~5 redraws a second
+    // for those, plus one when the loading ends.
+    const uint64_t kSlowRedrawMs = 200;
+    bool slowDue = now_ - lastDrawMs_ >= kSlowRedrawMs;
+    if (images.takeUpdated()) imagesPending_ = true;
+    bool busy = current().busy();
+    if ((busy && slowDue) || (!busy && wasBusy_)) dirty();
+    wasBusy_ = busy;
+    if (imagesPending_ && (slowDue || dirty_)) { imagesPending_ = false; dirty(); }
     if (!toast_.text.empty() && now_ > toast_.until) { toast_.text.clear(); dirty(); }
 
     rendered_ = false;
@@ -467,6 +481,7 @@ bool App::frame()
         platform.display().present();
         dirty_ = false;
         rendered_ = true;
+        lastDrawMs_ = now_;
     }
     return true;
 }
