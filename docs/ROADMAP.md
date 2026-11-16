@@ -85,9 +85,9 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 
 | Item | Compila PS4 | PC | PS4 |
 |---|---|---|---|
-| URLs e leitura das respostas (`advancedsearch.php`, `/metadata/<id>`, `/download/<id>/<arquivo>`) | ver "Builds 01.24+" abaixo | sim (fixtures) | pendente |
-| Busca de música mostra álbuns do Archive; X abre o álbum; faixa toca por streaming | idem | sim (`archive_live_local_server`: servidor local, não o archive.org de verdade) | pendente |
-| Rede fora da thread da interface (MultiFetch) para a busca e para abrir o álbum | idem | sim | pendente |
+| URLs e leitura das respostas (`advancedsearch.php`, `/metadata/<id>`, `/download/<id>/<arquivo>`) | sim | sim (fixtures) | pendente |
+| Busca de música mostra álbuns do Archive; X abre o álbum; faixa toca por streaming | sim | sim (`archive_live_local_server`: servidor local, não o archive.org de verdade) | pendente |
+| Rede fora da thread da interface (MultiFetch) para a busca e para abrir o álbum | sim | sim | pendente |
 | Teste contra o archive.org real (sintaxe da busca, redirecionamento para o servidor de dados, certificado) | — | **não feito** (o ambiente de build não alcança archive.org) | pendente |
 | Jamendo (precisa de chave do usuário) | — | não iniciado | — |
 
@@ -116,10 +116,19 @@ vazio, e fecham no console ao abrir:
 | 01.25 | link.x + crtlib v0.5.4, clang/lld 18 | fecha ao abrir |
 | 01.26 | idem, clang/lld 16 | fecha ao abrir |
 
-Não testado: bibliotecas stub da Sony geradas para v0.5.4 (as usadas são v0.5.2). O dono relatou que
-"reiniciou o console e funcionou", sem dizer qual versão abriu: **a confirmar**. A 01.23 é a última que abre
-com certeza; o feed de atualização aponta para ela. O conserto do vídeo (av_engine: memória de textura comum,
-prioridade 160, 4 buffers) está no código desde a 01.24 e **nunca rodou no console**.
+**Causa encontrada (14:38 de 16/11, comparando o eboot da 01.23 que abre com o da 01.27 que fecha):** o pacote
+v0.5.2 do toolchain traz um `lib/libc++.a` próprio (de 2021, com exceções e libunwind) e a linha de link tinha
+`-L$OO/lib` antes de `-L toolchain/libcxx/lib`. O app era compilado com os cabeçalhos da nossa libc++ (LLVM 18)
+e ligado com a libc++ antiga do toolchain. Sinais: +464 KB de código, 11 importações a mais de `libkernel`
+(`pthread_once`, `pthread_key_create`, `pthread_rwlock_*`, ...), `__cxa_guard` presente, e
+`__libcpp_verbose_abort` indefinido (o "remendo" `libcxx_support.cpp` das 01.24–01.26 escondia exatamente isso).
+Correção: `cmake/ps4-toolchain.cmake` procura a nossa libc++ primeiro. Com isso a 01.27 (2ª montagem) liga sem
+remendo, não tem `__cxa_guard` nem `.init_array`, importa exatamente as mesmas funções da 01.23 (menos as duas de
+memória de vídeo retiradas de propósito) e o PKG só difere da 01.23 no `eboot.bin` (os módulos `libc.prx`,
+`libSceFios2.prx` e `right.sprx` são os da 01.23). **AGUARDANDO TESTE no console.** Diferenças que restam em
+relação à 01.23: alinhamento do segmento TLS (8 em vez de 0x20) e tamanho dos dados iniciados (crt/libc do v0.5.2).
+O feed de atualização continua na 01.23 até a 01.27 abrir no console. O conserto do vídeo (av_engine: memória
+de textura comum, prioridade 160, 4 buffers) está no código desde a 01.24 e **nunca rodou no console**.
 
 ## Fase 4 — Reprodução
 
