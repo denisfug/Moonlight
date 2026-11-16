@@ -10,6 +10,7 @@
 #include "library/library.hpp"
 #include "live/m3u.hpp"
 #include "music/music.hpp"
+#include "music/taste.hpp"
 #include "platform/platform.hpp"
 #include "player/player.hpp"
 #include "radio/radio.hpp"
@@ -82,6 +83,14 @@ public:
     SourceManager sources;
     music::MusicLibrary music;
     music::Queue queue;
+    music::Taste taste;        // what was played (local file only): recents + recommendations
+    // Shelves of the music home loaded from the network; kept here so leaving and re-entering the
+    // section does not ask again.
+    struct MusicHome {
+        std::vector<size_t> trending, forYou, moreOf;   // indices into music.tracks()
+        std::string forYouGenre, moreOfArtist;          // what forYou / moreOf were loaded for
+        bool trendingAsked = false;
+    } musicHome;
     AudioPlayer audio;
     radio::RadioBrowser radio;
     radio::Favorites radioFavorites;

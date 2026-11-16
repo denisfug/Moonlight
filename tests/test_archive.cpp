@@ -123,49 +123,65 @@ TEST(archive_live_local_server)
     h.app.frame();
     CHECK(!h.app.keyboard.active());
     CHECK(h.waitFor("albums=2"));                      // answer arrived from the background thread
+    auto shot = [&](const char *name) {                // optional pictures of the screen for a visual check
+        const char *dir = std::getenv("ML_SHOT_DIR");
+        if (!dir) return;
+        for (int i = 0; i < 40; i++) { h.app.frame(); h.plat.sleepMs(16); }
+        h.app.dirty();
+        h.app.frame();
+        h.plat.display_.savePng(std::string(dir) + "/" + name);
+    };
     if (abase) {
         CHECK(h.waitFor("songs=2"));                   // Audius: 3 playable in the answer, 1 repeated -> 2
-        CHECK(h.waitFor("zone=1"));                    // songs arrived: focus goes to them
+        CHECK(h.waitFor("shelf=Musicas"));             // songs shelf first, selected
         h.press(BtnCross);                             // plays the first Audius song from its stream address
         for (int i = 0; i < 600 && h.app.audio.framesOut() == 0; i++) { h.app.frame(); h.plat.sleepMs(5); }
         CHECK(h.app.audio.framesOut() > 0);
         CHECK(h.app.music.tracks()[h.app.queue.current()].source == "Audius");
-        if (const char *dir = std::getenv("ML_SHOT_DIR")) {
-            for (int i = 0; i < 40; i++) { h.app.frame(); h.plat.sleepMs(16); }
-            h.app.dirty();
-            h.app.frame();
-            h.plat.display_.savePng(std::string(dir) + "/07_musica_busca.png");
-        }
+        CHECK(!h.app.taste.recent().empty() && !h.app.taste.topGenre().empty());
+        shot("07_musica_busca.png");
         h.app.audio.stop();
-        h.press(BtnCircle);                            // back to the left column
+        h.press(BtnDown);                              // albums shelf
     }
-    h.press(BtnDown);                                  // first Archive album
-    CHECK(h.app.currentState().find("list=1") != std::string::npos);
-    h.press(BtnCross);                                 // open it: file list fetched in the background
+    CHECK(h.app.currentState().find("shelf=Albuns no Internet Archive") != std::string::npos);
+    h.press(BtnCross);                                 // open the first album: file list fetched in the background
+    CHECK(h.waitFor("view=detail"));
     CHECK(h.waitFor("tracks=2"));
     {   // the album cover is fetched by the image loader (background) and ends up in its cache
         bool got = false;
         for (int i = 0; i < 600 && !got; i++) { h.app.dirty(); h.app.frame(); h.plat.sleepMs(5); got = h.app.images.cached() > coversBefore; }
         CHECK(got);
     }
-    CHECK(h.app.currentState().find("zone=1") != std::string::npos);   // focus moved to the tracks
     h.press(BtnCross);                                 // play track 1 from the "download" address
-    if (const char *dir = std::getenv("ML_SHOT_DIR")) {   // optional picture of the screen for a visual check
-        for (int i = 0; i < 40; i++) { h.app.frame(); h.plat.sleepMs(16); }
-        h.app.dirty();
-        h.app.frame();
-        h.plat.display_.savePng(std::string(dir) + "/06_musica_archive.png");
-    }
+    shot("06_musica_archive.png");
     for (int i = 0; i < 600 && h.app.audio.framesOut() == 0; i++) { h.app.frame(); h.plat.sleepMs(5); }
     CHECK(h.app.audio.framesOut() > 0);
     CHECK(h.app.audio.remote() && !h.app.audio.live());
     CHECK(h.app.music.tracks()[h.app.queue.current()].url.find("/download/moonlight-test-album/") != std::string::npos);
-    h.press(BtnCircle);                                // back to the list column
-    h.press(BtnDown);                                  // second album: only FLAC -> no tracks, message, no crash
+    h.press(BtnCircle);                                // back to the shelves
+    CHECK(h.app.currentState().find("view=shelves") != std::string::npos);
+    h.press(BtnRight);                                 // second album: only FLAC -> no tracks, message, no crash
     h.press(BtnCross);
-    CHECK(h.waitFor("tracks=0"));
-    for (int i = 0; i < 200; i++) { h.app.frame(); h.plat.sleepMs(5); }
-    CHECK(h.app.currentState().find("zone=0") != std::string::npos);
+    for (int i = 0; i < 300; i++) { h.app.frame(); h.plat.sleepMs(5); }
+    CHECK(h.app.currentState().find("view=detail") != std::string::npos);
+    CHECK(h.app.currentState().find("tracks=0") != std::string::npos);
+    h.press(BtnCircle);                                // shelves
+    h.press(BtnCircle);                                // leaves the search: home with what was just played
+    CHECK(h.waitFor("shelf=Tocadas recentemente"));
+    CHECK(h.app.taste.recent().size() >= (abase ? 2u : 1u));   // more when the short test songs auto-advanced
+    CHECK(h.app.currentState().find("recent=0") == std::string::npos);
+    if (abase) {
+        // Coming back to the section: trending + recommendations for the most played genre (the song
+        // already heard is not recommended again).
+        h.app.goSection(Section::Music, true);
+        CHECK(h.waitFor("trend=2"));
+        for (int i = 0; i < 600 && h.app.musicHome.forYouGenre.empty(); i++) { h.app.frame(); h.plat.sleepMs(5); }
+        CHECK_EQ(h.app.musicHome.forYouGenre, h.app.taste.topGenre());   // asked for the most played genre
+        for (size_t i : h.app.musicHome.forYou)                           // and never a song just heard
+            for (const auto &p : h.app.taste.recent()) CHECK(h.app.music.tracks()[i].url != p.url);
+        CHECK(h.app.currentState().find("shelf=Tocadas recentemente") != std::string::npos);
+        shot("08_musica_inicio.png");
+    }
     h.app.audio.stop();
     h.app.remote->stop();
 }

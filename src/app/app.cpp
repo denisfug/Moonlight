@@ -86,6 +86,7 @@ bool App::init(std::string *error)
     }
     loadSettings();
     library.load();
+    taste.load(store.load("music_taste.json"));
     problems.load();
     sources.load();
     radioFavorites.load();
@@ -268,7 +269,11 @@ bool App::startTrack(size_t t, std::string *err)
     } else {
         ok = audio.open(tr.path, err);
     }
-    if (ok) audio.play();
+    if (ok) {
+        audio.play();
+        taste.notePlay(tr);
+        store.save("music_taste.json", taste.save());
+    }
     return ok;
 }
 

@@ -11,7 +11,7 @@ namespace ml::catalog {
 
 struct Song {
     std::string url;      // direct audio address the source allows players to use (MP3)
-    std::string title, artist, album;
+    std::string title, artist, album, genre;
     std::string art;      // cover address, "" when the source has none (never a cover of something else)
     std::string source;   // name shown next to the result ("Audius", "Internet Archive")
     int durationSec = 0, track = 0;

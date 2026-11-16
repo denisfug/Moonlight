@@ -29,9 +29,10 @@ std::string searchUrl(const std::string &query, const std::string &base)
     return base + "/v1/tracks/search?query=" + percentEncode(query) + "&limit=30&" + kApp;
 }
 
-std::string trendingUrl(const std::string &base)
+std::string trendingUrl(const std::string &base, const std::string &genre)
 {
-    return base + "/v1/tracks/trending?time=week&limit=40&" + kApp;
+    if (genre.empty()) return base + "/v1/tracks/trending?time=week&limit=40&" + kApp;
+    return base + "/v1/tracks/trending?genre=" + percentEncode(genre) + "&time=month&limit=40&" + kApp;
 }
 
 std::string streamUrl(const std::string &id, const std::string &base)
@@ -55,7 +56,7 @@ std::vector<catalog::Song> parseTracks(const Json &root, const std::string &base
         if (s.title.empty()) continue;
         s.artist = t["user"]["name"].asString();
         if (s.artist.empty()) s.artist = t["user"]["handle"].asString();
-        s.album = t["genre"].asString();   // Audius tracks are singles; the genre is the useful second line
+        s.genre = t["genre"].asString();   // Audius tracks are singles: no album, the genre is shown instead
         s.art = artOf(t["artwork"]);
         s.durationSec = int(t["duration"].asInt(0));
         if (s.durationSec < 0 || s.durationSec > 360000) s.durationSec = 0;

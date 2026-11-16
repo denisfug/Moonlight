@@ -1,4 +1,6 @@
-// Music: playlists, track list, search, and the now-playing panel (progress, volume, shuffle, repeat).
+// Music: a home of shelves (recently played, recommendations, trending, playlists), a search that
+// returns songs and albums with covers, a detail view (playlist / album track list) and the
+// now-playing panel. Online sources (Audius, Internet Archive) are asked in background threads.
 #include <algorithm>
 #include <cmath>
 
@@ -14,15 +16,25 @@ using namespace ui;
 
 namespace {
 
+std::string lowered(std::string s)
+{
+    for (char &ch : s) if (ch >= 'A' && ch <= 'Z') ch = char(ch - 'A' + 'a');
+    return s;
+}
+
 class MusicScreen : public Screen {
 public:
     using Screen::Screen;
     std::string title() const override { return "Musica"; }
     std::string describe() const override
     {
-        std::string s = "albums=" + std::to_string(arch_.size()) + " songs=" + std::to_string(results_.size()) + " trend=" +
-                        std::to_string(trend_.tracks.size()) + " list=" + std::to_string(pl_) + " zone=" + std::to_string(zone_);
-        if (int a = albumAt(pl_); a >= 0) s += " tracks=" + std::to_string(arch_[size_t(a)].tracks.size());
+        std::string s = std::string("view=") + (view_ == View::Detail ? "detail" : "shelves") + " row=" + std::to_string(row_) +
+                        " col=" + std::to_string(row_ < int(shelves_.size()) ? shelves_[size_t(row_)].col : 0) +
+                        " shelves=" + std::to_string(shelves_.size()) + " albums=" + std::to_string(arch_.size()) +
+                        " songs=" + std::to_string(results_.size()) + " trend=" + std::to_string(app.musicHome.trending.size()) +
+                        " foryou=" + std::to_string(app.musicHome.forYou.size()) + " recent=" + std::to_string(recent_.size());
+        if (view_ == View::Detail) s += " tracks=" + std::to_string(detailTracks().size());
+        if (row_ < int(shelves_.size())) s += " shelf=" + shelves_[size_t(row_)].title;
         return s;
     }
 
@@ -30,231 +42,13 @@ public:
     {
         // the user's music server is loaded once per app start (after a "loading" frame)
         if (app.server.configured() && app.serverStatus.empty()) { serverPending_ = true; drawnLoading_ = false; }
-        if (pl_ >= int(lists())) pl_ = 0;
-    }
-
-    // Left column while a search is active: [0] local/server results, [1..] Internet Archive albums,
-    // then the playlists. Without a search: only the playlists.
-    int albums() const { return search_.empty() ? 0 : int(arch_.size()); }
-    // Last row: "Em alta no Audius" (most played of the week), loaded when it is first selected.
-    bool trendRow() const { return app.settings.audius && app.platform.http() != nullptr; }
-    size_t lists() const { return app.music.playlists().size() + (search_.empty() ? 0 : 1) + size_t(albums()) + (trendRow() ? 1 : 0); }
-    bool isTrend(int i) const { return trendRow() && i == int(lists()) - 1; }
-    // Index into arch_ when row i is an Internet Archive album, else -1.
-    int albumAt(int i) const
-    {
-        if (search_.empty()) return -1;
-        i--;
-        return i >= 0 && i < albums() ? i : -1;
-    }
-
-    std::vector<size_t> tracksOf(int i) const
-    {
-        if (isTrend(i)) return trend_.tracks;
-        if (!search_.empty()) {
-            if (i == 0) return results_;
-            i--;
-            if (i < albums()) return arch_[size_t(i)].tracks;
-            i -= albums();
-        }
-        if (i < 0 || i >= int(app.music.playlists().size())) return {};
-        return app.music.playlists()[size_t(i)].tracks;
-    }
-    std::string nameOf(int i) const
-    {
-        if (isTrend(i)) return "Em alta no Audius";
-        if (!search_.empty()) {
-            if (i == 0) return "Musicas: " + search_;
-            i--;
-            if (i < albums()) return arch_[size_t(i)].item.title;
-            i -= albums();
-        }
-        return app.music.playlists()[size_t(i)].name;
-    }
-    std::string countOf(int i) const
-    {
-        if (isTrend(i)) {
-            switch (trend_.state) {
-            case Album::Loading: return "carregando...";
-            case Album::Loaded: return std::to_string(trend_.tracks.size()) + " faixas - mais tocadas da semana";
-            case Album::Failed: return "nao carregou (X tenta de novo)";
-            default: return "mais tocadas da semana";
-            }
-        }
-        int a = albumAt(i);
-        if (a < 0 && i == 0 && !search_.empty() && searching()) return std::to_string(tracksOf(i).size()) + " faixas - procurando...";
-        if (a < 0) return std::to_string(tracksOf(i).size()) + " faixas";
-        const Album &al = arch_[size_t(a)];
-        std::string who = al.item.creator.empty() ? "Internet Archive" : al.item.creator;
-        switch (al.state) {
-        case Album::Loading: return "abrindo...";
-        case Album::Loaded: return std::to_string(al.tracks.size()) + " faixas - " + who;
-        case Album::Failed: return "nao abriu (X tenta de novo)";
-        default: return who;
-        }
-    }
-
-    // Asks the Archive for the album's files (background thread); the tracks appear when it answers.
-    void openAlbum(int a)
-    {
-        Album &al = arch_[size_t(a)];
-        if (al.state == Album::Loading || al.state == Album::Loaded) return;
-        std::string url = archive::metadataUrl(al.item.id, app.archiveBase);
-        if (url.empty()) { al.state = Album::Failed; return; }
-        MultiFetch::Item it;
-        it.label = al.item.id;
-        it.url = url;
-        it.policy.allowPlainHttpRemote = app.archiveBase.compare(0, 7, "http://") == 0;   // tests only
-        al.fetch = MultiFetch::start(app.platform, {it});
-        al.state = Album::Loading;
-    }
-
-    bool searching() const { return archSearch_ != nullptr || songSearch_ != nullptr; }
-
-    // Songs of an online source become library tracks (streamed, never saved). Returns their indices.
-    std::vector<size_t> addSongs(const std::vector<catalog::Song> &songs)
-    {
-        std::vector<music::Track> tracks;
-        for (const auto &s : songs) {
-            music::Track t;
-            t.url = s.url;
-            t.title = s.title;
-            t.artist = s.artist;
-            t.album = s.album;
-            t.art = s.art;
-            t.source = s.source;
-            t.durationMs = int64_t(s.durationSec) * 1000;
-            tracks.push_back(std::move(t));
-        }
-        return app.music.addRemote("", tracks, false);
-    }
-
-    std::shared_ptr<MultiFetch> fetchOne(const char *label, const std::string &url, const std::string &base)
-    {
-        MultiFetch::Item it;
-        it.label = label;
-        it.url = url;
-        it.policy.allowPlainHttpRemote = base.compare(0, 7, "http://") == 0;   // tests only (local fixture server)
-        return MultiFetch::start(app.platform, {it});
-    }
-
-    // Online part of a search, all in background threads: songs from Audius, albums from the Archive.
-    void startOnlineSearch(const std::string &q)
-    {
-        arch_.clear();
-        archSearch_.reset();
-        songSearch_.reset();
-        if (q.empty() || !app.platform.http()) return;
-        if (app.settings.archive) archSearch_ = fetchOne(archive::kName, archive::searchUrl(q, 30, app.archiveBase), app.archiveBase);
-        if (app.settings.audius) songSearch_ = fetchOne(audius::kName, audius::searchUrl(q, app.audiusBase), app.audiusBase);
-    }
-
-    void openTrend()
-    {
-        if (trend_.state == Album::Loading || trend_.state == Album::Loaded) return;
-        trend_.fetch = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase), app.audiusBase);
-        trend_.state = Album::Loading;
-    }
-
-    static std::string keyOf(const std::string &title, const std::string &artist)
-    {
-        std::string k = title + "|" + artist;
-        for (char &ch : k) if (ch >= 'A' && ch <= 'Z') ch = char(ch - 'A' + 'a');
-        return k;
-    }
-
-    void searchFinished()
-    {
-        if (searching()) return;
-        if (results_.empty() && arch_.empty()) app.toast("Nada encontrado para \"" + search_ + "\"");
-    }
-
-    // Collects answers of the background requests (called every frame; cheap when nothing is pending).
-    void pollArchive()
-    {
-        if (archSearch_) {
-            Json j;
-            std::string e;
-            MultiFetch::State st = archSearch_->poll(0, &j, &e, nullptr);
-            if (st != MultiFetch::State::Pending) {
-                archSearch_.reset();
-                if (st == MultiFetch::State::Done) {
-                    for (auto &it : archive::parseSearch(j)) {
-                        Album al;
-                        al.item = std::move(it);
-                        arch_.push_back(std::move(al));
-                    }
-                } else {
-                    app.toast(std::string(archive::kName) + ": " + e);
-                }
-                searchFinished();
-                app.dirty();
-            }
-        }
-        if (songSearch_) {
-            Json j;
-            std::string e;
-            MultiFetch::State st = songSearch_->poll(0, &j, &e, nullptr);
-            if (st != MultiFetch::State::Pending) {
-                songSearch_.reset();
-                if (st == MultiFetch::State::Done) {
-                    // the same song already found on the HD / server / twice in the answer is not repeated
-                    std::vector<std::string> seen;
-                    for (size_t i : results_) seen.push_back(keyOf(app.music.tracks()[i].title, app.music.tracks()[i].artist));
-                    std::vector<catalog::Song> fresh;
-                    for (auto &sng : audius::parseTracks(j, app.audiusBase)) {
-                        std::string k = keyOf(sng.title, sng.artist);
-                        if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
-                        seen.push_back(k);
-                        fresh.push_back(std::move(sng));
-                    }
-                    bool wasEmpty = results_.empty();
-                    auto idx = addSongs(fresh);
-                    results_.insert(results_.end(), idx.begin(), idx.end());
-                    if (wasEmpty && !results_.empty() && pl_ == 0 && zone_ == 0 && !app.sidebarFocused()) { zone_ = 1; tr_ = 0; }
-                } else {
-                    app.toast(std::string(audius::kName) + ": " + e);
-                }
-                searchFinished();
-                app.dirty();
-            }
-        }
-        if (trend_.state == Album::Loading && trend_.fetch) {
-            Json j;
-            std::string e;
-            MultiFetch::State st = trend_.fetch->poll(0, &j, &e, nullptr);
-            if (st != MultiFetch::State::Pending) {
-                trend_.fetch.reset();
-                if (st == MultiFetch::State::Done) trend_.tracks = addSongs(audius::parseTracks(j, app.audiusBase));
-                trend_.state = trend_.tracks.empty() ? Album::Failed : Album::Loaded;
-                if (st != MultiFetch::State::Done) app.toast(std::string(audius::kName) + ": " + e);
-                app.dirty();
-            }
-        }
-        for (size_t a = 0; a < arch_.size(); a++) {
-            Album &al = arch_[a];
-            if (al.state != Album::Loading || !al.fetch) continue;
-            Json j;
-            std::string e;
-            MultiFetch::State st = al.fetch->poll(0, &j, &e, nullptr);
-            if (st == MultiFetch::State::Pending) continue;
-            al.fetch.reset();
-            if (st == MultiFetch::State::Done) {
-                al.tracks = addSongs(archive::parseItem(j, app.archiveBase));
-                al.state = al.tracks.empty() ? Album::Failed : Album::Loaded;
-                if (al.tracks.empty()) app.toast("\"" + al.item.title + "\" nao tem faixas em MP3");
-                else if (albumAt(pl_) == int(a) && zone_ == 0 && !app.sidebarFocused()) { zone_ = 1; tr_ = 0; }
-            } else {
-                al.state = Album::Failed;
-                app.toast("Internet Archive: " + e);
-            }
-            app.dirty();
-        }
+        enteredMs_ = app.now();
+        homeAsked_ = false;
+        rebuild();
     }
 
     bool handle(uint32_t p) override
     {
-        auto tr = tracksOf(pl_);
         if (p & BtnSquare) { app.togglePause(); return true; }
         if (p & BtnR1) { app.skip(+1); return true; }
         if (p & BtnL1) { app.skip(-1); return true; }
@@ -277,41 +71,53 @@ public:
             return true;
         }
         if (p & BtnOptions) {
-            app.openKeyboard("Buscar musica", search_, false, [this](const std::string &q) {
-                search_ = q;
-                results_ = app.music.search(q);
-                if (!q.empty() && app.server.configured()) {
-                    std::string e;
-                    auto remote = app.searchServer(q, &e);
-                    results_.insert(results_.end(), remote.begin(), remote.end());
-                    if (!e.empty()) app.toast("Busca no servidor: " + e);
-                }
-                startOnlineSearch(q);
-                pl_ = 0;
-                tr_ = 0;
-                zone_ = (search_.empty() || results_.empty()) ? 0 : 1;
-                if (!search_.empty()) searchFinished();   // nothing online pending: say so now
-            });
+            app.openKeyboard("Buscar musica, artista ou album", search_, false, [this](const std::string &q) { runSearch(q); });
             return true;
         }
-        int n = int(lists());
-        if (zone_ == 0) {
-            if (p & BtnUp) { if (pl_ > 0) { pl_--; tr_ = 0; } return true; }
-            if (p & BtnDown) { if (pl_ + 1 < n) { pl_++; tr_ = 0; } return true; }
-            if (p & (BtnRight | BtnCross)) {
-                int a = albumAt(pl_);
-                if (isTrend(pl_) && trend_.state != Album::Loaded) openTrend();
-                else if (a >= 0 && arch_[size_t(a)].state != Album::Loaded) openAlbum(a);
-                else if (!tr.empty()) zone_ = 1;
+        if (view_ == View::Detail) {
+            auto tr = detailTracks();
+            if (p & BtnUp) { if (detail_.sel > 0) detail_.sel--; return true; }
+            if (p & BtnDown) { if (detail_.sel + 1 < int(tr.size())) detail_.sel++; return true; }
+            if (p & (BtnCircle | BtnLeft)) { view_ = View::Shelves; return true; }
+            if (p & BtnCross) {
+                if (detail_.album >= 0 && arch_[size_t(detail_.album)].state == Album::Failed) openAlbum(detail_.album);
+                else if (detail_.sel < int(tr.size())) app.playTracks(tr, size_t(detail_.sel));
                 return true;
             }
+            return true;
+        }
+        if (p & BtnCircle) {
+            if (!search_.empty()) { runSearch(""); return true; }   // leaves the results, back to the home
             return false;
         }
-        if (p & BtnUp) { if (tr_ > 0) tr_--; return true; }
-        if (p & BtnDown) { if (tr_ + 1 < int(tr.size())) tr_++; return true; }
-        if (p & BtnLeft) { zone_ = 0; return true; }
-        if (p & BtnCircle) { zone_ = 0; return true; }
-        if ((p & BtnCross) && tr_ < int(tr.size())) { app.playTracks(tr, size_t(tr_)); return true; }
+        if (shelves_.empty()) return false;
+        Shelf &sh = shelves_[size_t(row_)];
+        if (p & (BtnUp | BtnDown | BtnLeft | BtnRight)) moved_ = true;
+        if (p & BtnUp) { if (row_ > 0) row_--; return true; }
+        if (p & BtnDown) { if (row_ + 1 < int(shelves_.size())) row_++; return true; }
+        if (p & BtnLeft) { if (sh.col > 0) { sh.col--; return true; } return false; }   // first card: to the menu
+        if (p & BtnRight) { if (sh.col + 1 < int(sh.cards.size())) sh.col++; return true; }
+        if ((p & BtnCross) && sh.col < int(sh.cards.size())) {
+            const Card &cd = sh.cards[size_t(sh.col)];
+            if (cd.kind == Card::Song) {
+                app.playTracks(songsOf(sh), size_t(sh.col));   // the shelf becomes the queue
+            } else if (cd.kind == Card::Playlist) {
+                const auto &pl = app.music.playlists()[cd.ref];
+                detail_ = Detail{};
+                detail_.title = pl.name;
+                detail_.kind = "PLAYLIST";
+                detail_.playlist = int(cd.ref);
+                view_ = View::Detail;
+            } else {
+                detail_ = Detail{};
+                detail_.album = int(cd.ref);
+                detail_.kind = "ALBUM  -  INTERNET ARCHIVE";
+                detail_.title = arch_[cd.ref].item.title;
+                view_ = View::Detail;
+                openAlbum(int(cd.ref));
+            }
+            return true;
+        }
         return false;
     }
 
@@ -321,20 +127,24 @@ public:
             serverPending_ = false;
             std::string e = app.loadServerMusic();
             if (!e.empty()) app.toast("Servidor de musica: " + e);
-            if (pl_ >= int(lists())) pl_ = 0;
+            rebuild();
             app.dirty();
         }
-        if (isTrend(pl_) && trend_.state == Album::Closed && !app.sidebarFocused()) openTrend();   // loads when first selected
-        pollArchive();
-        float target = float(std::max(0, tr_ - (albumAt(pl_) >= 0 ? 4 : 5)) * 74);   // album header leaves fewer rows
+        // The home asks the network only after the section stayed open for a moment (passing over it
+        // in the menu costs nothing), and only once per visit.
+        if (!homeAsked_ && app.now() - enteredMs_ > 500) { homeAsked_ = true; startHomeFetches(); }
+        poll();
         float k = app.settings.animations ? std::min(1.0f, dt * 14.0f) : 1.0f;
-        anim_ = std::fabs(target - scroll_) > 0.5f;
-        scroll_ = anim_ ? scroll_ + (target - scroll_) * k : target;
+        float target = shelfScrollTarget();
+        float dTarget = float(std::max(0, detail_.sel - 3) * 74);
+        anim_ = std::fabs(target - scroll_) > 0.5f || std::fabs(dTarget - detail_.scroll) > 0.5f;
+        scroll_ = std::fabs(target - scroll_) > 0.5f ? scroll_ + (target - scroll_) * k : target;
+        detail_.scroll = std::fabs(dTarget - detail_.scroll) > 0.5f ? detail_.scroll + (dTarget - detail_.scroll) * k : dTarget;
     }
     bool animating() const override { return anim_ || serverPending_; }
     bool busy() const override
     {
-        if (searching() || trend_.state == Album::Loading) return true;
+        if (searching() || fetchTrend_ || fetchForYou_ || fetchMore_) return true;
         for (const auto &al : arch_) if (al.state == Album::Loading) return true;
         return false;
     }
@@ -342,118 +152,36 @@ public:
     void draw(Canvas &c, Rect area) override
     {
         size_t localTracks = 0;
-        for (const auto &t : app.music.tracks()) if (!t.demo && !t.remote) localTracks++;
-        std::string sub = localTracks ? std::to_string(localTracks) + " faixas no HD/pendrive" : "Nenhum MP3 local";
-        if (searching()) sub += "  -  procurando online...";
-        if (serverPending_) { sub += "  -  conectando ao servidor..."; drawnLoading_ = true; }
-        else if (app.server.configured()) sub += "  -  servidor " + app.serverStatus;
-        else sub += "  -  configure seu servidor (Navidrome) em Configuracoes";
+        for (const auto &t : app.music.tracks()) if (!t.demo && !t.remote && t.url.empty()) localTracks++;
+        std::string sub;
+        if (!search_.empty()) sub = "Resultados para \"" + search_ + "\"" + (searching() ? "  -  procurando online..." : "") + "  -  O volta ao inicio";
+        else {
+            sub = localTracks ? std::to_string(localTracks) + " faixas no HD/pendrive" : "Nenhum MP3 local";
+            if (serverPending_) sub += "  -  conectando ao servidor...";
+            else if (app.server.configured()) sub += "  -  servidor " + app.serverStatus;
+            sub += "  -  OPTIONS busca";
+        }
+        if (serverPending_) drawnLoading_ = true;
         drawSectionHeader(app, c, area, "Musica", sub);
-        int x = area.x + theme::Margin, top = 176, bottomPanel = 170;
-        int listH = area.h - top - bottomPanel - 20;
-        // playlists column
-        int pw = 420;
-        c.fillRoundRect(x, top, pw, listH, 22, theme::Surface);
-        app.fonts.bold->draw(c, x + 26, top + 22, 22, search_.empty() ? "PLAYLISTS" : "RESULTADOS", theme::TextMute);
-        // The list follows the selection (a search brings up to 30 albums; before, rows past the panel
-        // could be selected without being visible).
-        int rows = std::max(1, (listH - 66 - 8) / 66);
-        int first = std::clamp(pl_ - rows + 2, 0, std::max(0, int(lists()) - rows));
-        int y = top + 66;
-        for (int i = first; i < int(lists()) && i < first + rows; i++, y += 66) {
-            bool on = i == pl_;
-            Rect r{x + 12, y, pw - 24, 58};
-            if (on && zone_ == 0 && !app.sidebarFocused()) c.fillGradient(r.x, r.y, r.w, r.h, 14, theme::Violet, theme::Indigo, 0);
-            else if (on) c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::SurfaceHi);
-            const Image *cover = nullptr;
-            if (int a = albumAt(i); a >= 0) cover = app.images.get(archive::coverUrl(arch_[size_t(a)].item.id, app.archiveBase), 44, 44);
-            if (cover) c.drawImage(*cover, r.x + 8, r.y + 7, 8);
-            else drawGeneratedArt(c, app.fonts, {r.x + 8, r.y + 7, 44, 44}, 8, "pl:" + nameOf(i), "", false);
-            app.fonts.bold->draw(c, r.x + 66, r.y + 6, 22, app.fonts.bold->ellipsize(22, nameOf(i), r.w - 80), theme::Text);
-            app.fonts.regular->draw(c, r.x + 66, r.y + 32, 17, app.fonts.regular->ellipsize(17, countOf(i), r.w - 80), on ? theme::Text : theme::TextMute);
-        }
-        // tracks
-        int tx = x + pw + 28, tw = area.right() - theme::Margin - tx;
-        c.fillRoundRect(tx, top, tw, listH, 22, theme::Surface);
-        auto tr = tracksOf(pl_);
-        int head = 62;   // height of the panel header; taller for an album (cover + names)
-        if (int a = albumAt(pl_); a >= 0) {
-            const Album &al = arch_[size_t(a)];
-            head = 176;
-            Rect art{tx + 26, top + 22, 140, 140};
-            if (const Image *img = app.images.get(archive::coverUrl(al.item.id, app.archiveBase), art.w, art.h)) c.drawImage(*img, art.x, art.y, 14);
-            else drawGeneratedArt(c, app.fonts, art, 14, "pl:" + al.item.title, "", false);
-            int hx = art.right() + 26, hw = tw - (hx - tx) - 26;
-            app.fonts.regular->draw(c, hx, top + 30, 17, "ALBUM  -  INTERNET ARCHIVE", theme::TextMute);
-            app.fonts.bold->draw(c, hx, top + 56, 34, app.fonts.bold->ellipsize(34, al.item.title, hw), theme::Text);
-            app.fonts.regular->draw(c, hx, top + 104, 22, app.fonts.regular->ellipsize(22, al.item.creator.empty() ? "Artista nao informado" : al.item.creator, hw), theme::TextDim);
-            if (al.state == Album::Loaded) app.fonts.regular->draw(c, hx, top + 136, 19, std::to_string(al.tracks.size()) + " faixas", theme::TextMute);
-        } else {
-            app.fonts.bold->draw(c, tx + 26, top + 22, 22, lists() ? nameOf(pl_) : "", theme::TextMute);
-        }
-        if (int a = albumAt(pl_); a >= 0 && arch_[size_t(a)].state != Album::Loaded) {
-            const Album &al = arch_[size_t(a)];
-            app.fonts.regular->draw(c, tx + 26, top + head + 18, 22,
-                                    al.state == Album::Loading ? "Abrindo o album no Internet Archive..."
-                                    : al.state == Album::Failed ? "Nao foi possivel abrir este album. Aperte X para tentar de novo."
-                                                                : "Album do Internet Archive. Aperte X para ver as faixas.",
-                                    theme::TextDim);
-        }
-        c.pushClip({tx, top + head, tw, listH - head - 8});
-        int ty = top + head + 4 - int(scroll_);
-        size_t playing = app.queue.current();
-        bool inAlbum = albumAt(pl_) >= 0;
-        if (isTrend(pl_) && trend_.state != Album::Loaded)
-            app.fonts.regular->draw(c, tx + 26, top + head + 18, 22,
-                                    trend_.state == Album::Failed ? "Nao foi possivel carregar. Aperte X para tentar de novo." : "Carregando as mais tocadas da semana no Audius...",
-                                    theme::TextDim);
-        for (int i = 0; i < int(tr.size()); i++, ty += 74) {
-            if (ty + 74 < top + head || ty > top + listH) continue;
-            const music::Track &t = app.music.tracks()[tr[size_t(i)]];
-            bool f = zone_ == 1 && i == tr_ && !app.sidebarFocused();
-            bool isPlaying = tr[size_t(i)] == playing && app.audio.state() != PlayState::Idle && !t.demo;
-            Rect r{tx + 12, ty, tw - 24, 66};
-            if (f) { c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::SurfaceHi); c.strokeRoundRect(r.x, r.y, r.w, r.h, 14, 2, rgba(196, 181, 253)); }
-            if (isPlaying) drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(r.x + 30), float(r.y + 33), 22, theme::Glow);
-            else app.fonts.regular->draw(c, r.x + 18, r.y + 20, 20, std::to_string(i + 1), theme::TextMute);
-            // Online songs in a mixed list show their own cover (or a neutral square when the source has
-            // none: never a picture of something else). Inside an album the cover is in the header.
-            int textX = r.x + 66;
-            if (!t.source.empty() && !inAlbum) {
-                Rect art{r.x + 58, r.y + 8, 50, 50};
-                const Image *img = t.art.empty() ? nullptr : app.images.get(t.art, art.w, art.h);
-                if (img) c.drawImage(*img, art.x, art.y, 8);
-                else { c.fillRoundRect(art.x, art.y, art.w, art.h, 8, theme::SurfaceHi); drawIcon(c, Icon::Music, float(art.x + 25), float(art.y + 25), 20, theme::TextMute); }
-                textX = r.x + 124;
-            }
-            int textW = r.x + r.w / 2 - 20 - textX;
-            app.fonts.bold->draw(c, textX, r.y + 8, 23, app.fonts.bold->ellipsize(23, t.title, textW), isPlaying ? theme::Glow : theme::Text);
-            app.fonts.regular->draw(c, textX, r.y + 38, 18, app.fonts.regular->ellipsize(18, t.artist, textW), theme::TextDim);
-            if (t.source.empty() || inAlbum) {
-                app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 22, 19, app.fonts.regular->ellipsize(19, t.album, r.w / 2 - 140), theme::TextMute);
-            } else {
-                app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 10, 19, app.fonts.regular->ellipsize(19, t.album, r.w / 2 - 140), theme::TextMute);
-                app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 38, 16, t.source, theme::Indigo);
-            }
-            if (t.demo) app.fonts.bold->draw(c, r.right() - 104, r.y + 22, 16, "DEMO", theme::Warn);
-            else if (t.remote || !t.url.empty()) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, t.durationMs > 0 ? formatTime(t.durationMs) : "rede", theme::TextMute);
-        }
-        c.popClip();
-        drawNowPlaying(c, {x, area.bottom() - bottomPanel, area.right() - theme::Margin - x, bottomPanel - 16});
+        int bottomPanel = 170;
+        Rect view{area.x + theme::Margin, kTop, area.right() - theme::Margin - (area.x + theme::Margin), area.h - kTop - bottomPanel - 20};
+        if (view_ == View::Detail) drawDetail(c, view);
+        else drawShelves(c, view);
+        drawNowPlaying(c, {view.x, area.bottom() - bottomPanel, view.w, bottomPanel - 16});
     }
 
     Hints hints() const override
     {
-        return {{BtnCross, "Tocar"}, {BtnSquare, "Pausar"}, {BtnL1 | BtnR1, "Faixa"}, {BtnL2 | BtnR2, "Volume"},
+        if (view_ == View::Detail)
+            return {{BtnCross, "Tocar"}, {BtnCircle, "Voltar"}, {BtnSquare, "Pausar"}, {BtnL1 | BtnR1, "Faixa"}, {BtnL2 | BtnR2, "Volume"},
+                    {BtnTriangle, "Aleatorio"}, {BtnOptions, "Buscar"}};
+        return {{BtnCross, "Tocar / abrir"}, {BtnSquare, "Pausar"}, {BtnL1 | BtnR1, "Faixa"}, {BtnL2 | BtnR2, "Volume"},
                 {BtnTriangle, "Aleatorio"}, {BtnR3, "Repetir"}, {BtnOptions, "Buscar"}};
     }
 
 private:
-    int pl_ = 0, tr_ = 0, zone_ = 0;
-    float scroll_ = 0;
-    bool anim_ = false, serverPending_ = false, drawnLoading_ = false;
-    std::string search_;
-    std::vector<size_t> results_;
+    static constexpr int kTop = 176, kPitch = 322, kCover = 190, kGap = 22;
+
     struct Album {
         enum State { Closed, Loading, Loaded, Failed };
         archive::Item item;
@@ -461,10 +189,445 @@ private:
         std::vector<size_t> tracks;          // indices into the music library once loaded
         std::shared_ptr<MultiFetch> fetch;   // request for the album's files
     };
+    struct Card {
+        enum Kind { Song, Playlist, AlbumCard } kind;
+        size_t ref;   // Song: track index; Playlist: playlist index; AlbumCard: index into arch_
+    };
+    struct Shelf {
+        std::string title;
+        std::vector<Card> cards;
+        int col = 0;
+    };
+    enum class View { Shelves, Detail };
+    struct Detail {
+        std::string kind, title;
+        int playlist = -1, album = -1;
+        int sel = 0;
+        float scroll = 0;
+    };
+
+    View view_ = View::Shelves;
+    std::vector<Shelf> shelves_;
+    int row_ = 0;
+    float scroll_ = 0;
+    Detail detail_;
+    bool anim_ = false, serverPending_ = false, drawnLoading_ = false, homeAsked_ = false, moved_ = false;
+    uint64_t enteredMs_ = 0;
+    std::string search_;
+    std::vector<size_t> results_;             // songs of the current search (HD, server, Audius)
     std::vector<Album> arch_;                 // Internet Archive albums of the current search
-    std::shared_ptr<MultiFetch> archSearch_;  // albums (Internet Archive)
-    std::shared_ptr<MultiFetch> songSearch_;  // songs (Audius)
-    Album trend_;                             // "Em alta no Audius" (item unused)
+    std::vector<size_t> recent_;              // recently played, as library indices
+    std::shared_ptr<MultiFetch> archSearch_, songSearch_;
+    std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
+    std::string pendingGenre_, pendingArtist_;
+
+    bool searching() const { return archSearch_ != nullptr || songSearch_ != nullptr; }
+
+    std::vector<size_t> songsOf(const Shelf &sh) const
+    {
+        std::vector<size_t> v;
+        for (const auto &cd : sh.cards) if (cd.kind == Card::Song) v.push_back(cd.ref);
+        return v;
+    }
+
+    std::vector<size_t> detailTracks() const
+    {
+        if (detail_.album >= 0 && detail_.album < int(arch_.size())) return arch_[size_t(detail_.album)].tracks;
+        if (detail_.playlist >= 0 && detail_.playlist < int(app.music.playlists().size())) return app.music.playlists()[size_t(detail_.playlist)].tracks;
+        return {};
+    }
+
+    // Library index of an online song, adding it once (the same address is never added twice).
+    size_t ensureTrack(const music::Track &t)
+    {
+        const auto &all = app.music.tracks();
+        for (size_t i = 0; i < all.size(); i++) if (all[i].url == t.url) return i;
+        auto idx = app.music.addRemote("", {t}, false);
+        return idx.empty() ? size_t(-1) : idx[0];
+    }
+
+    std::vector<size_t> addSongs(const std::vector<catalog::Song> &songs)
+    {
+        std::vector<size_t> out;
+        for (const auto &s : songs) {
+            if (s.url.empty()) continue;
+            music::Track t;
+            t.url = s.url;
+            t.title = s.title;
+            t.artist = s.artist;
+            t.album = s.album;
+            t.genre = s.genre;
+            t.art = s.art;
+            t.source = s.source;
+            t.durationMs = int64_t(s.durationSec) * 1000;
+            size_t i = ensureTrack(t);
+            if (i != size_t(-1) && std::find(out.begin(), out.end(), i) == out.end()) out.push_back(i);   // no repeats in a list
+        }
+        return out;
+    }
+
+    // Recently played songs as library indices; songs that are no longer reachable (pendrive removed,
+    // server off) are skipped.
+    void loadRecent()
+    {
+        recent_.clear();
+        const auto &all = app.music.tracks();
+        for (const auto &p : app.taste.recent()) {
+            if (!p.url.empty()) {
+                music::Track t;
+                t.url = p.url;
+                t.title = p.title;
+                t.artist = p.artist;
+                t.album = p.album;
+                t.genre = p.genre;
+                t.art = p.art;
+                t.source = p.source;
+                t.durationMs = p.durationMs;
+                size_t i = ensureTrack(t);
+                if (i != size_t(-1)) recent_.push_back(i);
+            } else {
+                for (size_t i = 0; i < all.size(); i++)
+                    if (all[i].url.empty() && all[i].path == p.path && all[i].remote == p.remote && !all[i].demo) { recent_.push_back(i); break; }
+            }
+        }
+    }
+
+    void addShelf(std::vector<Shelf> &out, const std::string &title, Card::Kind kind, const std::vector<size_t> &refs, size_t max = 40)
+    {
+        if (refs.empty()) return;
+        Shelf sh;
+        sh.title = title;
+        for (size_t i = 0; i < refs.size() && i < max; i++) sh.cards.push_back({kind, refs[i]});
+        for (const auto &old : shelves_) if (old.title == title) sh.col = std::min(old.col, int(sh.cards.size()) - 1);
+        out.push_back(std::move(sh));
+    }
+
+    // Rebuilds the shelves from the current state, keeping the selected card of each shelf.
+    void rebuild()
+    {
+        std::string focused = row_ < int(shelves_.size()) ? shelves_[size_t(row_)].title : "";
+        std::vector<Shelf> out;
+        if (!search_.empty()) {
+            addShelf(out, "Musicas", Card::Song, results_, 60);
+            std::vector<size_t> al;
+            for (size_t i = 0; i < arch_.size(); i++) al.push_back(i);
+            addShelf(out, "Albuns no Internet Archive", Card::AlbumCard, al);
+        } else {
+            loadRecent();
+            const auto &h = app.musicHome;
+            addShelf(out, "Tocadas recentemente", Card::Song, recent_, 20);
+            if (app.settings.audius) {
+                if (!h.forYouGenre.empty()) addShelf(out, "Porque voce ouve " + h.forYouGenre, Card::Song, h.forYou, 20);
+                if (!h.moreOfArtist.empty()) addShelf(out, "Mais de " + h.moreOfArtist, Card::Song, h.moreOf, 20);
+                addShelf(out, "Em alta no Audius", Card::Song, h.trending);
+            }
+            std::vector<size_t> pls;
+            for (size_t i = 0; i < app.music.playlists().size(); i++) pls.push_back(i);
+            addShelf(out, "Suas playlists", Card::Playlist, pls);
+        }
+        shelves_ = std::move(out);
+        row_ = 0;
+        // Shelves arriving while the user has not moved yet do not steal the first position.
+        if (moved_) for (size_t i = 0; i < shelves_.size(); i++) if (shelves_[i].title == focused) row_ = int(i);
+    }
+
+    float shelfScrollTarget() const
+    {
+        if (shelves_.empty()) return 0;
+        return float(row_ * kPitch);   // the selected shelf sits at the top, the next one shows below it
+    }
+
+    std::shared_ptr<MultiFetch> fetchOne(const char *label, const std::string &url, const std::string &base)
+    {
+        MultiFetch::Item it;
+        it.label = label;
+        it.url = url;
+        it.policy.allowPlainHttpRemote = base.compare(0, 7, "http://") == 0;   // tests only (local fixture server)
+        return MultiFetch::start(app.platform, {it});
+    }
+
+    // 0 = still running, 1 = answered (j filled), 2 = failed (e filled). Clears the request when done.
+    int take(std::shared_ptr<MultiFetch> &f, Json &j, std::string &e)
+    {
+        if (!f) return 0;
+        MultiFetch::State st = f->poll(0, &j, &e, nullptr);
+        if (st == MultiFetch::State::Pending) return 0;
+        f.reset();
+        return st == MultiFetch::State::Done ? 1 : 2;
+    }
+
+    // Shelves that come from the network. Failures here are silent: the shelf simply does not appear.
+    void startHomeFetches()
+    {
+        if (!app.settings.audius || !app.platform.http()) return;
+        auto &h = app.musicHome;
+        if (!h.trendingAsked) {
+            h.trendingAsked = true;
+            fetchTrend_ = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase), app.audiusBase);
+        }
+        std::string g = app.taste.topGenre();
+        if (!g.empty() && g != h.forYouGenre && !fetchForYou_) {
+            pendingGenre_ = g;
+            fetchForYou_ = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase, g), app.audiusBase);
+        }
+        std::string a = app.taste.topArtist();
+        if (!a.empty() && a != h.moreOfArtist && !fetchMore_) {
+            pendingArtist_ = a;
+            fetchMore_ = fetchOne(audius::kName, audius::searchUrl(a, app.audiusBase), app.audiusBase);
+        }
+    }
+
+    bool recentlyPlayed(const std::string &url) const
+    {
+        for (const auto &p : app.taste.recent()) if (p.url == url) return true;
+        return false;
+    }
+
+    void runSearch(const std::string &q)
+    {
+        search_ = q;
+        results_.clear();
+        arch_.clear();
+        archSearch_.reset();
+        songSearch_.reset();
+        view_ = View::Shelves;
+        if (!q.empty()) {
+            results_ = app.music.search(q);
+            if (app.server.configured()) {
+                std::string e;
+                auto remote = app.searchServer(q, &e);
+                results_.insert(results_.end(), remote.begin(), remote.end());
+                if (!e.empty()) app.toast("Busca no servidor: " + e);
+            }
+            if (app.platform.http()) {
+                if (app.settings.archive) archSearch_ = fetchOne(archive::kName, archive::searchUrl(q, 30, app.archiveBase), app.archiveBase);
+                if (app.settings.audius) songSearch_ = fetchOne(audius::kName, audius::searchUrl(q, app.audiusBase), app.audiusBase);
+            }
+        }
+        shelves_.clear();
+        row_ = 0;
+        scroll_ = 0;
+        moved_ = false;
+        rebuild();
+        if (!q.empty()) searchFinished();   // nothing online pending: say so now
+        else if (homeAsked_) startHomeFetches();   // back at the home: recommendations follow what was just played
+    }
+
+    void searchFinished()
+    {
+        if (searching()) return;
+        if (results_.empty() && arch_.empty()) app.toast("Nada encontrado para \"" + search_ + "\"");
+    }
+
+    // Asks the Archive for the album's files (background thread); the tracks appear when it answers.
+    void openAlbum(int a)
+    {
+        Album &al = arch_[size_t(a)];
+        if (al.state == Album::Loading || al.state == Album::Loaded) return;
+        std::string url = archive::metadataUrl(al.item.id, app.archiveBase);
+        if (url.empty()) { al.state = Album::Failed; return; }
+        al.fetch = fetchOne(archive::kName, url, app.archiveBase);
+        al.state = Album::Loading;
+    }
+
+    // Collects answers of the background requests (called every frame; cheap when nothing is pending).
+    void poll()
+    {
+        Json j;
+        std::string e;
+        bool changed = false;
+        if (int r = take(archSearch_, j, e)) {
+            if (r == 1) {
+                for (auto &it : archive::parseSearch(j)) {
+                    Album al;
+                    al.item = std::move(it);
+                    arch_.push_back(std::move(al));
+                }
+            } else {
+                app.toast(std::string(archive::kName) + ": " + e);
+            }
+            searchFinished();
+            changed = true;
+        }
+        if (int r = take(songSearch_, j, e)) {
+            if (r == 1) {
+                // the same song already found on the HD / server / twice in the answer is not repeated
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                std::vector<catalog::Song> fresh;
+                for (auto &sng : audius::parseTracks(j, app.audiusBase)) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    fresh.push_back(std::move(sng));
+                }
+                auto idx = addSongs(fresh);
+                results_.insert(results_.end(), idx.begin(), idx.end());
+            } else {
+                app.toast(std::string(audius::kName) + ": " + e);
+            }
+            searchFinished();
+            changed = true;
+        }
+        if (int r = take(fetchTrend_, j, e)) {
+            if (r == 1) app.musicHome.trending = addSongs(audius::parseTracks(j, app.audiusBase));
+            changed = true;
+        }
+        if (int r = take(fetchForYou_, j, e)) {
+            auto &h = app.musicHome;
+            h.forYouGenre = pendingGenre_;   // also on failure: not asked again for the same genre this session
+            h.forYou.clear();
+            if (r == 1) {
+                std::vector<catalog::Song> keep;
+                for (auto &sng : audius::parseTracks(j, app.audiusBase))
+                    if (!recentlyPlayed(sng.url)) keep.push_back(std::move(sng));   // recommend what was not just heard
+                h.forYou = addSongs(keep);
+            }
+            changed = true;
+        }
+        if (int r = take(fetchMore_, j, e)) {
+            auto &h = app.musicHome;
+            h.moreOfArtist = pendingArtist_;
+            h.moreOf.clear();
+            if (r == 1) {
+                std::vector<catalog::Song> keep;
+                std::string want = lowered(pendingArtist_);
+                for (auto &sng : audius::parseTracks(j, app.audiusBase))
+                    if (lowered(sng.artist) == want && !recentlyPlayed(sng.url)) keep.push_back(std::move(sng));   // really by that artist
+                h.moreOf = addSongs(keep);
+            }
+            changed = true;
+        }
+        for (size_t a = 0; a < arch_.size(); a++) {
+            Album &al = arch_[a];
+            if (al.state != Album::Loading) continue;
+            int r = take(al.fetch, j, e);
+            if (!r) continue;
+            if (r == 1) {
+                al.tracks = addSongs(archive::parseItem(j, app.archiveBase));
+                al.state = al.tracks.empty() ? Album::Failed : Album::Loaded;
+                if (al.tracks.empty()) app.toast("\"" + al.item.title + "\" nao tem faixas em MP3");
+            } else {
+                al.state = Album::Failed;
+                app.toast(std::string(archive::kName) + ": " + e);
+            }
+            app.dirty();
+        }
+        if (changed) { rebuild(); app.dirty(); }
+    }
+
+    // ------------------------------------------------------------------ drawing
+    void drawCover(Canvas &c, Rect r, int radius, const std::string &art, bool online, const std::string &seed)
+    {
+        const Image *img = art.empty() ? nullptr : app.images.get(art, r.w, r.h);
+        if (img) { c.drawImage(*img, r.x, r.y, radius); return; }
+        if (online) {   // the source has no cover (or it has not arrived): neutral square, never another picture
+            c.fillRoundRect(r.x, r.y, r.w, r.h, radius, theme::SurfaceHi);
+            drawIcon(c, Icon::Music, float(r.x + r.w / 2), float(r.y + r.h / 2), float(r.w) * 0.36f, theme::TextMute);
+            return;
+        }
+        drawGeneratedArt(c, app.fonts, r, radius, seed, "", false);
+    }
+
+    void drawCard(Canvas &c, int x, int y, const Card &cd, bool focused)
+    {
+        Rect cover{x, y, kCover, kCover};
+        std::string title, line2, line3;
+        bool playing = false;
+        if (cd.kind == Card::Song) {
+            const music::Track &t = app.music.tracks()[cd.ref];
+            drawCover(c, cover, 14, t.art, !t.source.empty(), "al:" + t.album);
+            title = t.title;
+            line2 = t.artist;
+            line3 = t.source;
+            playing = cd.ref == app.queue.current() && app.audio.state() != PlayState::Idle && app.audio.state() != PlayState::Error && !t.demo;
+        } else if (cd.kind == Card::Playlist) {
+            const auto &pl = app.music.playlists()[cd.ref];
+            drawCover(c, cover, 14, "", false, "pl:" + pl.name);
+            title = pl.name;
+            line2 = std::to_string(pl.tracks.size()) + " faixas";
+        } else {
+            const Album &al = arch_[cd.ref];
+            drawCover(c, cover, 14, archive::coverUrl(al.item.id, app.archiveBase), true, "");
+            title = al.item.title;
+            line2 = al.item.creator.empty() ? "Artista nao informado" : al.item.creator;
+            line3 = archive::kName;
+        }
+        if (focused) c.strokeRoundRect(cover.x - 4, cover.y - 4, cover.w + 8, cover.h + 8, 18, 4, rgba(196, 181, 253));
+        if (playing) {
+            c.fillCircle(float(cover.right() - 28), float(cover.bottom() - 28), 20, theme::Violet);
+            drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(cover.right() - 28), float(cover.bottom() - 28), 18, theme::Text);
+        }
+        app.fonts.bold->draw(c, x, y + kCover + 10, 20, app.fonts.bold->ellipsize(20, title, kCover), focused ? theme::Text : theme::TextDim);
+        app.fonts.regular->draw(c, x, y + kCover + 36, 17, app.fonts.regular->ellipsize(17, line2, kCover), theme::TextMute);
+        if (!line3.empty()) app.fonts.regular->draw(c, x, y + kCover + 58, 14, line3, theme::Indigo);
+    }
+
+    void drawShelves(Canvas &c, Rect view)
+    {
+        if (shelves_.empty()) {
+            std::string msg = !search_.empty() ? (searching() ? "Procurando..." : "Nada encontrado. Aperte OPTIONS para buscar outra coisa.")
+                                               : "Nada por aqui ainda. Aperte OPTIONS para buscar uma musica, um artista ou um album.";
+            app.fonts.regular->draw(c, view.x, view.y + 20, 24, msg, theme::TextDim);
+            return;
+        }
+        c.pushClip({view.x - 8, view.y, view.w + 16, view.h});
+        int cols = std::max(1, (view.w + kGap) / (kCover + kGap));
+        bool contentFocus = !app.sidebarFocused();
+        for (int i = 0; i < int(shelves_.size()); i++) {
+            int y = view.y + 6 + i * kPitch - int(scroll_);
+            if (y + kPitch < view.y || y > view.bottom()) continue;
+            const Shelf &sh = shelves_[size_t(i)];
+            bool rowFocus = contentFocus && i == row_;
+            app.fonts.bold->draw(c, view.x, y, 26, sh.title, rowFocus ? theme::Text : theme::TextDim);
+            int first = std::max(0, sh.col - (cols - 1));
+            for (int k = first; k < int(sh.cards.size()) && k < first + cols; k++)
+                drawCard(c, view.x + (k - first) * (kCover + kGap), y + 44, sh.cards[size_t(k)], rowFocus && k == sh.col);
+            if (first + cols < int(sh.cards.size()))
+                app.fonts.regular->draw(c, view.right() - 90, y + 6, 17, "+" + std::to_string(int(sh.cards.size()) - first - cols), theme::TextMute);
+        }
+        c.popClip();
+    }
+
+    void drawDetail(Canvas &c, Rect view)
+    {
+        c.fillRoundRect(view.x, view.y, view.w, view.h, 22, theme::Surface);
+        auto tr = detailTracks();
+        Rect art{view.x + 28, view.y + 24, 170, 170};
+        const Album *al = detail_.album >= 0 && detail_.album < int(arch_.size()) ? &arch_[size_t(detail_.album)] : nullptr;
+        if (al) drawCover(c, art, 14, archive::coverUrl(al->item.id, app.archiveBase), true, "");
+        else drawCover(c, art, 14, "", false, "pl:" + detail_.title);
+        int hx = art.right() + 28, hw = view.w - (hx - view.x) - 28;
+        app.fonts.regular->draw(c, hx, view.y + 34, 17, detail_.kind, theme::TextMute);
+        app.fonts.bold->draw(c, hx, view.y + 62, 38, app.fonts.bold->ellipsize(38, detail_.title, hw), theme::Text);
+        std::string who = al ? (al->item.creator.empty() ? "Artista nao informado" : al->item.creator) : "";
+        if (!who.empty()) app.fonts.regular->draw(c, hx, view.y + 116, 22, app.fonts.regular->ellipsize(22, who, hw), theme::TextDim);
+        std::string count = std::to_string(tr.size()) + " faixas";
+        if (al && al->state == Album::Loading) count = "Abrindo o album no Internet Archive...";
+        if (al && al->state == Album::Failed) count = "Nao foi possivel abrir este album. Aperte X para tentar de novo.";
+        app.fonts.regular->draw(c, hx, view.y + 152, 19, count, theme::TextMute);
+        int head = 214;
+        c.pushClip({view.x, view.y + head, view.w, view.h - head - 8});
+        int ty = view.y + head + 4 - int(detail_.scroll);
+        size_t playing = app.queue.current();
+        for (int i = 0; i < int(tr.size()); i++, ty += 74) {
+            if (ty + 74 < view.y + head || ty > view.bottom()) continue;
+            const music::Track &t = app.music.tracks()[tr[size_t(i)]];
+            bool f = i == detail_.sel && !app.sidebarFocused();
+            bool isPlaying = tr[size_t(i)] == playing && app.audio.state() != PlayState::Idle && !t.demo;
+            Rect r{view.x + 12, ty, view.w - 24, 66};
+            if (f) { c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::SurfaceHi); c.strokeRoundRect(r.x, r.y, r.w, r.h, 14, 2, rgba(196, 181, 253)); }
+            if (isPlaying) drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(r.x + 30), float(r.y + 33), 22, theme::Glow);
+            else app.fonts.regular->draw(c, r.x + 18, r.y + 20, 20, std::to_string(i + 1), theme::TextMute);
+            int textW = r.w / 2 - 90;
+            app.fonts.bold->draw(c, r.x + 66, r.y + 8, 23, app.fonts.bold->ellipsize(23, t.title, textW), isPlaying ? theme::Glow : theme::Text);
+            app.fonts.regular->draw(c, r.x + 66, r.y + 38, 18, app.fonts.regular->ellipsize(18, t.artist, textW), theme::TextDim);
+            app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 22, 19, app.fonts.regular->ellipsize(19, t.album.empty() ? t.genre : t.album, r.w / 2 - 140), theme::TextMute);
+            if (t.demo) app.fonts.bold->draw(c, r.right() - 104, r.y + 22, 16, "DEMO", theme::Warn);
+            else if (t.durationMs > 0) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, formatTime(t.durationMs), theme::TextMute);
+        }
+        c.popClip();
+    }
 
     void drawNowPlaying(Canvas &c, Rect r)
     {

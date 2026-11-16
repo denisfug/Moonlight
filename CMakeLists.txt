@@ -33,6 +33,7 @@ add_library(ml_core STATIC
     src/music/subsonic.cpp
     src/music/archive.cpp
     src/music/audius.cpp
+    src/music/taste.cpp
     src/radio/radio.cpp
     src/player/player.cpp
     src/player/mp3_core.c

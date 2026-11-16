@@ -12,7 +12,8 @@ constexpr const char *kHost = "https://api.audius.co";
 constexpr const char *kName = "Audius";
 
 std::string searchUrl(const std::string &query, const std::string &base);
-std::string trendingUrl(const std::string &base);   // most played of the week
+// Most played: of the week (no genre) or of the month within one genre (the name as Audius writes it).
+std::string trendingUrl(const std::string &base, const std::string &genre = "");
 std::string streamUrl(const std::string &id, const std::string &base);
 bool validId(const std::string &id);   // letters and digits only
 std::vector<catalog::Song> parseTracks(const Json &root, const std::string &base);
