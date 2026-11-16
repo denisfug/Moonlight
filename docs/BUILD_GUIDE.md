@@ -46,3 +46,10 @@ Ou, com as variáveis definidas: `make ps4 pkg`.
 2. No PS4: GoldHEN → Package Installer → escolha o PKG.
 3. Músicas: `/data/moonlight/music/<playlist>/*.mp3` ou pendrive `Music/<playlist>/*.mp3`.
 4. Canais: `/data/moonlight/channels.m3u` (lista M3U autorizada).
+
+## Versão do toolchain (importante)
+
+Use o OpenOrbis **v0.5.4**: `https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz`.
+O pacote v0.5.2 (`v0.5.2.tar.gz`) **não serve**: o `create-fself` dele corta os dados iniciados do executável e o
+app fecha na abertura com CE-34878-0 (builds 01.24–01.27). `tools/make_pkg.sh` roda `tools/check_eboot.py`, que
+recusa o pacote nesse caso. O link procura a libc++ do projeto (`toolchain/libcxx`) antes da que vem em `$OO/lib`.

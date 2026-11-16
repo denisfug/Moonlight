@@ -19,6 +19,8 @@ mkdir -p "$IMG/sce_sys/about" "$IMG/sce_module" "$IMG/assets/fonts" "$OUT"
 
 "$FSELF" -in="$ELF" -out="$STAGE/app.oelf" --eboot "$IMG/eboot.bin" --paid "$PAID" >/dev/null
 [ "$(head -c 4 "$IMG/eboot.bin" | od -An -tx1 | tr -d ' ')" = "4f153d1d" ] || { echo "eboot.bin is not a SELF"; exit 1; }
+# Refuses a package whose eboot lost part of the initialized data (old create-fself): closes at launch.
+python3 "$(dirname "$0")/check_eboot.py" "$ELF" "$IMG/eboot.bin" || exit 1
 
 SFO="$IMG/sce_sys/param.sfo"
 "$PKGTOOL" sfo_new "$SFO" >/dev/null

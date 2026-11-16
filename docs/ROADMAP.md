@@ -104,31 +104,22 @@ Medido no PC com `render_cost_report` e callgrind (tela inicial, 20 quadros). No
 | Total | 8,8 bi -> 2,0 bi instruções; 32 -> 10 ms por quadro no PC |
 | Tela só "carregando" (sem movimento) e capas chegando: no máximo ~5 redesenhos por segundo (`Screen::busy()`), em vez de um por quadro disputando CPU com as threads de rede | testes passam; efeito no console não medido |
 
-## Builds 01.24, 01.25 e 01.26: fecham na abertura (CE-34878-0)
+## Builds 01.24 a 01.27: fecham na abertura (CE-34878-0) — causas encontradas, 01.28 aguarda teste
 
-O ambiente de build foi reiniciado e o toolchain v0.5.4 (compilado da fonte) se perdeu. A reconstrução usa
-o pacote v0.5.2 (único com binários) + cabeçalhos v0.5.4. As três builds compilam, ligam, têm `.init_array`
-vazio, e fecham no console ao abrir:
+O ambiente de build foi reiniciado e remontado com o pacote **v0.5.2** do OpenOrbis. Cinco builds fecharam
+no console ao abrir (01.24, 01.25, 01.26, 01.27 e 01.27 "b"). Comparando o `eboot.bin` da 01.23 (abre) com os
+que fecham, e recompilando o código da 01.23 com cada toolchain:
 
-| Build | Diferença | Console |
+| Causa | Evidência | Correção |
 |---|---|---|
-| 01.24 | crt/link.x v0.5.2, clang/lld 18 | fecha ao abrir |
-| 01.25 | link.x + crtlib v0.5.4, clang/lld 18 | fecha ao abrir |
-| 01.26 | idem, clang/lld 16 | fecha ao abrir |
+| `create-fself` do v0.5.2 corta os dados iniciados do executável depois de `.data` (0x340 bytes no ELF, 0xB8 no eboot): `__libc`, `stderr` etc. chegam zerados | reproduzido: mesmo ELF, as duas ferramentas; a 01.23 que abre tem 0x340 e TLS alinhado em 0x20, as que fecham 0xB8 e 0x8 | toolchain **v0.5.4** (`releases/download/v0.5.4/toolchain-llvm-18.tar.gz`); `tools/check_eboot.py` recusa o pacote se o corte acontecer |
+| link pegava a `libc++.a` de 2021 que vem em `$OO/lib` em vez da do projeto (01.24–01.27) | +464 KB, 11 importações `pthread_*` a mais, `__cxa_guard` presente | `-L toolchain/libcxx/lib` antes de `-L $OO/lib` |
 
-**Causa encontrada (14:38 de 16/11, comparando o eboot da 01.23 que abre com o da 01.27 que fecha):** o pacote
-v0.5.2 do toolchain traz um `lib/libc++.a` próprio (de 2021, com exceções e libunwind) e a linha de link tinha
-`-L$OO/lib` antes de `-L toolchain/libcxx/lib`. O app era compilado com os cabeçalhos da nossa libc++ (LLVM 18)
-e ligado com a libc++ antiga do toolchain. Sinais: +464 KB de código, 11 importações a mais de `libkernel`
-(`pthread_once`, `pthread_key_create`, `pthread_rwlock_*`, ...), `__cxa_guard` presente, e
-`__libcpp_verbose_abort` indefinido (o "remendo" `libcxx_support.cpp` das 01.24–01.26 escondia exatamente isso).
-Correção: `cmake/ps4-toolchain.cmake` procura a nossa libc++ primeiro. Com isso a 01.27 (2ª montagem) liga sem
-remendo, não tem `__cxa_guard` nem `.init_array`, importa exatamente as mesmas funções da 01.23 (menos as duas de
-memória de vídeo retiradas de propósito) e o PKG só difere da 01.23 no `eboot.bin` (os módulos `libc.prx`,
-`libSceFios2.prx` e `right.sprx` são os da 01.23). **AGUARDANDO TESTE no console.** Diferenças que restam em
-relação à 01.23: alinhamento do segmento TLS (8 em vez de 0x20) e tamanho dos dados iniciados (crt/libc do v0.5.2).
-O feed de atualização continua na 01.23 até a 01.27 abrir no console. O conserto do vídeo (av_engine: memória
-de textura comum, prioridade 160, 4 buffers) está no código desde a 01.24 e **nunca rodou no console**.
+01.28 = 01.27 com as duas correções: sem `__cxa_guard`/`.init_array`, mesmas importações da 01.23 (menos as
+duas de memória de vídeo retiradas de propósito), mesmos tamanhos de segmento de dados e TLS da 01.23, e o PKG só
+difere dela no `eboot.bin`. **PS4: aguardando teste.** O feed de atualização continua na 01.23 até lá.
+O conserto do vídeo (av_engine: memória de textura comum, prioridade 160, 4 buffers) está no código desde a
+01.24 e **nunca rodou no console**.
 
 ## Fase 4 — Reprodução
 
