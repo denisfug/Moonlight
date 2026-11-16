@@ -117,7 +117,7 @@ que fecham, e recompilando o código da 01.23 com cada toolchain:
 
 01.28 = 01.27 com as duas correções: sem `__cxa_guard`/`.init_array`, mesmas importações da 01.23 (menos as
 duas de memória de vídeo retiradas de propósito), mesmos tamanhos de segmento de dados e TLS da 01.23, e o PKG só
-difere dela no `eboot.bin`. **PS4: aguardando teste.** O feed de atualização continua na 01.23 até lá.
+difere dela no `eboot.bin`. **PS4: a 01.28 abriu no console (relato do dono, 16/11).** Teste de vídeo: falhou de novo (detalhes da tela ainda não recebidos); música do Internet Archive e leveza: ainda não testados. O feed de atualização continua na 01.23.
 O conserto do vídeo (av_engine: memória de textura comum, prioridade 160, 4 buffers) está no código desde a
 01.24 e **nunca rodou no console**.
 
