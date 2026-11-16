@@ -79,7 +79,10 @@ bool validId(const std::string &id)
 
 std::string searchUrl(const std::string &query, int rows, const std::string &base)
 {
-    std::string q = "(" + cleanQuery(query) + ") AND mediatype:(audio OR etree) AND format:(\"VBR MP3\")";
+    // Only the title and the artist are searched: matching any field (descriptions, notes) brought
+    // albums with no visible relation to what was typed.
+    std::string words = cleanQuery(query);
+    std::string q = "(title:(" + words + ") OR creator:(" + words + ")) AND mediatype:(audio OR etree) AND format:(\"VBR MP3\")";
     return base + "/advancedsearch.php?q=" + percentEncode(q) +
            "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&sort%5B%5D=downloads%20desc&rows=" +
            std::to_string(rows) + "&page=1&output=json";
@@ -149,6 +152,8 @@ std::vector<Song> parseItem(const Json &root, const std::string &base)
         if (f["private"].asString() == "true") continue;                // not downloadable
         Song s;
         s.url = base + "/download/" + id + "/" + encodePath(name);
+        s.art = coverUrl(id, base);
+        s.source = kName;
         s.title = firstString(f["title"]);
         s.artist = firstString(f["artist"]);
         if (s.artist.empty()) s.artist = firstString(f["creator"]);

@@ -61,6 +61,7 @@ struct Settings {
     bool showRadio = false;   // Radios section is opt-in (Configuracoes)
     bool remote = false;      // phone remote server (opt-in)
     bool archive = true;      // music search also asks the Internet Archive (free/public-domain audio)
+    bool audius = true;       // music search and "em alta" also ask Audius (independent artists)
     int volume = 80;
 };
 
@@ -99,6 +100,7 @@ public:
     } tuning;
     std::string videoTestUrl = "https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4";
     std::string archiveBase = "https://archive.org";   // tests point it at a local fixture server
+    std::string audiusBase = "https://api.audius.co";  // idem
     ui::ImageLoader images;
     ui::Keyboard keyboard;
     std::unique_ptr<RemoteControl> remote;

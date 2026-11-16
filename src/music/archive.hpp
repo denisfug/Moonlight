@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/json.hpp"
+#include "music/catalog.hpp"
 
 namespace ml::archive {
 
@@ -16,11 +17,8 @@ struct Item {
     std::string id, title, creator;
 };
 
-struct Song {
-    std::string url;   // https://archive.org/download/<id>/<file> (redirects to a data server)
-    std::string title, artist, album;
-    int durationSec = 0, track = 0;
-};
+using Song = catalog::Song;   // url = https://archive.org/download/<id>/<file> (redirects to a data server)
+constexpr const char *kName = "Internet Archive";
 
 constexpr const char *kHost = "https://archive.org";
 

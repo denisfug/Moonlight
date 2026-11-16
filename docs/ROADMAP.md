@@ -91,7 +91,11 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 | Teste contra o archive.org real (sintaxe da busca, redirecionamento para o servidor de dados, certificado) | — | **não feito** (o ambiente de build não alcança archive.org) | pendente |
 | Capas dos álbuns (`/services/img/<id>`) na lista, no cabeçalho do álbum e no "tocando agora"; lista de resultados acompanha a seleção (01.29) | sim | sim (servidor local) | pendente |
 | 01.28 no console: busca no archive.org real, abrir álbum e tocar | — | — | **sim** (relato do dono, 16/11: tocou um álbum) |
-| Jamendo (precisa de chave do usuário) | — | não iniciado | — |
+| Busca do Archive só em título e artista (`title:(..) OR creator:(..)`) em vez de qualquer campo (01.30) | sim | sim (URL) | pendente — **a sintaxe nunca falou com o archive.org real** |
+| **Audius** (`src/music/audius.*`, 01.30): busca por faixa, "Em alta no Audius" (semana), stream MP3, capa por faixa, selo da fonte; fora as faixas restritas/não tocáveis; repetidas não aparecem duas vezes | sim | sim (fixtures + `archive_live_local_server` com servidor local) | pendente — **nunca falou com api.audius.co** (endereço base e redirecionamento do stream a confirmar no console) |
+| Modelo comum das fontes (`src/music/catalog.hpp`: `Song`, `SongSource`); liga/desliga por fonte em Configurações | sim | sim | pendente |
+| Jamendo (precisa de chave do usuário; tem "faixas parecidas") | — | não iniciado | — |
+| Openverse | — | não iniciado (documentação não conferida) | — |
 
 A busca no servidor Subsonic continua na thread da interface (pendente, como antes).
 

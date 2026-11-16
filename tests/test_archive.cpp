@@ -18,7 +18,8 @@ TEST(archive_urls)
     CHECK(u.find("fl%5B%5D=identifier") != std::string::npos);
     // the user's text cannot close the parenthesis or add a field to the query
     std::string q = u.substr(u.find("q=") + 2, u.find("&fl") - u.find("q=") - 2);
-    CHECK(q.find("%28pink%20%20floyd%20%20%20live%20%20%20x%29%20AND%20mediatype") == 0);
+    std::string words = "pink%20%20floyd%20%20%20live%20%20%20x";
+    CHECK(q.find("%28title%3A%28" + words + "%29%20OR%20creator%3A%28" + words + "%29%29%20AND%20mediatype") == 0);
     CHECK(u.find(' ') == std::string::npos);
     CHECK_EQ(metadataUrl("gd1977-05-08.sbd_x"), std::string("https://archive.org/metadata/gd1977-05-08.sbd_x"));
     CHECK(metadataUrl("a/../b").empty());
@@ -108,6 +109,9 @@ TEST(archive_live_local_server)
     std::string err;
     CHECK(h.app.init(&err));
     h.app.archiveBase = base;
+    const char *abase = std::getenv("ML_AUDIUS_URL");
+    if (abase) h.app.audiusBase = abase;
+    else h.app.settings.audius = false;
     h.app.goSection(Section::Music, true);
     h.app.frame();
     CHECK(h.app.remote->start(&err));
@@ -119,6 +123,22 @@ TEST(archive_live_local_server)
     h.app.frame();
     CHECK(!h.app.keyboard.active());
     CHECK(h.waitFor("albums=2"));                      // answer arrived from the background thread
+    if (abase) {
+        CHECK(h.waitFor("songs=2"));                   // Audius: 3 playable in the answer, 1 repeated -> 2
+        CHECK(h.waitFor("zone=1"));                    // songs arrived: focus goes to them
+        h.press(BtnCross);                             // plays the first Audius song from its stream address
+        for (int i = 0; i < 600 && h.app.audio.framesOut() == 0; i++) { h.app.frame(); h.plat.sleepMs(5); }
+        CHECK(h.app.audio.framesOut() > 0);
+        CHECK(h.app.music.tracks()[h.app.queue.current()].source == "Audius");
+        if (const char *dir = std::getenv("ML_SHOT_DIR")) {
+            for (int i = 0; i < 40; i++) { h.app.frame(); h.plat.sleepMs(16); }
+            h.app.dirty();
+            h.app.frame();
+            h.plat.display_.savePng(std::string(dir) + "/07_musica_busca.png");
+        }
+        h.app.audio.stop();
+        h.press(BtnCircle);                            // back to the left column
+    }
     h.press(BtnDown);                                  // first Archive album
     CHECK(h.app.currentState().find("list=1") != std::string::npos);
     h.press(BtnCross);                                 // open it: file list fetched in the background
@@ -139,6 +159,7 @@ TEST(archive_live_local_server)
     for (int i = 0; i < 600 && h.app.audio.framesOut() == 0; i++) { h.app.frame(); h.plat.sleepMs(5); }
     CHECK(h.app.audio.framesOut() > 0);
     CHECK(h.app.audio.remote() && !h.app.audio.live());
+    CHECK(h.app.music.tracks()[h.app.queue.current()].url.find("/download/moonlight-test-album/") != std::string::npos);
     h.press(BtnCircle);                                // back to the list column
     h.press(BtnDown);                                  // second album: only FLAC -> no tracks, message, no crash
     h.press(BtnCross);

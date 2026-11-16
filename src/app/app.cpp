@@ -135,6 +135,7 @@ void App::loadSettings()
     settings.showRadio = j["showRadio"].asBool(false);
     settings.remote = j["remote"].asBool(false);
     settings.archive = j["archive"].asBool(true);
+    settings.audius = j["audius"].asBool(true);
     settings.volume = int(j["volume"].asInt(80));
 }
 
@@ -146,6 +147,7 @@ void App::saveSettings()
     j.set("showRadio", Json::boolean(settings.showRadio));
     j.set("remote", Json::boolean(settings.remote));
     j.set("archive", Json::boolean(settings.archive));
+    j.set("audius", Json::boolean(settings.audius));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);
 }
