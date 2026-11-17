@@ -187,7 +187,13 @@ public:
         std::string lower = location.substr(0, 8);
         for (auto &ch : lower) ch = char(ch >= 'A' && ch <= 'Z' ? ch + 32 : ch);
         bool remote = lower.compare(0, 7, "http://") == 0 || lower.compare(0, 8, "https://") == 0;
-        if (remote && location.find(".m3u8") == std::string::npos) {
+        bool isHls  = location.find(".m3u8") != std::string::npos;
+        if (remote && isHls) {
+            // HLS: o player do PS4 resolve os segmentos diretamente pela rede do sistema.
+            // Nao usamos RangeReader; a URL .m3u8 vai direto para sceAvPlayerAddSourceEx.
+            log("stream HLS detectado, o player do PS4 vai buscar os segmentos diretamente");
+        }
+        if (remote && !isHls) {
             log("conectando ao servidor do video");
             reader_.reset(new RangeReader(&plat_.web(), location, headers_));
             std::string e = reader_->open();
@@ -229,14 +235,28 @@ public:
         log("iniciando o player do sistema (sceAvPlayerInit)");
         h_ = sceAvPlayerInit(&init);
         if (!h_) { stopFetch(); reader_.reset(); log("sceAvPlayerInit falhou", true); if (error) *error = "sceAvPlayerInit falhou"; return false; }
-        log("entregando o arquivo ao player (sceAvPlayerAddSource)");
-        int r = sceAvPlayerAddSource(h_, source.c_str());
+        // HLS streams (.m3u8) require sceAvPlayerAddSourceEx with MlAvSourceHLS.
+        // Using sceAvPlayerAddSource for HLS always returns an error on PS4.
+        // Reference: PS4 IPTV Player player.cpp (confirmed working on console).
+        int r;
+        if (isHls) {
+            log("entregando o stream HLS ao player (sceAvPlayerAddSourceEx)");
+            r = sceAvPlayerAddSourceEx(h_, MlAvSourceHLS, source.c_str());
+        } else {
+            log("entregando o arquivo ao player (sceAvPlayerAddSource)");
+            r = sceAvPlayerAddSource(h_, source.c_str());
+        }
         if (r < 0) {
-            log("AddSource " + hex(r) + (unsigned(r) == 0x806A0002u ? " (o player do PS4 recusou o arquivo" +
+            log((isHls ? "AddSourceEx(HLS) " : "AddSource ") + hex(r) +
+                (unsigned(r) == 0x806A0002u ? " (o player do PS4 recusou o arquivo" +
                                              (fmt_.empty() ? std::string(")") : ", formato " + fmt_ + ")") : ""));
-            if (error)
-                *error = "o player do PS4 recusou o arquivo (" + hex(r) + (fmt_.empty() ? std::string("") : ", formato " + fmt_) +
-                         ")" + (fmt_ == "mp4" ? ". O MP4 pode usar um codec que o PS4 nao decodifica (ex. HEVC/x265)." : "");
+            if (error) {
+                if (isHls)
+                    *error = "o player do PS4 recusou o stream HLS (" + hex(r) + "). Verifique se o URL .m3u8 e acessivel e usa H.264.";
+                else
+                    *error = "o player do PS4 recusou o arquivo (" + hex(r) + (fmt_.empty() ? std::string("") : ", formato " + fmt_) +
+                             ")" + (fmt_ == "mp4" ? ". O MP4 pode usar um codec que o PS4 nao decodifica (ex. HEVC/x265)." : "");
+            }
             sceAvPlayerClose(h_);
             h_ = nullptr;
             stopFetch();

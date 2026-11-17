@@ -121,8 +121,21 @@ struct MlAvStreamInfo {
     uint64_t startTime;
 };
 
+// Source type for sceAvPlayerAddSourceEx.  Only HLS is used by Moonlight; the value
+// (0x00000003) was confirmed by cross-referencing the PS4 IPTV Player source
+// (player.cpp, OpenOrbis, confirmed working on console) and the OrbisOS AvPlayer header.
+enum MlAvSourceType : int32_t {
+    MlAvSourceDefault = 0x00000000,   // same as sceAvPlayerAddSource
+    MlAvSourceHLS     = 0x00000003,   // required for .m3u8 / HTTP Live Streaming
+};
+
 MlAvPlayerHandle sceAvPlayerInit(MlAvInitData *data);
 int32_t sceAvPlayerAddSource(MlAvPlayerHandle h, const char *path);
+// sceAvPlayerAddSourceEx: required for HLS streams (.m3u8).
+// Signature derived from: PS4 IPTV Player player.cpp (OpenOrbis, confirmed working),
+// cross-checked with OrbisOS SDK include/orbis/AvPlayer.h.
+// The OO header lists the symbol with an empty signature; the actual ABI takes (handle, type, path).
+int32_t sceAvPlayerAddSourceEx(MlAvPlayerHandle h, MlAvSourceType type, const char *path);
 int32_t sceAvPlayerStart(MlAvPlayerHandle h);
 int32_t sceAvPlayerStop(MlAvPlayerHandle h);
 int32_t sceAvPlayerPause(MlAvPlayerHandle h);
