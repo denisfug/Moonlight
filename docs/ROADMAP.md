@@ -96,7 +96,7 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 | **Audius** (`src/music/audius.*`, 01.30): busca por faixa, "Em alta no Audius" (semana), stream MP3, capa por faixa, selo da fonte; fora as faixas restritas/não tocáveis; repetidas não aparecem duas vezes | sim | sim (fixtures + `archive_live_local_server` com servidor local) | pendente — **nunca falou com api.audius.co** (endereço base e redirecionamento do stream a confirmar no console) |
 | Modelo comum das fontes (`src/music/catalog.hpp`: `Song`, `SongSource`); liga/desliga por fonte em Configurações | sim | sim | pendente |
 | **Jamendo** (`src/music/jamendo.*`): busca por faixa Creative Commons full-length MP3, capa 500px, duração, gênero, selo da fonte; kPublicClientId como fallback documentado (devportal.jamendo.com); primeiro na busca; liga/desliga em Configurações | sim | sim (fixtures + test_jamendo: 4 testes) | pendente — nunca falou com api.jamendo.com real |
-| Openverse | — | não iniciado (documentação não conferida) | — |
+| **Openverse** (`src/music/openverse.*`, 01.30): busca por faixa Creative Commons full-length MP3 via api.openverse.org/v1/audio/ (Wikimedia Foundation), capa, duração, gênero, selo da fonte; deduplicação por título+artista; liga/desliga em Configurações > "Música do Openverse" | sim | sim (fixtures, 4 testes; `openverse_search_url`, `openverse_featured_url`, `openverse_parse_search`, `openverse_parse_empty`) | pendente — **nunca falou com api.openverse.org real** |
 
 A busca no servidor Subsonic continua na thread da interface (pendente, como antes).
 
@@ -133,7 +133,12 @@ align=0x200000 — idêntico ao video_out.cpp que funciona). A hipótese revisad
 era a *combinação* priority=700 + 2 buffers + memória direta. A 01.24+ corrigiu prioridade e buffers mas reverteu
 a memória; nenhuma versão testou os três fatores corretos juntos até agora. `TexTable` sem destrutor (PS4-safe);
 `releaseAll()` chamado em `stop()`. Tipos corrigidos em `texAlloc`: `size_t` para `len`/`alignment` em vez de
-`off_t` (como exige `libkernel.h`). **PC: 95 testes, 0 falhas. PS4: aguardando teste.**
+`off_t` (como exige `libkernel.h`). **PC: 99 testes, 0 falhas. PS4: aguardando teste.**
+
+**01.30**: Openverse integrado (fonte CC Wikimedia, full-length MP3, sem DRM, sem conta). No av_engine, fallback
+`posix_memalign` disponível via `ML_AV_TEX_MALLOC` para o caso da GPU memory não produzir quadros: se definido
+em tempo de compilação, `texAlloc` usa `posix_memalign` como o PS4 IPTV Player que funciona no console.
+Nenhum teste de vídeo novo rodou no console nesta versão.
 
 **Referência externa:** o PS4 IPTV Player (OpenOrbis, código aberto) usa `posix_memalign` para a textura e
 funciona no console. Se a 01.29 (GPU memory) também não produzir quadros, a próxima hipótese é: reverte para
@@ -157,6 +162,13 @@ Pendentes. Precisam do resultado do primeiro teste no console.
 
 ## Próxima tarefa recomendada
 
-1. Instalar `Moonlight-HB_01.04.pkg` (interface já validada no 01.03) no PS4 e anotar: a tela aparece? o controle navega? MP3 do pendrive toca?
-   A aba Rádios lista estações (= internet + HTTPS funcionando)? Uma rádio toca?
-2. Com isso validado: internet dentro do plugin GoldHEN (rádio durante o jogo) e prova de vídeo com `sceAvPlayer`.
+**Para o dono (teste no console):**
+1. Instalar `Moonlight-HB_01.30.pkg` e rodar o Teste de Vídeo (Configurações > Problemas ao reproduzir).
+   - Registrar o diagnóstico completo (passos do player, contagem de blocos de memória, quadros produzidos).
+   - Se `texOk > 0` mas `quadros = 0` → próximo passo: build com `-DML_AV_TEX_MALLOC=1` (posix_memalign).
+   - Se `texFail > 0` → GPU memory não alocou; build com `-DML_AV_TEX_MALLOC=1` diretamente.
+2. Música do Openverse: após conectar à internet no console, buscar qualquer artista e confirmar se faixas aparecem.
+
+**Para o agente (próxima build):**
+- Gerar PKG 01.30 assim que a pasta do toolchain for compartilhada pelo dispositivo.
+- Próximos recursos: busca/adicionar-fonte fora da thread UI; controle pelo celular; rádio durante jogos (plugin GoldHEN).

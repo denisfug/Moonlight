@@ -95,6 +95,15 @@ if(ML_PS4)
     )
     target_link_libraries(moonlight PRIVATE ml_ui)
     target_compile_definitions(moonlight PRIVATE ML_PLATFORM_PS4 ML_VERSION="${ML_VERSION}")
+    # ML_AV_TEX_MALLOC: use posix_memalign instead of GPU-visible memory for sceAvPlayer texture buffers.
+    # Set via: cmake -DML_AV_TEX_MALLOC=1 ...  or  make pkg ML_AV_TEX_MALLOC=1
+    # Use when GPU memory (01.29) produces 0 frames; matches the working PS4 IPTV Player reference.
+    if(ML_AV_TEX_MALLOC)
+        target_compile_definitions(moonlight PRIVATE ML_AV_TEX_MALLOC)
+        message(STATUS "av_engine: texture memory = posix_memalign (ML_AV_TEX_MALLOC)")
+    else()
+        message(STATUS "av_engine: texture memory = GPU-visible sceKernelAllocateDirectMemory (default)")
+    endif()
     if(ML_GOLDHEN_INCLUDE)
         target_include_directories(moonlight PRIVATE ${ML_GOLDHEN_INCLUDE})
         target_compile_definitions(moonlight PRIVATE ML_HAVE_GOLDHEN)

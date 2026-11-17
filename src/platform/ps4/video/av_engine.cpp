@@ -45,9 +45,16 @@ void avFree(void *, void *mem) { std::free(mem); }
 //           thread starvation (priority=700) and insufficient buffers (2), not the memory type.
 //           Diagnostics now record every allocation so the console test can confirm.
 //
-// If 01.29 also yields 0 frames, the next attempt is WC (write-combining) mapping (prot=0x32).
+// If 01.29 also yields 0 frames, rebuild with -DML_AV_TEX_MALLOC (posix_memalign, like the IPTV Player).
+// Or try WC mapping (prot=0x32) on a third attempt.
+//
+// ML_AV_TEX_MALLOC: use posix_memalign instead of GPU-visible memory.
+//   Evidence: PS4 IPTV Player (OpenOrbis, confirmed working on console) uses posix_memalign with
+//   basePriority=160 and 4 buffers. If 01.29 GPU path produces 0 frames, the conclusion is that
+//   priority+buffers was always the issue, not the memory type, since 01.24-01.28 (posix_memalign)
+//   never actually ran on console (they crashed at startup due to toolchain bugs).
 struct TexBlock {
-    off_t  dmemOffset = 0;   // physical offset returned by AllocateDirectMemory
+    off_t  dmemOffset = 0;   // physical offset; 0 when using posix_memalign path
     void  *vaddr      = nullptr;
     size_t mappedSize = 0;
 };
@@ -56,9 +63,16 @@ static constexpr size_t kTexAlign = 0x200000;   // 2 MiB, same as video_out.cpp
 static TexBlock texAlloc(uint32_t align, uint32_t size)
 {
     TexBlock b;
+#ifdef ML_AV_TEX_MALLOC
+    // posix_memalign path: same as the working PS4 IPTV Player reference.
+    // dmemOffset stays 0 so texFreeBlock knows to call free(), not Munmap/ReleaseDirectMemory.
+    if (align < 64) align = 64;   // posix_memalign requires power-of-two, minimum 64 is safe
+    b.mappedSize = size_t(size);
+    if (posix_memalign(&b.vaddr, size_t(align), b.mappedSize) != 0) b.vaddr = nullptr;
+    return b;
+#else
+    // GPU-visible path: type=3, prot=0x33, align≥2 MiB (identical to video_out.cpp, known working).
     // Enforce minimum 2 MiB alignment (same as video_out.cpp, confirmed working on console).
-    // The shadPS4 emulator uses 0x100 (256 B) — the real player may pass smaller alignments.
-    // We always round up: a larger-aligned block is valid for any smaller alignment request.
     if (size_t(align) < kTexAlign) align = uint32_t(kTexAlign);
     b.mappedSize = (size_t(size) + size_t(align) - 1u) / size_t(align) * size_t(align);
     // Exact parameter types (from OpenOrbis libkernel.h):
@@ -76,19 +90,24 @@ static TexBlock texAlloc(uint32_t align, uint32_t size)
         b.dmemOffset = 0;
     }
     return b;
+#endif
 }
 
 static void texFreeBlock(TexBlock &b)
 {
     if (b.vaddr) {
+#ifdef ML_AV_TEX_MALLOC
+        std::free(b.vaddr);
+#else
         // sceKernelMunmap(void* addr, size_t len) — exact match
         sceKernelMunmap(b.vaddr, b.mappedSize);
+        if (b.dmemOffset) {
+            // sceKernelReleaseDirectMemory(off_t start, size_t len) — exact match
+            sceKernelReleaseDirectMemory(b.dmemOffset, b.mappedSize);
+            b.dmemOffset = 0;
+        }
+#endif
         b.vaddr = nullptr;
-    }
-    if (b.dmemOffset) {
-        // sceKernelReleaseDirectMemory(off_t start, size_t len) — exact match
-        sceKernelReleaseDirectMemory(b.dmemOffset, b.mappedSize);
-        b.dmemOffset = 0;
     }
 }
 
@@ -306,7 +325,12 @@ public:
         for (const auto &j : journal_) d += "\n  - " + j;
         std::vector<std::string> sys = sysLog_;
         statusLock_.clear(std::memory_order_release);
-        d += "\nmemoria de video (GPU direta): " + std::to_string(texOk_.load()) + " blocos ok, " +
+#ifdef ML_AV_TEX_MALLOC
+        d += "\nmemoria de video (posix_memalign, como IPTV Player): ";
+#else
+        d += "\nmemoria de video (GPU direta sceKernelAllocateDirectMemory): ";
+#endif
+        d += std::to_string(texOk_.load()) + " blocos ok, " +
              std::to_string(texFail_.load()) + " recusados, " + std::to_string(texFallback_.load()) + " fallback-malloc (" +
              std::to_string(texBytes_.load() / (1024 * 1024)) + " MB)";
         d += "\nmemoria comum: " + std::to_string(memFail_.load()) + " pedidos recusados";
