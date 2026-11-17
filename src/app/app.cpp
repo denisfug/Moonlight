@@ -298,8 +298,11 @@ bool App::startTrack(size_t t, std::string *err)
         store.save("music_taste.json", taste.save());
         errorStreak = 0;   // reset streak on success
     } else {
-        // Mark track as permanently dead for this session so auto-advance skips it.
-        if (!trackKey.empty()) deadTracks.insert(trackKey);
+        // Only mark LOCAL files as permanently dead: a missing file will not come back this session.
+        // Remote URLs (HTTP streams, Subsonic) may fail due to network errors or expired signed
+        // URLs — those are transient and must NOT be blocked permanently.
+        bool isLocal = tr.url.empty() && !tr.remote;
+        if (isLocal && !trackKey.empty()) deadTracks.insert(trackKey);
     }
     return ok;
 }
@@ -490,19 +493,25 @@ bool App::frame()
             if (errorStreak >= kMaxAutoSkip) {
                 toast("Varias faixas nao carregaram. Pressione R1 para continuar.");
             } else {
-                size_t t = queue.current();
-                // Skip dead tracks automatically.
-                for (size_t n = 0; n < queue.size(); n++) {
-                    t = queue.current();
-                    if (t >= music.tracks().size() || music.tracks()[t].demo) { queue.next(false); continue; }
+                // Skip over demo entries and dead local tracks.
+                // Bound to queue.size() iterations to avoid an infinite loop when every
+                // track in the queue is dead/demo.
+                size_t tried = 0;
+                while (tried < queue.size()) {
+                    size_t t = queue.current();
+                    if (t >= music.tracks().size() || music.tracks()[t].demo) { queue.next(false); tried++; continue; }
                     const music::Track &tr = music.tracks()[t];
+                    // Only skip locally-dead tracks (remote URLs are not in deadTracks).
                     const std::string &key = tr.url.empty() ? tr.path : tr.url;
-                    if (!key.empty() && deadTracks.count(key)) { queue.next(false); continue; }
+                    if (!key.empty() && deadTracks.count(key)) { queue.next(false); tried++; continue; }
                     break;
                 }
-                t = queue.current();
-                std::string err;
-                if (t < music.tracks().size() && !music.tracks()[t].demo) {
+                size_t t = queue.current();
+                if (tried >= queue.size() || t >= music.tracks().size() || music.tracks()[t].demo) {
+                    // All remaining tracks are dead/demo — give up.
+                    errorStreak = kMaxAutoSkip;
+                } else {
+                    std::string err;
                     if (!startTrack(t, &err)) errorStreak++;
                 }
             }
