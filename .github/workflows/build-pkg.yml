@@ -35,11 +35,15 @@ jobs:
           ls "$OO_PS4_TOOLCHAIN"
           test -f "$OO_PS4_TOOLCHAIN/link.x" && echo "link.x OK" || (echo "ERRO: link.x não encontrado"; find oosdk -name "link.x" | head -5; exit 1)
 
-      - name: Download GoldHEN SDK
+      - name: Download GoldHEN SDK (optional)
         run: |
-          wget -q https://github.com/GoldHEN/GoldHEN_Plug_SDK/archive/refs/heads/main.zip -O goldhen.zip
-          unzip -q goldhen.zip
-          echo "GOLDHEN_SDK=$(pwd)/GoldHEN_Plug_SDK-main" >> $GITHUB_ENV
+          if wget -q --timeout=30 https://github.com/GoldHEN/GoldHEN_Plug_SDK/archive/refs/heads/main.zip -O goldhen.zip 2>/dev/null; then
+            unzip -q goldhen.zip
+            echo "GOLDHEN_SDK=$(pwd)/GoldHEN_Plug_SDK-main" >> $GITHUB_ENV
+            echo "GoldHEN SDK: OK"
+          else
+            echo "GoldHEN SDK indisponivel — build sem suporte USB music (nao eh erro fatal)"
+          fi
 
       - name: Build libc++ for PS4
         run: |
