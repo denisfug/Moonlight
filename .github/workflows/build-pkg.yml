@@ -21,6 +21,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y cmake make clang lld python3 wget tar zip xz-utils
+          # PkgTool.Core (OpenOrbis) precisa de libssl.so.1.1 (OpenSSL 1.1)
+          # Ubuntu 22.04+ só tem OpenSSL 3; baixamos o .deb do Ubuntu 20.04 (Focal)
+          wget -q http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+          sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
 
       - name: Download OpenOrbis Toolchain
         run: |
