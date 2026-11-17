@@ -56,15 +56,22 @@ static constexpr size_t kTexAlign = 0x200000;   // 2 MiB, same as video_out.cpp
 static TexBlock texAlloc(uint32_t align, uint32_t size)
 {
     TexBlock b;
-    if (align < uint32_t(kTexAlign)) align = uint32_t(kTexAlign);
-    b.mappedSize = (size_t(size) + align - 1) / align * align;
+    // Enforce minimum 2 MiB alignment (same as video_out.cpp, confirmed working on console).
+    // The shadPS4 emulator uses 0x100 (256 B) — the real player may pass smaller alignments.
+    // We always round up: a larger-aligned block is valid for any smaller alignment request.
+    if (size_t(align) < kTexAlign) align = uint32_t(kTexAlign);
+    b.mappedSize = (size_t(size) + size_t(align) - 1u) / size_t(align) * size_t(align);
+    // Exact parameter types (from OpenOrbis libkernel.h):
+    //   sceKernelAllocateDirectMemory(off_t, off_t, size_t len, size_t alignment, int32_t, off_t*)
+    //   sceKernelMapDirectMemory(void**, size_t len, int32_t prot, int32_t flags, off_t, size_t alignment)
     if (sceKernelAllocateDirectMemory(0, off_t(sceKernelGetDirectMemorySize()),
-                                      off_t(b.mappedSize), off_t(align), 3, &b.dmemOffset) < 0) {
+                                      b.mappedSize, size_t(align), 3, &b.dmemOffset) < 0) {
         b.dmemOffset = 0;
         return b;   // vaddr stays nullptr → caller treats as failure
     }
-    if (sceKernelMapDirectMemory(&b.vaddr, b.mappedSize, 0x33, 0, b.dmemOffset, align) < 0) {
-        sceKernelReleaseDirectMemory(b.dmemOffset, off_t(b.mappedSize));
+    if (sceKernelMapDirectMemory(&b.vaddr, b.mappedSize, 0x33, 0, b.dmemOffset, size_t(align)) < 0) {
+        // sceKernelReleaseDirectMemory(off_t start, size_t len)
+        sceKernelReleaseDirectMemory(b.dmemOffset, b.mappedSize);
         b.vaddr = nullptr;
         b.dmemOffset = 0;
     }
@@ -74,11 +81,13 @@ static TexBlock texAlloc(uint32_t align, uint32_t size)
 static void texFreeBlock(TexBlock &b)
 {
     if (b.vaddr) {
+        // sceKernelMunmap(void* addr, size_t len) — exact match
         sceKernelMunmap(b.vaddr, b.mappedSize);
         b.vaddr = nullptr;
     }
     if (b.dmemOffset) {
-        sceKernelReleaseDirectMemory(b.dmemOffset, off_t(b.mappedSize));
+        // sceKernelReleaseDirectMemory(off_t start, size_t len) — exact match
+        sceKernelReleaseDirectMemory(b.dmemOffset, b.mappedSize);
         b.dmemOffset = 0;
     }
 }

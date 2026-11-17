@@ -561,17 +561,18 @@ public:
             case 5: jamendoAction(); break;
             case 6: app.settings.archive = !app.settings.archive; app.saveSettings(); break;
             case 7: app.settings.audius = !app.settings.audius; app.saveSettings(); break;
-            case 8: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 9: toggleRemote(); break;
-            case 10: updateAction(); break;
-            case 11: testInternet(); break;
-            case 12: app.push(makeVideoTest(app)); break;
-            case 13: app.push(makeProblems(app)); break;
-            case 14:
+            case 8: app.settings.openverse = !app.settings.openverse; app.saveSettings(); break;
+            case 9: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
+            case 10: toggleRemote(); break;
+            case 11: updateAction(); break;
+            case 12: testInternet(); break;
+            case 13: app.push(makeVideoTest(app)); break;
+            case 14: app.push(makeProblems(app)); break;
+            case 15:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
-                          "Musica online: Jamendo (jamendo.com, Creative Commons), Internet Archive (archive.org) e Audius (audius.co). Decodificador MP3: minimp3 (CC0). Texto: stb_truetype (dominio publico).");
+                          "Musica online: Jamendo (jamendo.com, CC), Internet Archive (archive.org), Audius (audius.co) e Openverse (openverse.org, Wikimedia). Decodificador MP3: minimp3 (CC0). Texto: stb_truetype (dominio publico).");
                 break;
             }
             return true;
@@ -607,6 +608,7 @@ public:
             {"Musica do Jamendo", jamendoDesc_.c_str(), app.settings.jamendo ? 1 : 0},
             {"Musica do Internet Archive", "A busca de musica tambem procura albuns livres (dominio publico / Creative Commons) em archive.org.", app.settings.archive ? 1 : 0},
             {"Musica do Audius", "A busca de musica tambem procura faixas de artistas independentes em audius.co, e mostra as mais tocadas da semana.", app.settings.audius ? 1 : 0},
+            {"Musica do Openverse", "A busca de musica tambem procura audios Creative Commons do Openverse (Wikimedia Foundation), com MP3 de duracao completa.", app.settings.openverse ? 1 : 0},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
             {"Controle pelo celular", remoteDesc_.c_str(), app.remote->running() ? 1 : 0},
             {"Atualizar o Moonlight", updateDesc_.c_str(), -1},
@@ -639,7 +641,7 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    static constexpr int kItems = 15;
+    static constexpr int kItems = 16;
     int sel_ = 0, first_ = 0;
     std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_, jamendoDesc_;
     std::string testHeader_, testResult_;

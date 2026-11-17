@@ -10,6 +10,7 @@
 #include "music/audius.hpp"
 #include "music/deezer.hpp"
 #include "music/jamendo.hpp"
+#include "music/openverse.hpp"
 #include "music/rank.hpp"
 #include "ui/theme.hpp"
 
@@ -220,14 +221,14 @@ private:
     std::vector<size_t> results_;             // songs of the current search (HD, server, Audius, Deezer)
     std::vector<Album> arch_;                 // Internet Archive albums of the current search
     std::vector<size_t> recent_;              // recently played, as library indices
-    std::shared_ptr<MultiFetch> archSearch_, songSearch_, deezerSearch_, jamendoSearch_;
+    std::shared_ptr<MultiFetch> archSearch_, songSearch_, deezerSearch_, jamendoSearch_, openverseSearch_;
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
 
     bool searching() const
     {
-        return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr || jamendoSearch_ != nullptr;
+        return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr || jamendoSearch_ != nullptr || openverseSearch_ != nullptr;
     }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
@@ -399,6 +400,7 @@ private:
         songSearch_.reset();
         deezerSearch_.reset();
         jamendoSearch_.reset();
+        openverseSearch_.reset();
         localCount_ = 0;
         view_ = View::Shelves;
         if (!q.empty()) {
@@ -422,6 +424,7 @@ private:
                 if (app.settings.archive) archSearch_ = fetchOne(archive::kName, archive::searchUrl(q, 30, app.archiveBase), app.archiveBase);
                 if (app.settings.audius) songSearch_ = fetchOne(audius::kName, audius::searchUrl(q, app.audiusBase), app.audiusBase);
                 if (app.settings.deezer) deezerSearch_ = fetchOne(deezer::kName, deezer::searchUrl(q, deezer::kLimit, app.deezerBase), app.deezerBase);
+                if (app.settings.openverse) openverseSearch_ = fetchOne(openverse::kName, openverse::searchUrl(q, openverse::kLimit, app.openverseBase), app.openverseBase);
             }
         }
         shelves_.clear();
@@ -532,6 +535,28 @@ private:
                 results_.insert(results_.end(), idx.begin(), idx.end());
             }
             // Deezer failures are silent: it's supplementary, not essential.
+            searchFinished();
+            changed = true;
+        }
+        if (int r = take(openverseSearch_, j, e)) {
+            if (r == 1) {
+                // Openverse: full-length CC audio — placed after Jamendo, before Audius/Deezer.
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                std::vector<catalog::Song> fresh;
+                for (auto &sng : openverse::parseSearch(j)) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    fresh.push_back(std::move(sng));
+                }
+                rank::sortFreeText(search_, fresh);
+                auto idx = addSongs(fresh);
+                // insert after localCount_ + jamendo results but before deezer/audius
+                size_t at = std::min(localCount_, results_.size());
+                results_.insert(results_.begin() + long(at), idx.begin(), idx.end());
+            }
+            // Openverse failures are silent: supplementary source.
             searchFinished();
             changed = true;
         }

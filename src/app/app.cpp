@@ -140,6 +140,7 @@ void App::loadSettings()
     settings.deezer = j["deezer"].asBool(true);
     settings.jamendo = j["jamendo"].asBool(true);
     settings.jamendoClientId = j["jamendoClientId"].str("");
+    settings.openverse = j["openverse"].asBool(true);
     settings.lightTheme = j["lightTheme"].asBool(false);
     applyTheme();
     settings.volume = int(j["volume"].asInt(80));
@@ -157,6 +158,7 @@ void App::saveSettings()
     j.set("deezer", Json::boolean(settings.deezer));
     j.set("jamendo", Json::boolean(settings.jamendo));
     j.set("jamendoClientId", Json::string(settings.jamendoClientId));
+    j.set("openverse", Json::boolean(settings.openverse));
     j.set("lightTheme", Json::boolean(settings.lightTheme));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);

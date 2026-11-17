@@ -132,7 +132,15 @@ O conserto do vídeo (av_engine: memória de textura comum, prioridade 160, 4 bu
 align=0x200000 — idêntico ao video_out.cpp que funciona). A hipótese revisada é que nas 01.13-01.23 o problema
 era a *combinação* priority=700 + 2 buffers + memória direta. A 01.24+ corrigiu prioridade e buffers mas reverteu
 a memória; nenhuma versão testou os três fatores corretos juntos até agora. `TexTable` sem destrutor (PS4-safe);
-`releaseAll()` chamado em `stop()`. **PC: 95 testes, 0 falhas. PS4: aguardando teste.**
+`releaseAll()` chamado em `stop()`. Tipos corrigidos em `texAlloc`: `size_t` para `len`/`alignment` em vez de
+`off_t` (como exige `libkernel.h`). **PC: 95 testes, 0 falhas. PS4: aguardando teste.**
+
+**Referência externa:** o PS4 IPTV Player (OpenOrbis, código aberto) usa `posix_memalign` para a textura e
+funciona no console. Se a 01.29 (GPU memory) também não produzir quadros, a próxima hipótese é: reverte para
+`posix_memalign` como o IPTV Player — ou seja, o problema pode nunca ter sido o tipo de memória, mas sim
+priority=700 e 2 buffers. As versões 01.24-01.28 que usavam `posix_memalign` **nunca chegaram ao console**
+(fechavam ao abrir por bugs do toolchain v0.5.2 e libc++ antiga, corrigidos em 01.28). A 01.28 abriu no console
+mas o teste de vídeo falhou sem detalhes suficientes para diagnosticar.
 
 ## Fase 4 — Reprodução
 
