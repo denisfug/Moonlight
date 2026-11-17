@@ -14,9 +14,22 @@ Centro multimídia homebrew para PS4 (GoldHEN), C++17, toolchain OpenOrbis. Leia
 - Respeite licenças: reutilização, cópia, adaptação e porte de projetos open source são permitidos
   desde que a licença seja cumprida (atribuição, avisos, disponibilização do código-fonte derivado
   quando exigido). Verifique a licença de cada repositório antes de incorporar código.
-  Proibições que se mantêm independentemente de licença: DRM bypass, extração de áudio de serviços
-  que não autorizam (YouTube/YouTube Music via yt-dlp/InnerTube/ytmusicapi), scraping proibido
-  pelos termos da fonte.
+  Proibições que se mantêm independentemente de licença:
+  - DRM bypass ou descriptografia de conteúdo protegido.
+  - Extração de streams de áudio/vídeo de serviços que não autorizam (YouTube, YouTube Music,
+    Spotify, Deezer faixa completa sem API autorizada, etc.) — independentemente da biblioteca usada
+    (yt-dlp, InnerTube, ytmusicapi ou equivalentes).
+  - Scraping proibido pelos termos do serviço.
+  - Credenciais de serviços no código ou tokens em logs.
+  Investigação técnica permitida (não confundir com as proibições acima):
+  - Ler, clonar e analisar código-fonte de projetos open source que implementem clientes InnerTube,
+    ytmusicapi ou similares (SimpMusic, InnerTune, OpenTune, Sonora, etc.) — para estudar arquitetura,
+    modelos de dados, identificadores de faixas, metadados, estrutura de fila e separação de camadas.
+  - Estudar endpoints, formatos de resposta e protocolos documentados ou inferidos de código público.
+  - Adaptar estruturas de dados, modelos e organização de camadas ao Moonlight, desde que o resultado
+    não implemente acesso não autorizado a conteúdo protegido.
+  - Implementar clientes para serviços que ofereçam API pública ou autorizada (Audius, Internet Archive,
+    Jamendo, Subsonic/Navidrome, Radio Browser, etc.).
 - Não use objetos estáticos com construtor nem `static` local com construtor no código do app
   (o binário PS4 hoje não tem `.init_array` nem `__cxa_guard`; verifique com `nm build-ps4/moonlight`).
 - Sem exceções (`-fno-exceptions`); erros por valor de retorno/string.
