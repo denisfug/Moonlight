@@ -1,0 +1,61 @@
+{
+  "contents": {
+    "tabbedSearchResultsRenderer": {
+      "tabs": [
+        {
+          "tabRenderer": {
+            "content": {
+              "sectionListRenderer": {
+                "contents": [
+                  {
+                    "musicShelfRenderer": {
+                      "contents": [
+                        {
+                          "musicResponsiveListItemRenderer": {
+                            "playlistItemData": {"videoId": "7wtfhZwyrcc"},
+                            "thumbnail": {
+                              "musicThumbnailRenderer": {
+                                "thumbnail": {
+                                  "thumbnails": [
+                                    {"url": "https://lh3.googleusercontent.com/small.jpg", "width": 60, "height": 60},
+                                    {"url": "https://lh3.googleusercontent.com/large.jpg", "width": 226, "height": 226}
+                                  ]
+                                }
+                              }
+                            },
+                            "flexColumns": [
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {
+                                    "runs": [{"text": "Believer"}]
+                                  }
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemFlexColumnRenderer": {
+                                  "text": {
+                                    "runs": [
+                                      {"text": "Imagine Dragons", "navigationEndpoint": {"browseEndpoint": {"browseId": "UCvI3gtHYSiNfJyQr1vaT5aQ"}}},
+                                      {"text": " • "},
+                                      {"text": "Evolve", "navigationEndpoint": {"browseEndpoint": {"browseId": "MPREb_abcdef"}}},
+                                      {"text": " • "},
+                                      {"text": "3:24"}
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "results": [
+    {
+      "id": "abc123",
+      "title": "Believer",
+      "more_info": {
+        "album": "Evolve",
+        "artistMap": {
+          "primary_artists": [
+            {"name": "Imagine Dragons"}
+          ]
+        },
+        "duration": "204",
+        "320kbps": "true",
+        "encrypted_media_url": "FAKE_ENCRYPTED",
+        "image": "https://c.saavncdn.com/believer/abc_150x150.jpg"
+      }
+    },
+    {
+      "id": "def456",
+      "title": "Believer &amp; More (From &quot;Evolve&quot;)",
+      "more_info": {
+        "album": "Evolve Deluxe",
+        "artistMap": {
+          "primary_artists": [
+            {"name": "Imagine Dragons"},
+            {"name": "Feat. Artist"}
+          ]
+        },
+        "duration": "210",
+        "320kbps": "false",
+        "encrypted_media_url": "FAKE2",
+        "image": "https://c.saavncdn.com/deluxe/def_150x150.jpg"
+      }
+    },
+    {
+      "id": "noid",
+      "title": "No Encrypted URL",
+      "more_info": {
+        "duration": "180",
+        "artistMap": {"primary_artists": []}
+      }
+    }
+  ]
+}

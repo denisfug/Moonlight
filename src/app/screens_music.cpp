@@ -12,6 +12,8 @@
 #include "music/jamendo.hpp"
 #include "music/openverse.hpp"
 #include "music/youtube.hpp"
+#include "music/jiosaavn.hpp"
+#include "music/ytmusic.hpp"
 #include "music/rank.hpp"
 #include "ui/theme.hpp"
 
@@ -235,6 +237,11 @@ private:
     // YouTube metadata-only results: shown in a dedicated shelf with "sem audio" badge.
     // These are NOT added to MusicLibrary (no authorized stream) but can show cover art / metadata.
     std::vector<catalog::Song> ytResults_;
+    // JioSaavn metadata-only results (no stream — covers + track info only).
+    std::shared_ptr<MultiFetch> jiosaavnSearch_;
+    // YouTube Music metadata-only results (no stream — covers + track info only).
+    std::vector<catalog::Song> ytmusicResults_;
+    std::shared_ptr<MultiFetch> ytmusicSearch_;
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
@@ -243,7 +250,8 @@ private:
     {
         return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr
             || jamendoSearch_ != nullptr || openverseSearch_ != nullptr
-            || youtubeSearch_ != nullptr || youtubeDurations_ != nullptr;
+            || youtubeSearch_ != nullptr || youtubeDurations_ != nullptr
+            || jiosaavnSearch_ != nullptr || ytmusicSearch_ != nullptr;
     }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
@@ -274,10 +282,12 @@ private:
         std::vector<size_t> out;
         for (const auto &s : songs) {
             if (s.url.empty()) continue;
-            // YouTube refs (url = "youtube:VIDEO_ID") are metadata-only: no authorized audio stream.
-            // Do NOT add them to MusicLibrary — AudioPlayer cannot open them.
-            // They are displayed separately via ytResults_ with a "sem audio" badge.
+            // Metadata-only refs: no authorized audio stream.
+            // Do NOT add to MusicLibrary — AudioPlayer cannot open them.
+            // They are displayed separately with a "sem audio" badge.
             if (youtube::isYouTubeRef(s.url)) continue;
+            if (jiosaavn::isJioSaavnRef(s.url)) continue;
+            if (ytmusic::isYtMusicRef(s.url)) continue;
             music::Track t;
             t.url = s.url;
             t.title = s.title;
@@ -336,12 +346,13 @@ private:
         out.push_back(std::move(sh));
     }
 
-    // Adds a shelf of YouTube metadata-only results (YoutubeRef cards indexed into ytResults_).
+    // Adds a shelf of metadata-only results (YoutubeRef cards indexed into ytResults_).
+    // Covers YouTube and JioSaavn; source field on each song sets the badge text.
     void addYoutubeShelf(std::vector<Shelf> &out)
     {
         if (ytResults_.empty()) return;
         Shelf sh;
-        sh.title = "YouTube (apenas metadados - sem reproducao)";
+        sh.title = "Apenas metadados - sem reproducao";
         for (size_t i = 0; i < ytResults_.size() && i < 25; i++) sh.cards.push_back({Card::YoutubeRef, i});
         for (const auto &old : shelves_) if (old.title == sh.title) sh.col = std::min(old.col, int(sh.cards.size()) - 1);
         out.push_back(std::move(sh));
@@ -443,6 +454,9 @@ private:
         youtubeDurations_.reset();
         youtubePending_.clear();
         ytResults_.clear();
+        jiosaavnSearch_.reset();
+        ytmusicSearch_.reset();
+        ytmusicResults_.clear();
         localCount_ = 0;
         view_ = View::Shelves;
         if (!q.empty()) {
@@ -469,6 +483,13 @@ private:
                 if (app.settings.openverse) openverseSearch_ = fetchOne(openverse::kName, openverse::searchUrl(q, openverse::kLimit, app.openverseBase), app.openverseBase);
                 if (app.settings.youtube && !app.settings.youtubeApiKey.empty())
                     youtubeSearch_ = fetchOne(youtube::kName, youtube::searchUrl(q, app.settings.youtubeApiKey, 25, app.youtubeBase), app.youtubeBase);
+                // JioSaavn: metadata + covers, no stream. Public GET endpoint.
+                if (app.settings.jiosaavn)
+                    jiosaavnSearch_ = fetchOne(jiosaavn::kName, jiosaavn::searchUrl(q, jiosaavn::kLimit, app.jiosaavnBase), app.jiosaavnBase);
+                // YouTube Music InnerTube: requires HTTP POST with JSON body.
+                // MultiFetch is GET-only; ytmusicSearch_ is left null until MultiFetch
+                // gains POST support. ytmusicResults_ will remain empty in the meantime.
+                (void)app.settings.ytmusic;  // suppress unused-variable warning
             }
         }
         shelves_.clear();
@@ -654,6 +675,27 @@ private:
             searchFinished();
             changed = true;
         }
+        // JioSaavn: metadata + covers only (no authorized stream).
+        // Merge directly into ytResults_ so the shared shelf displays both sources.
+        // addSongs() skips jiosaavn: refs; source field drives the badge text in drawCard().
+        if (int r = take(jiosaavnSearch_, j, e)) {
+            if (r == 1) {
+                std::vector<catalog::Song> fresh = jiosaavn::parseSearch(j);
+                // De-duplicate against local tracks, YouTube refs and previously merged JioSaavn refs.
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                for (auto &sng : ytResults_) seen.push_back(lowered(sng.title + "|" + sng.artist));
+                for (auto &sng : fresh) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    ytResults_.push_back(std::move(sng));
+                }
+            }
+            // JioSaavn failures are silent: supplementary metadata source.
+            searchFinished();
+            changed = true;
+        }
         if (int r = take(fetchTrend_, j, e)) {
             if (r == 1) app.musicHome.trending = addSongs(audius::parseTracks(j, app.audiusBase));
             changed = true;
@@ -743,7 +785,7 @@ private:
             drawCover(c, cover, 14, yt.art, true, "yt:" + yt.title);
             title = yt.title;
             line2 = yt.artist;
-            line3 = "YouTube  -  sem reproducao";
+            line3 = (yt.source.empty() ? std::string("YouTube") : yt.source) + "  -  sem reproducao";
         }
         if (focused) drawFocusRing(c, cover, 14);
         if (playing) {
