@@ -27,7 +27,7 @@ jobs:
           wget -q https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
           mkdir -p oosdk
           tar -xzf toolchain-llvm-18.tar.gz -C oosdk --strip-components=1
-          echo "OO_PS4_TOOLCHAIN=$(pwd)/oosdk" >> $GITHUB_ENV
+          echo "OO_PS4_TOOLCHAIN=$(pwd)/oosdk/PS4Toolchain" >> $GITHUB_ENV
 
       - name: Verify toolchain
         run: |
