@@ -11,7 +11,12 @@ Centro multimídia homebrew para PS4 (GoldHEN), C++17, toolchain OpenOrbis. Leia
 - Nada fora de `src/platform/ps4` inclui `orbis/*`. Toda chamada de hardware passa por `src/platform/platform.hpp`.
 - Sem DRM bypass, sem P2P/torrent para conteúdo de terceiros, sem credenciais no código, sem tokens em logs
   (use `redactUrl`).
-- Respeite licenças: pPlay é GPL-3 (só referência); não copiar código de Stremio/Convx/SimpMusic.
+- Respeite licenças: reutilização, cópia, adaptação e porte de projetos open source são permitidos
+  desde que a licença seja cumprida (atribuição, avisos, disponibilização do código-fonte derivado
+  quando exigido). Verifique a licença de cada repositório antes de incorporar código.
+  Proibições que se mantêm independentemente de licença: DRM bypass, extração de áudio de serviços
+  que não autorizam (YouTube/YouTube Music via yt-dlp/InnerTube/ytmusicapi), scraping proibido
+  pelos termos da fonte.
 - Não use objetos estáticos com construtor nem `static` local com construtor no código do app
   (o binário PS4 hoje não tem `.init_array` nem `__cxa_guard`; verifique com `nm build-ps4/moonlight`).
 - Sem exceções (`-fno-exceptions`); erros por valor de retorno/string.
