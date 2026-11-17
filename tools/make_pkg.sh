@@ -10,7 +10,28 @@ TITLE="Moonlight HB"
 TITLE_ID="MLHB00001"
 CONTENT_ID="IV0000-MLHB00001_00-MOONLIGHTHB00000"
 VERSION="$(grep -oP 'set\(ML_VERSION "\K[0-9.]+' "$ROOT/CMakeLists.txt")"
-FSELF="$T/bin/linux/create-fself"; GP4="$T/bin/linux/create-gp4"; PKGTOOL="$T/bin/linux/PkgTool.Core"
+FSELF="$T/bin/linux/create-fself"; GP4="$T/bin/linux/create-gp4"; _PKGTOOL_BIN="$T/bin/linux/PkgTool.Core"
+# PkgTool.Core is a .NET binary; on systems without ICU installed it needs DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+# PkgTool.Core needs libssl.so.1.1 (OpenSSL 1.1); on systems with only OpenSSL 3 we
+# look for a pre-extracted copy and add it to LD_LIBRARY_PATH automatically.
+_SSL11_PATH=""
+for _candidate in \
+    /tmp/ssl11/extracted/usr/lib/x86_64-linux-gnu \
+    /usr/lib/x86_64-linux-gnu \
+    /lib/x86_64-linux-gnu; do
+    [ -f "$_candidate/libssl.so.1.1" ] && { _SSL11_PATH="$_candidate"; break; }
+done
+PKGTOOL() {
+    local _extra_ld=""
+    [ -n "$_SSL11_PATH" ] && _extra_ld="$_SSL11_PATH"
+    if [ -n "$_extra_ld" ]; then
+        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 LD_LIBRARY_PATH="${_extra_ld}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$_PKGTOOL_BIN" "$@"
+    else
+        DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 "$_PKGTOOL_BIN" "$@"
+    fi
+}
+export -f PKGTOOL
+export _PKGTOOL_BIN _SSL11_PATH
 PAID=0x3800000000000011
 
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
@@ -23,8 +44,8 @@ mkdir -p "$IMG/sce_sys/about" "$IMG/sce_module" "$IMG/assets/fonts" "$OUT"
 python3 "$(dirname "$0")/check_eboot.py" "$ELF" "$IMG/eboot.bin" || exit 1
 
 SFO="$IMG/sce_sys/param.sfo"
-"$PKGTOOL" sfo_new "$SFO" >/dev/null
-set_e() { "$PKGTOOL" sfo_setentry "$SFO" "$1" --type "$2" --maxsize "$3" --value "$4" >/dev/null; }
+PKGTOOL sfo_new "$SFO" >/dev/null
+set_e() { PKGTOOL sfo_setentry "$SFO" "$1" --type "$2" --maxsize "$3" --value "$4" >/dev/null; }
 set_e APP_TYPE Integer 4 1
 set_e APP_VER Utf8 8 "$VERSION"
 set_e ATTRIBUTE Integer 4 0
@@ -43,7 +64,7 @@ cp "$ROOT/assets/fonts/Outfit-Regular.ttf" "$ROOT/assets/fonts/Outfit-Bold.ttf" 
 
 FILES="$(cd "$IMG" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')"
 (cd "$IMG" && "$GP4" -out pkg.gp4 --content-id="$CONTENT_ID" --files "$FILES" >/dev/null)
-(cd "$IMG" && "$PKGTOOL" pkg_build pkg.gp4 "$STAGE" >/dev/null)
+(cd "$IMG" && PKGTOOL pkg_build pkg.gp4 "$STAGE" >/dev/null)
 PKG="$STAGE/$CONTENT_ID.pkg"
 [ -f "$PKG" ] || { echo "pkg_build did not produce $CONTENT_ID.pkg"; exit 1; }
 cp "$PKG" "$OUT/Moonlight-HB_${VERSION}.pkg"
