@@ -5,6 +5,7 @@
 #include "test.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <set>
 #include <sys/stat.h>
 
@@ -87,6 +88,110 @@ TEST(music_queue)
     q.setShuffle(false, 0);
     CHECK_EQ(q.current(), size_t(13));
     CHECK_EQ(q.order()[0], size_t(10));
+}
+
+// ---------------------------------------------------------------------------
+// Content-Type guard: formats minimp3 cannot decode must produce PlayState::Error
+// before the audio thread even starts decoding.
+namespace {
+class FakeStreamHttp : public HttpClient {
+public:
+    std::string ct;      // Content-Type returned by the stream
+    bool refuse = false;
+    std::string mp3Data;
+    HttpResponse get(const HttpRequest &) override { return {}; }
+    std::unique_ptr<HttpStream> openStream(const HttpRequest &, std::string *error) override
+    {
+        if (refuse) { *error = "recusado"; return nullptr; }
+        struct S : public HttpStream {
+            const std::string *d;
+            std::string ct;
+            size_t pos = 0;
+            long read(void *buf, size_t len) override
+            {
+                size_t n = std::min(len, d->size() - pos);
+                std::memcpy(buf, d->data() + pos, n);
+                pos += n;
+                return long(n);
+            }
+            int status() const override { return 200; }
+            std::string contentType() const override { return ct; }
+        };
+        auto *s = new S;
+        s->d = &mp3Data;
+        s->ct = ct;
+        return std::unique_ptr<HttpStream>(s);
+    }
+    bool supportsHttps() const override { return true; }
+    std::string name() const override { return "fake"; }
+};
+}  // namespace
+
+TEST(audio_player_stream_content_type_rejected)
+{
+    host::HostFileSystem raw("");
+    std::string mp3;
+    raw.readFile(t::fixtures + "/tone.mp3", mp3, 1 << 24);
+
+    // Each of these Content-Type values must be rejected with PlayState::Error.
+    static const char *badTypes[] = {
+        "audio/ogg",
+        "audio/ogg; codecs=vorbis",
+        "application/ogg",
+        "audio/flac",
+        "audio/x-flac",
+        "audio/aac",
+        "audio/x-aac",
+        "audio/opus",
+        "video/mp4",
+        "video/webm",
+        // Upper-case variant (server may respond with "Audio/OGG")
+        "AUDIO/OGG",
+        nullptr
+    };
+    for (int i = 0; badTypes[i]; ++i) {
+        host::HostPlatform plat(t::scratch, "");
+        FakeStreamHttp http;
+        http.ct = badTypes[i];
+        http.mp3Data = mp3;
+        AudioPlayer p(plat);
+        std::string err;
+        CHECK(p.openStream("http://test.example/track", &http, &err));
+        p.play();
+        for (int j = 0; j < 200 && p.state() == PlayState::Playing; j++) plat.sleepMs(5);
+        CHECK(p.state() == PlayState::Error);
+        CHECK(p.lastError().find("formato nao suportado") != std::string::npos);
+    }
+}
+
+TEST(audio_player_stream_content_type_accepted)
+{
+    // These Content-Type values must NOT be rejected (may still fail if data is bad,
+    // but the rejection path must not trigger).
+    host::HostFileSystem raw("");
+    std::string mp3;
+    raw.readFile(t::fixtures + "/tone.mp3", mp3, 1 << 24);
+
+    static const char *goodTypes[] = {
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/x-mpeg",
+        "",           // missing Content-Type: some radio stations omit it; must be accepted
+        nullptr
+    };
+    for (int i = 0; goodTypes[i]; ++i) {
+        host::HostPlatform plat(t::scratch, "");
+        FakeStreamHttp http;
+        http.ct = goodTypes[i];
+        http.mp3Data = mp3;
+        AudioPlayer p(plat);
+        std::string err;
+        CHECK(p.openStream("http://test.example/track", &http, &err));
+        p.play();
+        for (int j = 0; j < 400 && p.state() == PlayState::Playing; j++) plat.sleepMs(5);
+        // Must NOT be rejected as "formato nao suportado"
+        CHECK(p.lastError().find("formato nao suportado") == std::string::npos);
+    }
 }
 
 TEST(audio_player_mp3)

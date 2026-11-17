@@ -63,6 +63,8 @@ struct Settings {
     bool remote = false;      // phone remote server (opt-in)
     bool archive = true;      // music search also asks the Internet Archive (free/public-domain audio)
     bool audius = true;       // music search and "em alta" also ask Audius (independent artists)
+    bool deezer = true;       // music search also asks Deezer (30s previews; covers + metadata)
+    std::string jamendoClientId;  // empty = Jamendo disabled; set via Configuracoes or JsonStore
     int volume = 80;
 };
 
@@ -110,6 +112,8 @@ public:
     std::string videoTestUrl = "https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4";
     std::string archiveBase = "https://archive.org";   // tests point it at a local fixture server
     std::string audiusBase = "https://api.audius.co";  // idem
+    std::string deezerBase  = "https://api.deezer.com"; // idem
+    std::string jamendoBase = "https://api.jamendo.com"; // idem (tests override)
     ui::ImageLoader images;
     ui::Keyboard keyboard;
     std::unique_ptr<RemoteControl> remote;

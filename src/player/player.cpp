@@ -153,6 +153,32 @@ void AudioPlayer::run()
             threadRunning_ = false;
             return;
         }
+        // Refuse formats minimp3 cannot decode — better than silent noise.
+        // Content-Type is available after the headers are received (openStream returns after headers).
+        // "audio/mpeg", "audio/mp3", "audio/x-mpeg" are acceptable; anything else is rejected.
+        // A missing Content-Type is accepted: the server may omit it (some radio stations do).
+        {
+            std::string ct = stream->contentType();
+            // Strip parameters: "audio/mpeg; codecs=mp3" -> "audio/mpeg"
+            auto semi = ct.find(';');
+            if (semi != std::string::npos) ct = ct.substr(0, semi);
+            // Lowercase comparison
+            for (char &ch : ct) if (ch >= 'A' && ch <= 'Z') ch = char(ch - 'A' + 'a');
+            // Trim trailing spaces
+            while (!ct.empty() && ct.back() == ' ') ct.pop_back();
+            bool knownBad = ct == "audio/ogg" || ct == "application/ogg" ||
+                            ct == "audio/flac" || ct == "audio/x-flac" ||
+                            ct == "audio/aac" || ct == "audio/x-aac" ||
+                            ct == "audio/opus" || ct == "video/mp4" || ct == "video/webm";
+            if (knownBad) {
+                lastError_ = "formato nao suportado: " + stream->contentType();
+                state_ = PlayState::Error;
+                out->close();
+                pc_destroy(dec);
+                threadRunning_ = false;
+                return;
+            }
+        }
         pc_start(dec, streamRead, stream.get());
     }
     const int block = out->framesPerBlock();

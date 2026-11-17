@@ -8,6 +8,9 @@
 #include "app/multi_fetch.hpp"
 #include "music/archive.hpp"
 #include "music/audius.hpp"
+#include "music/deezer.hpp"
+#include "music/jamendo.hpp"
+#include "music/rank.hpp"
 #include "ui/theme.hpp"
 
 namespace ml {
@@ -214,14 +217,14 @@ private:
     bool anim_ = false, serverPending_ = false, drawnLoading_ = false, homeAsked_ = false, moved_ = false;
     uint64_t enteredMs_ = 0;
     std::string search_;
-    std::vector<size_t> results_;             // songs of the current search (HD, server, Audius)
+    std::vector<size_t> results_;             // songs of the current search (HD, server, Audius, Deezer)
     std::vector<Album> arch_;                 // Internet Archive albums of the current search
     std::vector<size_t> recent_;              // recently played, as library indices
-    std::shared_ptr<MultiFetch> archSearch_, songSearch_;
+    std::shared_ptr<MultiFetch> archSearch_, songSearch_, deezerSearch_;
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
 
-    bool searching() const { return archSearch_ != nullptr || songSearch_ != nullptr; }
+    bool searching() const { return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr; }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
     {
@@ -390,6 +393,7 @@ private:
         arch_.clear();
         archSearch_.reset();
         songSearch_.reset();
+        deezerSearch_.reset();
         view_ = View::Shelves;
         if (!q.empty()) {
             results_ = app.music.search(q);
@@ -402,6 +406,7 @@ private:
             if (app.platform.http()) {
                 if (app.settings.archive) archSearch_ = fetchOne(archive::kName, archive::searchUrl(q, 30, app.archiveBase), app.archiveBase);
                 if (app.settings.audius) songSearch_ = fetchOne(audius::kName, audius::searchUrl(q, app.audiusBase), app.audiusBase);
+                if (app.settings.deezer) deezerSearch_ = fetchOne(deezer::kName, deezer::searchUrl(q, deezer::kLimit, app.deezerBase), app.deezerBase);
             }
         }
         shelves_.clear();
@@ -461,11 +466,34 @@ private:
                     seen.push_back(k);
                     fresh.push_back(std::move(sng));
                 }
+                rank::rankInPlace(search_, "", fresh);
                 auto idx = addSongs(fresh);
                 results_.insert(results_.end(), idx.begin(), idx.end());
             } else {
                 app.toast(std::string(audius::kName) + ": " + e);
             }
+            searchFinished();
+            changed = true;
+        }
+        if (int r = take(deezerSearch_, j, e)) {
+            if (r == 1) {
+                // Deezer previews (30s) are added only when the same title+artist is not already
+                // present from a full-length source (Audius, Archive, local). They enrich covers
+                // and metadata for items the user may already know.
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                std::vector<catalog::Song> fresh;
+                for (auto &sng : deezer::parseSearch(j)) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    fresh.push_back(std::move(sng));
+                }
+                rank::rankInPlace(search_, "", fresh);
+                auto idx = addSongs(fresh);
+                results_.insert(results_.end(), idx.begin(), idx.end());
+            }
+            // Deezer failures are silent: it's supplementary, not essential.
             searchFinished();
             changed = true;
         }
