@@ -1,0 +1,64 @@
+{
+  "kind": "youtube#searchListResponse",
+  "etag": "fixture",
+  "regionCode": "US",
+  "pageInfo": { "totalResults": 5, "resultsPerPage": 25 },
+  "items": [
+    {
+      "kind": "youtube#searchResult",
+      "etag": "a",
+      "id": { "kind": "youtube#video", "videoId": "dQw4w9WgXcQ" },
+      "snippet": {
+        "title": "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+        "channelTitle": "Rick Astley",
+        "thumbnails": {
+          "default": { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg", "width": 120, "height": 90 },
+          "medium":  { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg", "width": 320, "height": 180 },
+          "high":    { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", "width": 480, "height": 360 }
+        }
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "etag": "b",
+      "id": { "kind": "youtube#video", "videoId": "kJQP7kiw5Fk" },
+      "snippet": {
+        "title": "Luis Fonsi - Despacito ft. Daddy Yankee",
+        "channelTitle": "Luis Fonsi",
+        "thumbnails": {
+          "medium": { "url": "https://i.ytimg.com/vi/kJQP7kiw5Fk/mqdefault.jpg", "width": 320, "height": 180 }
+        }
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "etag": "c",
+      "id": { "kind": "youtube#channel", "channelId": "UCxxxxxx" },
+      "snippet": {
+        "title": "Should be excluded — kind is channel",
+        "channelTitle": "Some Channel",
+        "thumbnails": {}
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "etag": "d",
+      "id": { "kind": "youtube#video", "videoId": "" },
+      "snippet": {
+        "title": "Should be excluded — empty videoId",
+        "channelTitle": "Nobody",
+        "thumbnails": {}
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "etag": "e",
+      "id": { "kind": "youtube#video", "videoId": "abc123xyz" },
+      "snippet": {
+        "title": "",
+        "channelTitle": "Nobody",
+        "thumbnails": {}
+      }
+    }
+  ]
+}

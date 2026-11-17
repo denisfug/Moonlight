@@ -85,3 +85,153 @@ fontes Stremio (PC), biblioteca e M3U funcionam no PC. No PS4 (01.13+): interfac
 do sistema só abra MP4 H.264 — ver `docs/MEDIA_ENGINE.md`), controle pelo celular conectar, gravação do PKG da atualização, rádio dentro do plugin, busca e
 "adicionar fonte" fora da thread da interface.
 Limitação conhecida: o PS4 fecha o app quando um jogo abre, então a música do app não toca durante jogos.
+
+## Modo de trabalho — triagem rápida e integração direta
+
+**Objetivo:** Reduzir drasticamente o consumo de tokens e evitar investigações desnecessariamente longas.
+
+Quando houver repositórios de referência, bibliotecas, SDKs ou componentes disponíveis, priorize encontrar,
+selecionar e aproveitar os recursos existentes em vez de reconstruir tudo do zero.
+
+### 1. Buscar e selecionar
+
+Ao receber uma tarefa:
+
+1. Identifique os componentes necessários.
+2. Consulte os repositórios de referência fornecidos.
+3. Procure diretamente arquivos, módulos, bibliotecas e implementações relacionadas à tarefa.
+4. Selecione os componentes que aparentam atender ao objetivo.
+5. Verifique rapidamente:
+   - Compatibilidade com C++ e dependências.
+   - Compatibilidade com OpenOrbis e PS4.
+   - Arquitetura e plataforma suportadas.
+   - Restrições relevantes dos serviços envolvidos.
+
+Não faça uma leitura completa de todos os repositórios.
+
+### 2. Regra de compatibilidade
+
+Classifique cada componente:
+
+- **APROVEITAR:** compatível e adequado.
+- **ADAPTAR:** útil, mas exige modificações.
+- **VERIFICAR:** existe uma dúvida específica que impede a decisão.
+
+Não descarte um repositório inteiro quando apenas um módulo for incompatível.
+
+### 3. Reutilização direta
+
+Quando encontrar um componente adequado:
+
+1. Identifique o diretório e os arquivos necessários.
+2. Obtenha os arquivos diretamente do repositório.
+3. Adapte apenas o necessário para o Moonlight.
+4. Integre ao módulo correspondente.
+5. Evite reescrever funcionalidades que já estejam resolvidas.
+
+Não copie cegamente projetos inteiros. Reutilize somente os componentes necessários e suas dependências.
+
+### 4. Verificação mínima obrigatória
+
+Não é necessário realizar uma auditoria completa de cada projeto.
+
+Faça somente as verificações necessárias para decidir se o componente pode ser aproveitado:
+
+- Licença.
+- Compatibilidade com PS4.
+- Dependências.
+- API utilizada.
+- Funcionamento esperado.
+
+Se uma funcionalidade não puder ser utilizada, procure outra implementação ou integração autorizada.
+
+### 5. Pesquisa aprofundada somente quando necessária
+
+Só faça investigação extensa quando:
+
+- Não houver componente compatível.
+- A implementação apresentar erros.
+- A API não funcionar como esperado.
+- Houver incompatibilidade com o PS4.
+- Uma restrição impedir a integração.
+
+Nesse caso, investigue especificamente o problema encontrado, sem repetir toda a pesquisa anterior.
+
+### 6. Implementação
+
+Depois da triagem, prossiga diretamente:
+
+1. Obtenha os componentes.
+2. Integre ao Moonlight.
+3. Resolva dependências.
+4. Adapte interfaces.
+5. Compile e execute testes disponíveis.
+6. Documente os arquivos adicionados e modificados.
+
+Não pare para produzir relatórios longos antes de cada pequena alteração.
+
+### 7. Evidências e transparência
+
+Ao concluir, informe resumidamente:
+
+- Repositórios utilizados.
+- Arquivos aproveitados.
+- Arquivos criados ou modificados.
+- Adaptações realizadas.
+- Resultado da compilação.
+- Testes executados.
+- O que ainda precisa ser testado fisicamente no PS4.
+
+Nunca declare que algo funciona no console sem validação real.
+
+### 8. Regra principal
+
+**PESQUISE O NECESSÁRIO, SELECIONE, REUTILIZE E IMPLEMENTE.**
+
+Não transforme cada tarefa em uma investigação acadêmica.
+
+Não leia milhares de linhas sem necessidade. Não reconstrua o que já existe. Não gaste tokens repetindo conclusões.
+
+Aprofunde somente quando existir uma dúvida técnica — ou pergunte.
+
+### 9. Comando de execução — QUEIJO
+
+Quando o dono escrever **QUEIJO**, interprete como uma ordem para iniciar a execução da tarefa solicitada.
+
+Nesse modo:
+
+1. Não fique repetindo explicações ou pedindo confirmações desnecessárias.
+2. Não produza relatórios extensos antes de começar.
+3. Identifique o que precisa ser feito e execute diretamente.
+4. Consulte os arquivos estritamente necessários.
+5. Reutilize componentes e recursos existentes.
+6. Se encontrar um problema, procure uma solução e continue.
+7. Só pergunte quando existir uma decisão indispensável que não possa ser tomada tecnicamente.
+
+Não interprete dúvidas ou dificuldades como motivo para abandonar a tarefa.
+
+**QUEIJO** significa: priorizar execução, resolver problemas e entregar o máximo possível da tarefa
+solicitada, sem inventar resultados e sem ignorar limitações.
+
+### Prioridade especial: YouTube e YouTube Music
+
+Não ignore nem descarte esses serviços. Investigue e trabalhe nas possibilidades de integração, incluindo:
+
+- Pesquisa de músicas.
+- Metadados.
+- Artistas, álbuns e capas.
+- Identificação de vídeos e músicas.
+- Integração com players oficiais.
+- Compatibilidade com o hardware e sistema do PS4.
+- Alternativas de reprodução autorizadas.
+
+Quando encontrar uma restrição em um serviço:
+
+1. Não descarte a funcionalidade automaticamente.
+2. Investigue tecnicamente o funcionamento e as possibilidades de integração.
+3. Identifique exatamente qual operação está restrita e por qual motivo.
+4. Verifique se existem outros métodos, bibliotecas, componentes ou arquiteturas que permitam alcançar o mesmo resultado.
+5. Continue a implementação de todas as partes que não estejam impedidas pela restrição.
+6. Recue somente na operação específica proibida pelas regras do projeto (DRM bypass, extração não autorizada de streams protegidos, scraping vedado por ToS) — não no serviço inteiro.
+
+Isso se aplica especialmente ao YouTube e YouTube Music: uma limitação em streaming não encerra a investigação de metadados, busca, capas, identificação de faixas, integração com players oficiais ou qualquer outra parte que não esteja bloqueada.
