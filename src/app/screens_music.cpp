@@ -11,6 +11,7 @@
 #include "music/deezer.hpp"
 #include "music/jamendo.hpp"
 #include "music/openverse.hpp"
+#include "music/youtube.hpp"
 #include "music/rank.hpp"
 #include "ui/theme.hpp"
 
@@ -222,13 +223,18 @@ private:
     std::vector<Album> arch_;                 // Internet Archive albums of the current search
     std::vector<size_t> recent_;              // recently played, as library indices
     std::shared_ptr<MultiFetch> archSearch_, songSearch_, deezerSearch_, jamendoSearch_, openverseSearch_;
+    std::shared_ptr<MultiFetch> youtubeSearch_, youtubeDurations_;
+    // Songs waiting for a durations response; filled by poll() when youtubeDurations_ completes.
+    std::vector<catalog::Song> youtubePending_;
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
 
     bool searching() const
     {
-        return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr || jamendoSearch_ != nullptr || openverseSearch_ != nullptr;
+        return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr
+            || jamendoSearch_ != nullptr || openverseSearch_ != nullptr
+            || youtubeSearch_ != nullptr || youtubeDurations_ != nullptr;
     }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
@@ -408,6 +414,9 @@ private:
         deezerSearch_.reset();
         jamendoSearch_.reset();
         openverseSearch_.reset();
+        youtubeSearch_.reset();
+        youtubeDurations_.reset();
+        youtubePending_.clear();
         localCount_ = 0;
         view_ = View::Shelves;
         if (!q.empty()) {
@@ -432,6 +441,8 @@ private:
                 if (app.settings.audius) songSearch_ = fetchOne(audius::kName, audius::searchUrl(q, app.audiusBase), app.audiusBase);
                 if (app.settings.deezer) deezerSearch_ = fetchOne(deezer::kName, deezer::searchUrl(q, deezer::kLimit, app.deezerBase), app.deezerBase);
                 if (app.settings.openverse) openverseSearch_ = fetchOne(openverse::kName, openverse::searchUrl(q, openverse::kLimit, app.openverseBase), app.openverseBase);
+                if (app.settings.youtube && !app.settings.youtubeApiKey.empty())
+                    youtubeSearch_ = fetchOne(youtube::kName, youtube::searchUrl(q, app.settings.youtubeApiKey, 25, app.youtubeBase), app.youtubeBase);
             }
         }
         shelves_.clear();
@@ -564,6 +575,57 @@ private:
                 results_.insert(results_.begin() + long(at), idx.begin(), idx.end());
             }
             // Openverse failures are silent: supplementary source.
+            searchFinished();
+            changed = true;
+        }
+        // YouTube: search response → collect songs, then fire durations request.
+        if (int r = take(youtubeSearch_, j, e)) {
+            if (r == 1) {
+                std::vector<catalog::Song> fresh = youtube::parseSearch(j);
+                // De-duplicate against already-found results (title+artist key).
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                std::vector<catalog::Song> deduped;
+                for (auto &sng : fresh) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    deduped.push_back(std::move(sng));
+                }
+                rank::sortFreeText(search_, deduped);
+                // Fire durations request for the video IDs we just received.
+                if (!deduped.empty() && app.platform.http()) {
+                    std::string ids;
+                    for (auto &sng : deduped) {
+                        std::string vid = youtube::videoIdFrom(sng.url);
+                        if (!vid.empty()) { if (!ids.empty()) ids += ','; ids += vid; }
+                    }
+                    if (!ids.empty())
+                        youtubeDurations_ = fetchOne(youtube::kName,
+                            youtube::durationsUrl(ids, app.settings.youtubeApiKey, app.youtubeBase),
+                            app.youtubeBase);
+                    // Keep songs pending until durations arrive (or immediately if no IDs).
+                    youtubePending_ = std::move(deduped);
+                    if (!youtubeDurations_) {
+                        // No HTTP or empty ids: add directly without durations.
+                        auto idx = addSongs(youtubePending_);
+                        results_.insert(results_.end(), idx.begin(), idx.end());
+                        youtubePending_.clear();
+                    }
+                }
+            } else {
+                app.toast(std::string(youtube::kName) + ": " + e);
+            }
+            searchFinished();
+            changed = true;
+        }
+        // YouTube durations: fills durationSec into pending songs, then adds them to results.
+        if (int r = take(youtubeDurations_, j, e)) {
+            if (r == 1) youtube::parseDurations(j, youtubePending_);
+            // Add songs regardless of success (durations are optional metadata).
+            auto idx = addSongs(youtubePending_);
+            results_.insert(results_.end(), idx.begin(), idx.end());
+            youtubePending_.clear();
             searchFinished();
             changed = true;
         }

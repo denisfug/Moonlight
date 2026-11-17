@@ -67,6 +67,8 @@ struct Settings {
     bool jamendo = true;      // music search also asks Jamendo (Creative Commons, full-length MP3) first
     std::string jamendoClientId;  // empty = Jamendo disabled; set via Configuracoes or settings.json
     bool openverse = true;    // music search also asks Openverse (Wikimedia CC audio, full-length MP3)
+    bool youtube = true;      // music search also asks YouTube Data API v3 (metadata only — no audio stream)
+    std::string youtubeApiKey;  // empty = YouTube disabled; user must supply a key from console.cloud.google.com
     bool lightTheme = false;  // false = dark (default), true = light; applied with App::applyTheme()
     int volume = 80;
 };
@@ -118,6 +120,7 @@ public:
     std::string deezerBase  = "https://api.deezer.com"; // idem
     std::string jamendoBase = "https://api.jamendo.com"; // idem (tests override)
     std::string openverseBase = "https://api.openverse.org"; // idem
+    std::string youtubeBase = "https://www.googleapis.com"; // idem
     ui::ImageLoader images;
     ui::Keyboard keyboard;
     std::unique_ptr<RemoteControl> remote;

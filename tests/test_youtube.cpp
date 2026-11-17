@@ -6,6 +6,9 @@
 #include <fstream>
 #include <sstream>
 
+using namespace ml;
+using namespace ml::youtube;
+
 static std::string readFixture(const char *path)
 {
     std::ifstream f(path);
@@ -76,11 +79,9 @@ TEST(youtube_videoIdFrom) {
 TEST(youtube_parseSearch_fixture) {
     std::string raw = readFixture("tests/fixtures/youtube/v3/search/music_query");
     CHECK(!raw.empty());
-    Json root;
-    std::string err;
-    CHECK(root.parse(raw, err));
+    Json root = parseJson(raw);
 
-    auto songs = ml::youtube::parseSearch(root);
+    auto songs = parseSearch(root);
     // 5 items in fixture: 1 channel, 1 empty videoId, 1 empty title → 2 valid
     CHECK(songs.size() == 2);
 
@@ -89,7 +90,7 @@ TEST(youtube_parseSearch_fixture) {
     CHECK(ml::youtube::isYouTubeRef(songs[0].url));
     CHECK(ml::youtube::videoIdFrom(songs[0].url) == "dQw4w9WgXcQ");
     CHECK(!songs[0].art.empty());
-    CHECK(songs[0].source == std::string(ml::youtube::kName));
+    CHECK(songs[0].source == std::string(kName));
     CHECK(songs[0].durationSec == 0);  // not filled yet
 
     CHECK(songs[1].title == "Luis Fonsi - Despacito ft. Daddy Yankee");
@@ -121,11 +122,9 @@ TEST(youtube_parseDurations_fixture) {
 
     std::string raw = readFixture("tests/fixtures/youtube/v3/videos/durations");
     CHECK(!raw.empty());
-    Json root;
-    std::string err;
-    CHECK(root.parse(raw, err));
+    Json root = parseJson(raw);
 
-    int filled = ml::youtube::parseDurations(root, songs);
+    int filled = parseDurations(root, songs);
     CHECK(filled == 2);
     CHECK(songs[0].durationSec == 213);  // PT3M33S
     CHECK(songs[1].durationSec == 282);  // PT4M42S
@@ -140,11 +139,9 @@ TEST(youtube_parseDurations_no_double_fill) {
     std::vector<catalog::Song> songs = {s};
 
     std::string raw = readFixture("tests/fixtures/youtube/v3/videos/durations");
-    Json root;
-    std::string err;
-    root.parse(raw, err);
+    Json root = parseJson(raw);
 
-    int filled = ml::youtube::parseDurations(root, songs);
+    int filled = parseDurations(root, songs);
     CHECK(filled == 0);
     CHECK(songs[0].durationSec == 999);  // unchanged
 }
