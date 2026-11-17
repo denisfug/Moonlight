@@ -15,6 +15,7 @@ struct Song {
     std::string art;      // cover address, "" when the source has none (never a cover of something else)
     std::string source;   // name shown next to the result ("Audius", "Internet Archive")
     int durationSec = 0, track = 0;
+    int previewSec = 0;   // >0 when only a preview clip plays (e.g. Deezer: 30 s); 0 means full stream
 };
 
 // A source that can search single songs: address of the search + reading of the answer.

@@ -267,7 +267,14 @@ private:
             t.genre = s.genre;
             t.art = s.art;
             t.source = s.source;
-            t.durationMs = int64_t(s.durationSec) * 1000;
+            // When a source only provides a short preview (e.g. Deezer: 30 s),
+            // cap durationMs to the preview length so the player's end-of-stream
+            // handler sets positionMs_ to the real clip length instead of the
+            // full track duration, preventing premature auto-advance.
+            int64_t dur = int64_t(s.durationSec) * 1000;
+            if (s.previewSec > 0 && int64_t(s.previewSec) * 1000 < dur)
+                dur = int64_t(s.previewSec) * 1000;
+            t.durationMs = dur;
             size_t i = ensureTrack(t);
             if (i != size_t(-1) && std::find(out.begin(), out.end(), i) == out.end()) out.push_back(i);   // no repeats in a list
         }

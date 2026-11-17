@@ -72,3 +72,17 @@ TEST(deezer_parse_no_title)
         R"("artist":{"name":"A"},"album":{"title":"B","cover_xl":"","cover_medium":""}}]})"));
     CHECK(v.empty());
 }
+
+TEST(deezer_parse_preview_sec)
+{
+    // Every Deezer track must have previewSec == 30 so that callers cap
+    // durationMs to the actual clip length, preventing premature auto-advance
+    // when the 30-second stream ends before the full-track duration elapses.
+    auto v = parseSearch(parseJson(
+        R"({"data":[{"id":1,"title":"Song","duration":240,)"
+        R"("preview":"https://cdns-preview-d.dzcdn.net/p.mp3",)"
+        R"("artist":{"name":"A"},"album":{"title":"B","cover_xl":"","cover_medium":""}}]})"));
+    CHECK_EQ(v.size(), size_t(1));
+    CHECK_EQ(v[0].durationSec, 240);   // full-track metadata preserved
+    CHECK_EQ(v[0].previewSec, 30);     // signals that only 30 s actually plays
+}

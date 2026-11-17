@@ -47,9 +47,12 @@ std::vector<Song> parseSearch(const Json &root)
         s.durationSec = t["duration"].asInt(0);
         if (s.durationSec < 0 || s.durationSec > 36000) s.durationSec = 0;
 
-        // Note: Deezer previews are exactly 30 seconds for most tracks.
-        // The durationSec field still reflects the full track length which
-        // is useful metadata even though only 30s plays.
+        // Deezer only provides 30-second preview clips; durationSec is the
+        // full track length from metadata (useful for display), but the
+        // actual audio stream ends at 30 s. previewSec lets callers cap the
+        // playback duration so the player doesn't jump to full duration when
+        // the stream ends, triggering a premature auto-advance.
+        s.previewSec = 30;
 
         s.source = kName;
         v.push_back(std::move(s));
