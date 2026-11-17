@@ -128,6 +128,12 @@ difere dela no `eboot.bin`. **PS4: a 01.28 abriu no console (relato do dono, 16/
 O conserto do vídeo (av_engine: memória de textura comum, prioridade 160, 4 buffers) está no código desde a
 01.24 e **nunca rodou no console**.
 
+**01.29**: memória de textura restaurada para GPU-visível (sceKernelAllocateDirectMemory type=3 + Map prot=0x33,
+align=0x200000 — idêntico ao video_out.cpp que funciona). A hipótese revisada é que nas 01.13-01.23 o problema
+era a *combinação* priority=700 + 2 buffers + memória direta. A 01.24+ corrigiu prioridade e buffers mas reverteu
+a memória; nenhuma versão testou os três fatores corretos juntos até agora. `TexTable` sem destrutor (PS4-safe);
+`releaseAll()` chamado em `stop()`. **PC: 95 testes, 0 falhas. PS4: aguardando teste.**
+
 ## Fase 4 — Reprodução
 
 | Item | PC | PS4 |
