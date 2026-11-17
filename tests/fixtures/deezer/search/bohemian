@@ -1,0 +1,22 @@
+{"data":[
+ {"id":1709890,"title":"Bohemian Rhapsody","duration":354,
+  "preview":"https://cdns-preview-d.dzcdn.net/stream/c-dca0d99f47f4c8b5fc1413e4d7e18ed5-5.mp3",
+  "artist":{"id":412,"name":"Queen"},
+  "album":{"id":84426,"title":"A Night at the Opera",
+           "cover_medium":"https://e-cdns-images.dzcdn.net/images/cover/abc/250x250.jpg",
+           "cover_xl":"https://e-cdns-images.dzcdn.net/images/cover/abc/1000x1000.jpg"}},
+ {"id":999,"title":"Bohemian Rhapsody (Instrumental)","duration":354,
+  "preview":"https://cdns-preview-x.dzcdn.net/stream/c-aaa.mp3",
+  "artist":{"id":999,"name":"Karaoke Band"},
+  "album":{"id":999,"title":"Karaoke Hits",
+           "cover_medium":"https://e-cdns-images.dzcdn.net/images/cover/kk/250x250.jpg",
+           "cover_xl":""}},
+ {"id":888,"title":"No Preview Track","duration":200,
+  "preview":"",
+  "artist":{"id":888,"name":"Ghost"},
+  "album":{"id":888,"title":"Ghost Album","cover_medium":"","cover_xl":""}},
+ {"id":777,"title":"Bad Preview URL","duration":180,
+  "preview":"ftp://invalid.example.com/track.mp3",
+  "artist":{"id":777,"name":"Nobody"},
+  "album":{"id":777,"title":"Nowhere","cover_medium":"","cover_xl":""}}
+],"total":4,"next":"https://api.deezer.com/search?q=bohemian&index=25"}

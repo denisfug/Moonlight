@@ -1,0 +1,15 @@
+{
+  "id": "hb.moonlight.demo",
+  "version": "0.1.0",
+  "name": "Moonlight Demo",
+  "description": "Fonte local de demonstracao (conteudo ficticio) para testes do Moonlight HB.",
+  "resources": ["catalog", "meta", {"name": "stream", "types": ["movie", "series"], "idPrefixes": ["mlm", "mls"]}, "subtitles"],
+  "types": ["movie", "series"],
+  "idPrefixes": ["mlm", "mls"],
+  "catalogs": [
+    {"type": "movie", "id": "ml-top", "name": "Filmes em destaque", "extra": [{"name": "search"}, {"name": "genre", "options": ["Drama", "Ficcao"]}]},
+    {"type": "series", "id": "ml-series", "name": "Series da semana"},
+    {"type": "movie", "id": "ml-search-only", "name": "Busca", "extra": [{"name": "search", "isRequired": true}]}
+  ],
+  "behaviorHints": {"adult": false, "p2p": false}
+}

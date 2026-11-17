@@ -1,0 +1,1 @@
+Mbed TLS 3.6.4 (tag mbedtls-3.6.4, commit c765c83), include/ and library/ only. Apache-2.0 (dual Apache-2.0 OR GPL-2.0-or-later; used under Apache-2.0).

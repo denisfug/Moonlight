@@ -1,0 +1,7 @@
+{"streams": [
+  {"url": "http://127.0.0.1:8765/media/mlm001.mp4", "name": "Local 1080p", "description": "Arquivo do servidor local", "subtitles": [{"id": "pt", "url": "http://127.0.0.1:8765/sub/mlm001.pt.srt", "lang": "por"}], "behaviorHints": {"bingeGroup": "ml-1080", "proxyHeaders": {"request": {"User-Agent": "MoonlightHB"}}}},
+  {"ytId": "abc123def45", "name": "Trailer"},
+  {"infoHash": "0123456789abcdef0123456789abcdef01234567", "fileIdx": 0, "name": "P2P"},
+  {"externalUrl": "https://example.org/watch/mlm001", "name": "Externo"},
+  {"url": "javascript:alert(1)", "name": "URL invalida"}
+]}

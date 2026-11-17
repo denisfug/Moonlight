@@ -1,0 +1,19 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "fixture",
+  "pageInfo": { "totalResults": 2, "resultsPerPage": 50 },
+  "items": [
+    {
+      "kind": "youtube#video",
+      "etag": "a",
+      "id": "dQw4w9WgXcQ",
+      "contentDetails": { "duration": "PT3M33S" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "b",
+      "id": "kJQP7kiw5Fk",
+      "contentDetails": { "duration": "PT4M42S" }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{"data":[
+ {"id":"D7KyD","title":"Paauer | Baauer B2B Party Favor","duration":5265,"genre":"Electronic","is_streamable":true,
+  "artwork":{"150x150":"https://example.invalid/150.jpg","480x480":"https://example.invalid/480.jpg","1000x1000":"https://example.invalid/1000.jpg"},
+  "user":{"id":"eAZl3","name":"Baauer","handle":"baauer"}},
+ {"id":"aB3x9","title":"Sem capa","duration":61,"genre":"Funk","user":{"handle":"mc_teste"}},
+ {"id":"D7KyD","title":"paauer | baauer b2b party favor","duration":5265,"user":{"name":"BAAUER"}},
+ {"id":"gated1","title":"So para assinantes","duration":100,"is_stream_gated":true,"user":{"name":"X"}},
+ {"id":"off22","title":"Fora do ar","duration":100,"is_streamable":false,"user":{"name":"X"}},
+ {"id":"acc33","title":"Sem acesso","duration":100,"access":{"stream":false,"download":false},"user":{"name":"X"}},
+ {"id":"bad/../id","title":"Id invalido","duration":100,"user":{"name":"X"}},
+ {"id":"noTitle","title":"","duration":100,"user":{"name":"X"}}
+]}
