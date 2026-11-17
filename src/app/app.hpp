@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "addons/source_manager.hpp"
@@ -154,6 +155,15 @@ public:
     // accepted (plain HTTP opt-in for that source); TLS verification for https:// is never relaxed.
     std::string addSourceByUser(const std::string &url);
     int sourcesVersion = 0;   // bumped when sources change, screens reload their catalogs
+
+    // Playback resilience (Ember-style dead-tracks + error-streak guard).
+    // deadTracks: URLs that failed permanently this session (e.g. server 404, file removed).
+    //   Auto-advance skips these so the queue does not get stuck retrying a broken track.
+    // errorStreak: consecutive auto-advance failures. Stops auto-advance after kMaxAutoSkip
+    //   to prevent an infinite loop when most tracks in a queue are broken.
+    std::unordered_set<std::string> deadTracks;
+    int errorStreak = 0;
+    static constexpr int kMaxAutoSkip = 3;
 
     // music helpers shared by screens
     void playTracks(const std::vector<size_t> &tracks, size_t start);

@@ -276,6 +276,12 @@ bool App::startTrack(size_t t, std::string *err)
 {
     if (t >= music.tracks().size() || music.tracks()[t].demo) { if (err) *err = "faixa sem audio"; return false; }
     const music::Track &tr = music.tracks()[t];
+    // Dead-track guard: skip tracks that already failed permanently this session.
+    const std::string &trackKey = tr.url.empty() ? tr.path : tr.url;
+    if (!trackKey.empty() && deadTracks.count(trackKey)) {
+        if (err) *err = "faixa indisponivel (falhou anteriormente)";
+        return false;
+    }
     bool ok;
     if (!tr.url.empty()) {
         // public file (Internet Archive): https only, redirects to the data server stay on https
@@ -290,6 +296,10 @@ bool App::startTrack(size_t t, std::string *err)
         audio.play();
         taste.notePlay(tr);
         store.save("music_taste.json", taste.save());
+        errorStreak = 0;   // reset streak on success
+    } else {
+        // Mark track as permanently dead for this session so auto-advance skips it.
+        if (!trackKey.empty()) deadTracks.insert(trackKey);
     }
     return ok;
 }
@@ -412,6 +422,8 @@ void App::togglePause()
 void App::skip(int dir)
 {
     if (queue.empty() || audio.live()) return;
+    // Manual skip resets the error streak: the user chose to advance.
+    errorStreak = 0;
     if (dir > 0) queue.next(true);
     else {
         if (audio.getPosition() > 4000) { audio.seek(0); return; }
@@ -473,9 +485,27 @@ bool App::frame()
         toast(station.name + ": " + audio.lastError());
     if (st == PlayState::Ended && lastAudioState_ == PlayState::Playing && !audio.live()) {
         if (queue.next(false)) {
-            size_t t = queue.current();
-            std::string err;
-            if (t < music.tracks().size() && !music.tracks()[t].demo) startTrack(t, &err);
+            // Error-streak guard: stop auto-advancing after kMaxAutoSkip consecutive failures
+            // so a queue full of broken tracks does not loop silently for ever.
+            if (errorStreak >= kMaxAutoSkip) {
+                toast("Varias faixas nao carregaram. Pressione R1 para continuar.");
+            } else {
+                size_t t = queue.current();
+                // Skip dead tracks automatically.
+                for (size_t n = 0; n < queue.size(); n++) {
+                    t = queue.current();
+                    if (t >= music.tracks().size() || music.tracks()[t].demo) { queue.next(false); continue; }
+                    const music::Track &tr = music.tracks()[t];
+                    const std::string &key = tr.url.empty() ? tr.path : tr.url;
+                    if (!key.empty() && deadTracks.count(key)) { queue.next(false); continue; }
+                    break;
+                }
+                t = queue.current();
+                std::string err;
+                if (t < music.tracks().size() && !music.tracks()[t].demo) {
+                    if (!startTrack(t, &err)) errorStreak++;
+                }
+            }
         }
     }
     lastAudioState_ = st;

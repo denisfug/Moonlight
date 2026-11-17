@@ -104,6 +104,12 @@ public:
         if (p & BtnRight) { if (sh.col + 1 < int(sh.cards.size())) sh.col++; return true; }
         if ((p & BtnCross) && sh.col < int(sh.cards.size())) {
             const Card &cd = sh.cards[size_t(sh.col)];
+            if (cd.kind == Card::YoutubeRef) {
+                // YouTube refs are metadata-only: no authorized audio stream available.
+                const catalog::Song &yt = ytResults_[cd.ref];
+                app.toast("\"" + yt.title + "\" e um resultado do YouTube (apenas metadados). Busque no Audius ou Jamendo para ouvir.");
+                return true;
+            }
             if (cd.kind == Card::Song) {
                 app.playTracks(songsOf(sh), size_t(sh.col));   // the shelf becomes the queue
             } else if (cd.kind == Card::Playlist) {
@@ -195,8 +201,8 @@ private:
         std::shared_ptr<MultiFetch> fetch;   // request for the album's files
     };
     struct Card {
-        enum Kind { Song, Playlist, AlbumCard } kind;
-        size_t ref;   // Song: track index; Playlist: playlist index; AlbumCard: index into arch_
+        enum Kind { Song, Playlist, AlbumCard, YoutubeRef } kind;
+        size_t ref;   // Song: track index; Playlist: playlist index; AlbumCard: index into arch_; YoutubeRef: index into ytResults_
     };
     struct Shelf {
         std::string title;
@@ -226,6 +232,9 @@ private:
     std::shared_ptr<MultiFetch> youtubeSearch_, youtubeDurations_;
     // Songs waiting for a durations response; filled by poll() when youtubeDurations_ completes.
     std::vector<catalog::Song> youtubePending_;
+    // YouTube metadata-only results: shown in a dedicated shelf with "sem audio" badge.
+    // These are NOT added to MusicLibrary (no authorized stream) but can show cover art / metadata.
+    std::vector<catalog::Song> ytResults_;
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
@@ -265,6 +274,10 @@ private:
         std::vector<size_t> out;
         for (const auto &s : songs) {
             if (s.url.empty()) continue;
+            // YouTube refs (url = "youtube:VIDEO_ID") are metadata-only: no authorized audio stream.
+            // Do NOT add them to MusicLibrary — AudioPlayer cannot open them.
+            // They are displayed separately via ytResults_ with a "sem audio" badge.
+            if (youtube::isYouTubeRef(s.url)) continue;
             music::Track t;
             t.url = s.url;
             t.title = s.title;
@@ -323,6 +336,17 @@ private:
         out.push_back(std::move(sh));
     }
 
+    // Adds a shelf of YouTube metadata-only results (YoutubeRef cards indexed into ytResults_).
+    void addYoutubeShelf(std::vector<Shelf> &out)
+    {
+        if (ytResults_.empty()) return;
+        Shelf sh;
+        sh.title = "YouTube (apenas metadados - sem reproducao)";
+        for (size_t i = 0; i < ytResults_.size() && i < 25; i++) sh.cards.push_back({Card::YoutubeRef, i});
+        for (const auto &old : shelves_) if (old.title == sh.title) sh.col = std::min(old.col, int(sh.cards.size()) - 1);
+        out.push_back(std::move(sh));
+    }
+
     // Rebuilds the shelves from the current state, keeping the selected card of each shelf.
     void rebuild()
     {
@@ -333,6 +357,7 @@ private:
             std::vector<size_t> al;
             for (size_t i = 0; i < arch_.size(); i++) al.push_back(i);
             addShelf(out, "Albuns no Internet Archive", Card::AlbumCard, al);
+            addYoutubeShelf(out);
         } else {
             loadRecent();
             const auto &h = app.musicHome;
@@ -417,6 +442,7 @@ private:
         youtubeSearch_.reset();
         youtubeDurations_.reset();
         youtubePending_.clear();
+        ytResults_.clear();
         localCount_ = 0;
         view_ = View::Shelves;
         if (!q.empty()) {
@@ -607,9 +633,8 @@ private:
                     // Keep songs pending until durations arrive (or immediately if no IDs).
                     youtubePending_ = std::move(deduped);
                     if (!youtubeDurations_) {
-                        // No HTTP or empty ids: add directly without durations.
-                        auto idx = addSongs(youtubePending_);
-                        results_.insert(results_.end(), idx.begin(), idx.end());
+                        // No HTTP or empty ids: store as metadata-only without durations.
+                        for (auto &sng : youtubePending_) ytResults_.push_back(std::move(sng));
                         youtubePending_.clear();
                     }
                 }
@@ -619,12 +644,12 @@ private:
             searchFinished();
             changed = true;
         }
-        // YouTube durations: fills durationSec into pending songs, then adds them to results.
+        // YouTube durations: fills durationSec into pending songs, then stores as metadata-only refs.
         if (int r = take(youtubeDurations_, j, e)) {
             if (r == 1) youtube::parseDurations(j, youtubePending_);
-            // Add songs regardless of success (durations are optional metadata).
-            auto idx = addSongs(youtubePending_);
-            results_.insert(results_.end(), idx.begin(), idx.end());
+            // YouTube songs are metadata-only (no authorized audio stream).
+            // addSongs() already skips youtube: URLs; store them in ytResults_ for visual display.
+            for (auto &sng : youtubePending_) ytResults_.push_back(std::move(sng));
             youtubePending_.clear();
             searchFinished();
             changed = true;
@@ -712,6 +737,13 @@ private:
             title = al.item.title;
             line2 = al.item.creator.empty() ? "Artista nao informado" : al.item.creator;
             line3 = archive::kName;
+        }
+        if (cd.kind == Card::YoutubeRef) {
+            const catalog::Song &yt = ytResults_[cd.ref];
+            drawCover(c, cover, 14, yt.art, true, "yt:" + yt.title);
+            title = yt.title;
+            line2 = yt.artist;
+            line3 = "YouTube  -  sem reproducao";
         }
         if (focused) drawFocusRing(c, cover, 14);
         if (playing) {
