@@ -59,6 +59,7 @@ Colunas: **PC** = teste automático no computador; **PS4** = teste no console.
 | Atualização (feed no branch claude/updates) | sim | busca/download/sha256 sim | **01.10 fechou ao abrir (CE-34878-0); 01.11 corrige o módulo Random, aguardando teste.** |
 | Instalação automática do PKG | sim (contrato; sem motor no PC) | — | **01.19: religada via libSceAppInstUtil (sceKernelLoadStartModule+Dlsym). 01.20 (bug): PrepareOverwritePkg desinstalava o app antes de instalar e, se a instalação não completava, o app sumia ("apagou o app"). 01.21: NUNCA desinstala — instala por cima; se falhar, cai no manual com o app intacto. AGUARDANDO TESTE.** |
 | Nova interface (pílula de ícones, vidro, brilho) | sim (conferido em make shots) | — | **01.21: barra lateral vira pílula flutuante + vidro + brilho. 01.22: tela inicial RECONSTRUÍDA conforme o design (Main.dc.html) — top bar (busca+abas+perfil), painel "Continuar assistindo" à esquerda, card de destaque com lua à direita, fileira embaixo; 01.21 só havia repintado o layout velho. AGUARDANDO TESTE no console (desempenho de desenho).** |
+| **Redesign identidade visual: preto/branco/vermelho** (`theme.hpp/theme.cpp`): tokens Dark (preto puro, cinzas, branco, vermelho #DC2626) e Light (branco, cinzas claros, preto, mesmo vermelho); todas as telas atualizadas; alternância Dark/Light/Auto persistida em Configurações; sem objeto estático com construtor (PS4-safe) | sim | sim (`theme_dark_light_persisted`, make shots) | pendente |
 | Streaming HTTP incremental (`HttpStream`) | sim | sim (servidor local real) | pendente |
 | Rádios: diretório Radio Browser (só MP3), abas por gênero/país, busca, favoritas | sim | sim (fixtures + servidor local) | pendente |
 | AudioPlayer ao vivo (rádio): conecta, toca, detecta queda e dados que não são MP3 | sim | sim (`radio_stream_playback`, `radio_live_local_server`) | pendente |
@@ -94,7 +95,7 @@ PixelPlayer (licença proprietária: nenhum código dele foi usado).
 | Busca do Archive só em título e artista (`title:(..) OR creator:(..)`) em vez de qualquer campo (01.30) | sim | sim (URL) | pendente — **a sintaxe nunca falou com o archive.org real** |
 | **Audius** (`src/music/audius.*`, 01.30): busca por faixa, "Em alta no Audius" (semana), stream MP3, capa por faixa, selo da fonte; fora as faixas restritas/não tocáveis; repetidas não aparecem duas vezes | sim | sim (fixtures + `archive_live_local_server` com servidor local) | pendente — **nunca falou com api.audius.co** (endereço base e redirecionamento do stream a confirmar no console) |
 | Modelo comum das fontes (`src/music/catalog.hpp`: `Song`, `SongSource`); liga/desliga por fonte em Configurações | sim | sim | pendente |
-| Jamendo (precisa de chave do usuário; tem "faixas parecidas") | — | não iniciado | — |
+| **Jamendo** (`src/music/jamendo.*`): busca por faixa Creative Commons full-length MP3, capa 500px, duração, gênero, selo da fonte; kPublicClientId como fallback documentado (devportal.jamendo.com); primeiro na busca; liga/desliga em Configurações | sim | sim (fixtures + test_jamendo: 4 testes) | pendente — nunca falou com api.jamendo.com real |
 | Openverse | — | não iniciado (documentação não conferida) | — |
 
 A busca no servidor Subsonic continua na thread da interface (pendente, como antes).
