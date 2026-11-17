@@ -249,10 +249,10 @@ public:
                 if (tx + tw > area.right() - theme::Margin) break;   // the rest is reachable with L1/R1
                 bool on = int(i) == tab_;
                 Rect chip{tx, 170, tw, 50};
-                if (on) c.fillGradient(chip.x, chip.y, chip.w, chip.h, 25, theme::Violet, theme::Blue, 0);
-                else c.fillRoundRect(chip.x, chip.y, chip.w, chip.h, 25, theme::Surface);
-                if (on && tabFocus_ && !app.sidebarFocused()) c.strokeRoundRect(chip.x - 3, chip.y - 3, chip.w + 6, chip.h + 6, 28, 3, rgba(255, 255, 255));
-                app.fonts.bold->draw(c, chip.x + 22, chip.y + 10, 24, name, on ? theme::Text : theme::TextDim);
+                if (on) c.fillRoundRect(chip.x, chip.y, chip.w, chip.h, theme::RadiusSm, theme::Red);
+                else c.fillRoundRect(chip.x, chip.y, chip.w, chip.h, theme::RadiusSm, theme::BgSurface());
+                if (on && tabFocus_ && !app.sidebarFocused()) c.strokeRoundRect(chip.x - 3, chip.y - 3, chip.w + 6, chip.h + 6, theme::RadiusSm + 3, 2, theme::Text());
+                app.fonts.bold->draw(c, chip.x + 22, chip.y + 10, 24, name, on ? theme::AccentText() : theme::TextSub());
                 tx += tw + 14;
             }
             top = 244;
@@ -261,7 +261,7 @@ public:
             app.fonts.regular->draw(c, area.x + theme::Margin, top + 30, 28,
                                     tabs_.empty() ? "Nenhum catalogo. Adicione uma fonte em Fontes (ou ative a demonstracao)."
                                                   : "Esta fonte nao tem catalogo aqui.",
-                                    theme::TextDim);
+                                    theme::TextSub());
             return;
         }
         c.pushClip({area.x, top, area.w, area.bottom() - top});
@@ -271,20 +271,20 @@ public:
             const Row &r = rows_[i];
             bool focusRow = int(i) == row_ && !app.sidebarFocused() && !tabFocus_;
             int x0 = area.x + theme::Margin;
-            app.fonts.bold->draw(c, x0, y, 30, r.title, focusRow ? theme::Text : theme::TextDim);
+            app.fonts.bold->draw(c, x0, y, 30, r.title, focusRow ? theme::Text() : theme::TextSub());
             if (!r.sub.empty()) {
                 int tw = app.fonts.bold->measure(30, r.title);
-                app.fonts.regular->draw(c, x0 + tw + 18, y + 8, 21, r.sub, theme::TextMute);
+                app.fonts.regular->draw(c, x0 + tw + 18, y + 8, 21, r.sub, theme::TextMute());
             }
             int cy = y + 56;
             if (r.state == Row::Loading || r.state == Row::Idle) {
-                for (int k = 0; k < 6; k++) c.fillRoundRect(x0 + k * kStep, cy, kCardW, kCardH, 16, theme::Surface);
-                app.fonts.regular->draw(c, x0 + 24, cy + kCardH / 2 - 14, 24, "Carregando...", theme::TextMute);
+                for (int k = 0; k < 6; k++) c.fillRoundRect(x0 + k * kStep, cy, kCardW, kCardH, 16, theme::BgSurface());
+                app.fonts.regular->draw(c, x0 + 24, cy + kCardH / 2 - 14, 24, "Carregando...", theme::TextMute());
                 continue;
             }
             if (r.items.empty()) {
                 std::string msg = r.state == Row::Failed ? "Nao carregou: " + r.error + (focusRow ? "  (X tenta de novo)" : "") : "Lista vazia";
-                app.fonts.regular->draw(c, x0, cy + 20, 23, app.fonts.regular->ellipsize(23, msg, area.w - 2 * theme::Margin), theme::TextMute);
+                app.fonts.regular->draw(c, x0, cy + 20, 23, app.fonts.regular->ellipsize(23, msg, area.w - 2 * theme::Margin), theme::TextMute());
                 continue;
             }
             c.pushClip({area.x, y + 40, area.w, kRowH});
@@ -438,12 +438,12 @@ public:
         int y = 176;
         int waited = int((app.now() - startedMs_) / 1000);
         if (srcs_.empty()) {
-            app.fonts.regular->draw(c, x, y, 24, "Nenhuma fonte ativa oferece links para este titulo. Veja suas fontes em Fontes.", theme::TextDim);
+            app.fonts.regular->draw(c, x, y, 24, "Nenhuma fonte ativa oferece links para este titulo. Veja suas fontes em Fontes.", theme::TextSub());
             return;
         }
         for (const auto &src : srcs_) {   // one status line per source
             std::string t = src.label + ": ";
-            Color col = theme::TextDim;
+            Color col = theme::TextSub();
             if (src.state == MultiFetch::State::Pending) {
                 t += "procurando... " + std::to_string(waited) + " s (espera ate " + std::to_string(kTimeoutMs / 1000) + " s)";
             } else if (src.state == MultiFetch::State::Failed) {
@@ -463,7 +463,7 @@ public:
             std::string t = showHidden_ ? "Mostrando tambem os links que o PS4 nao abre (" + hiddenSummary() + "). Quadrado esconde."
                                         : std::to_string(hidden) + (hidden == 1 ? " link escondido" : " links escondidos") +
                                               " porque o PS4 nao abre (" + hiddenSummary() + "). Quadrado mostra.";
-            app.fonts.regular->draw(c, x, y, 22, app.fonts.regular->ellipsize(22, t, w), theme::TextMute);
+            app.fonts.regular->draw(c, x, y, 22, app.fonts.regular->ellipsize(22, t, w), theme::TextMute());
             y += 32;
         }
         y += 12;
@@ -472,7 +472,7 @@ public:
                 app.fonts.regular->draw(c, x, y + 10, 26,
                                         entries_.empty() ? "Nenhuma opcao de reproducao para este titulo."
                                                          : "Nenhum link que o PS4 consiga abrir para este titulo. Ficou anotado em Configuracoes.",
-                                        theme::TextDim);
+                                        theme::TextSub());
             return;
         }
         const int rowH = 88;
@@ -486,22 +486,22 @@ public:
             Rect r{x, y + (i - first_) * rowH, w, rowH - 8};
             bool f = i == sel_ && !app.sidebarFocused();
             if (f) {
-                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 100));
-                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
-                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253));
+                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(rgba(0, 0, 0), 100));
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgHover());
+                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, theme::Red);
             } else {
-                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgSurface());
             }
             const int rightW = 360;
-            app.fonts.bold->draw(c, r.x + 24, r.y + 10, 24, app.fonts.bold->ellipsize(24, oneLine(en.s.name), r.w - rightW - 48), theme::Text);
+            app.fonts.bold->draw(c, r.x + 24, r.y + 10, 24, app.fonts.bold->ellipsize(24, oneLine(en.s.name), r.w - rightW - 48), theme::Text());
             app.fonts.regular->draw(c, r.x + 24, r.y + 44, 19,
                                     app.fonts.regular->ellipsize(19, oneLine(en.s.description.empty() ? "-" : en.s.description), r.w - rightW - 48),
-                                    theme::TextMute);
-            Color bc = en.rank == 0 ? theme::Good : en.rank >= 3 ? theme::Warn : theme::TextDim;
+                                    theme::TextMute());
+            Color bc = en.rank == 0 ? theme::Good : en.rank >= 3 ? theme::Warn : theme::TextSub();
             int bw = app.fonts.bold->measure(19, en.badge);
             app.fonts.bold->draw(c, r.right() - 24 - bw, r.y + 12, 19, en.badge, bc);
             std::string from = app.fonts.regular->ellipsize(18, en.source, rightW - 30);
-            app.fonts.regular->draw(c, r.right() - 24 - app.fonts.regular->measure(18, from), r.y + 46, 18, from, theme::TextMute);
+            app.fonts.regular->draw(c, r.right() - 24 - app.fonts.regular->measure(18, from), r.y + 46, 18, from, theme::TextMute());
         }
         c.popClip();
     }
@@ -823,16 +823,16 @@ public:
     {
         Rect bg{area.x, 0, area.w, 560};
         drawGeneratedArt(c, app.fonts, bg, 0, meta_.id + "#bg", meta_.name, false);
-        c.fillGradient(area.x, 0, area.w, 560, 0, withAlpha(theme::Bg, 245), withAlpha(theme::Bg, 40), 0);
-        c.fillGradient(area.x, 360, area.w, 200, 0, withAlpha(theme::Bg, 0), theme::Bg, 1);
-        c.fillRect(area.x, 560, area.w, area.h - 560, theme::Bg);
+        c.fillGradient(area.x, 0, area.w, 560, 0, withAlpha(theme::Bg(), 245), withAlpha(theme::Bg(), 40), 0);
+        c.fillGradient(area.x, 360, area.w, 200, 0, withAlpha(theme::Bg(), 0), theme::Bg(), 1);
+        c.fillRect(area.x, 560, area.w, area.h - 560, theme::Bg());
         int x = area.x + theme::Margin;
         Rect poster{x, 70, 260, 390};
         c.shadow(poster.x, poster.y, poster.w, poster.h, 18, 30, rgba(0, 0, 0, 160));
         if (const Image *img = app.images.get(meta_.poster, poster.w, poster.h)) c.drawImage(*img, poster.x, poster.y, 18);
         else drawGeneratedArt(c, app.fonts, poster, 18, meta_.id, meta_.name, true);
         int tx = x + 310;
-        app.fonts.bold->draw(c, tx, 70, 60, app.fonts.bold->ellipsize(60, meta_.name, area.right() - tx - 60), theme::Text);
+        app.fonts.bold->draw(c, tx, 70, 60, app.fonts.bold->ellipsize(60, meta_.name, area.right() - tx - 60), theme::Text());
         std::string line;
         auto add = [&](const std::string &s) { if (!s.empty()) line += (line.empty() ? "" : "   -   ") + s; };
         add(meta_.releaseInfo);
@@ -840,15 +840,15 @@ public:
         if (!meta_.genres.empty()) add(meta_.genres[0]);
         if (!meta_.imdbRating.empty()) add("nota " + meta_.imdbRating);
         if (!seasons_.empty()) add(std::to_string(seasons_.size()) + (seasons_.size() == 1 ? " temporada" : " temporadas"));
-        app.fonts.regular->draw(c, tx, 152, 24, line, theme::Glow);
+        app.fonts.regular->draw(c, tx, 152, 24, line, theme::TextSub());
         std::string about = !meta_.description.empty() ? meta_.description : metaFetch_ ? std::string("Carregando detalhes...") : error_;
         auto lines = app.fonts.regular->wrap(25, about, area.right() - tx - 80, 4);
         int y = 200;
-        for (const auto &l : lines) { app.fonts.regular->draw(c, tx, y, 25, l, theme::TextDim); y += 36; }
+        for (const auto &l : lines) { app.fonts.regular->draw(c, tx, y, 25, l, theme::TextSub()); y += 36; }
         if (!meta_.cast.empty()) {
             std::string cast = "Elenco: ";
             for (size_t i = 0; i < meta_.cast.size() && i < 4; i++) cast += (i ? ", " : "") + meta_.cast[i];
-            app.fonts.regular->draw(c, tx, y + 8, 21, cast, theme::TextMute);
+            app.fonts.regular->draw(c, tx, y + 8, 21, cast, theme::TextMute());
         }
         if (demo::isDemo(id_)) {
             int w = app.fonts.bold->measure(16, "DEMONSTRACAO") + 24;
@@ -868,10 +868,10 @@ public:
             std::string s = seasons_[i] == 0 ? "Especiais" : "Temporada " + std::to_string(seasons_[i]);
             bool on = int(i) == season_;
             int w = app.fonts.bold->measure(22, s) + 44;
-            if (on && zone_ == 1) { c.shadow(sx, 590, w, 50, 25, 16, withAlpha(theme::Violet, 120)); c.fillGradient(sx, 590, w, 50, 25, theme::Violet, theme::Blue, 0); }
-            else if (on) c.fillRoundRect(sx, 590, w, 50, 25, theme::SurfaceHi);
-            else c.fillRoundRect(sx, 590, w, 50, 25, theme::Surface);
-            (on ? app.fonts.bold : app.fonts.regular)->draw(c, sx + 22, 590 + (50 - app.fonts.bold->lineHeight(22)) / 2, 22, s, on ? theme::Text : theme::TextDim);
+            if (on && zone_ == 1) { c.shadow(sx, 590, w, 50, 25, 16, withAlpha(rgba(0, 0, 0), 120)); c.fillRoundRect(sx, 590, w, 50, 25, theme::Red); }
+            else if (on) c.fillRoundRect(sx, 590, w, 50, 25, theme::BgHover());
+            else c.fillRoundRect(sx, 590, w, 50, 25, theme::BgSurface());
+            (on ? app.fonts.bold : app.fonts.regular)->draw(c, sx + 22, 590 + (50 - app.fonts.bold->lineHeight(22)) / 2, 22, s, (on && zone_ == 1) ? theme::AccentText() : on ? theme::Text() : theme::TextSub());
             sx += w + 12;
         }
         auto eps = episodes();
@@ -881,14 +881,14 @@ public:
             if (ey + 96 < 660 || ey > area.bottom()) continue;
             bool f = zone_ == 2 && int(i) == ep_;
             Rect r{x, ey, area.w - 2 * theme::Margin, 84};
-            if (f) { c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 100)); c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
-                     c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253)); }
-            else c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+            if (f) { c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(rgba(0, 0, 0), 100)); c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgHover());
+                     c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, theme::Red); }
+            else c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgSurface());
             drawGeneratedArt(c, app.fonts, {r.x + 10, r.y + 10, 114, 64}, 10, eps[i]->id, "", false);
-            app.fonts.bold->draw(c, r.x + 146, r.y + 12, 24, std::to_string(eps[i]->episode) + ". " + eps[i]->title, theme::Text);
-            app.fonts.regular->draw(c, r.x + 146, r.y + 46, 19, app.fonts.regular->ellipsize(19, eps[i]->overview, r.w - 420), theme::TextMute);
+            app.fonts.bold->draw(c, r.x + 146, r.y + 12, 24, std::to_string(eps[i]->episode) + ". " + eps[i]->title, theme::Text());
+            app.fonts.regular->draw(c, r.x + 146, r.y + 46, 19, app.fonts.regular->ellipsize(19, eps[i]->overview, r.w - 420), theme::TextMute());
             const LibraryItem *p = app.library.progressFor(id_, eps[i]->id);
-            if (p && p->durationMs > 0) drawProgress(c, r.right() - 240, r.y + 38, 200, 8, p->progress(), theme::Blue, theme::SurfaceHi);
+            if (p && p->durationMs > 0) drawProgress(c, r.right() - 240, r.y + 38, 200, 8, p->progress(), theme::Red, theme::BgHover());
         }
         c.popClip();
     }
@@ -913,10 +913,11 @@ private:
     void drawButton(Canvas &c, int x, int y, const std::string &label, Icon icon, bool focused)
     {
         int w = 280, h = 66;
-        if (focused) { c.shadow(x, y, w, h, 33, 22, withAlpha(theme::Violet, 140)); c.fillGradient(x, y, w, h, 33, theme::Violet, theme::Blue, 0); }
-        else c.fillRoundRect(x, y, w, h, 33, rgba(255, 255, 255, 30));
-        drawIcon(c, icon, float(x + 44), float(y + h / 2), 24, theme::Text);
-        app.fonts.bold->draw(c, x + 74, y + (h - app.fonts.bold->lineHeight(24)) / 2, 24, app.fonts.bold->ellipsize(24, label, w - 90), theme::Text);
+        if (focused) c.fillRoundRect(x, y, w, h, theme::RadiusSm, theme::Red);
+        else { c.fillRoundRect(x, y, w, h, theme::RadiusSm, theme::BgSurface()); c.strokeRoundRect(x, y, w, h, theme::RadiusSm, 1, theme::Border()); }
+        Color fg = focused ? theme::AccentText() : theme::Text();
+        drawIcon(c, icon, float(x + 44), float(y + h / 2), 24, fg);
+        app.fonts.bold->draw(c, x + 74, y + (h - app.fonts.bold->lineHeight(24)) / 2, 24, app.fonts.bold->ellipsize(24, label, w - 90), fg);
     }
 
     void playVideo(const std::string &videoId)

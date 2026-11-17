@@ -72,15 +72,15 @@ public:
         int x = area.x + theme::Margin, top = 186, w = area.w - 2 * theme::Margin;
         if (files_.empty()) {
             Rect r{x, top, w, 260};
-            c.fillRoundRect(r.x, r.y, r.w, r.h, 24, theme::Surface);
-            drawIcon(c, Icon::Film, float(r.x + 80), float(r.y + 90), 64, theme::Glow);
-            app.fonts.bold->draw(c, r.x + 150, r.y + 50, 32, "Nenhum video encontrado", theme::Text);
+            c.fillRoundRect(r.x, r.y, r.w, r.h, 24, theme::BgSurface());
+            drawIcon(c, Icon::Film, float(r.x + 80), float(r.y + 90), 64, theme::TextSub());
+            app.fonts.bold->draw(c, r.x + 150, r.y + 50, 32, "Nenhum video encontrado", theme::Text());
             auto lines = app.fonts.regular->wrap(23, "Coloque arquivos .mp4 numa pasta Videos na raiz do pendrive, ou em " + app.platform.dataDir() +
                                                          "/videos pelo FTP, e aperte triangulo para procurar de novo. O player do PS4 ainda e "
                                                          "experimental: se algo falhar, a tela do player mostra em que passo parou.",
                                                  r.w - 200, 4);
             int y = r.y + 104;
-            for (const auto &l : lines) { app.fonts.regular->draw(c, r.x + 150, y, 23, l, theme::TextDim); y += 34; }
+            for (const auto &l : lines) { app.fonts.regular->draw(c, r.x + 150, y, 23, l, theme::TextSub()); y += 34; }
             return;
         }
         c.pushClip({area.x, top - 20, area.w, area.bottom() - top + 20});
@@ -91,19 +91,19 @@ public:
             bool foc = int(i) == sel_ && !app.sidebarFocused();
             Rect r{x, y, w, 80};
             if (foc) {
-                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 90));
-                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
-                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253));
+                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(rgba(0, 0, 0), 90));
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgHover());
+                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, theme::Red);
             } else {
-                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgSurface());
             }
             drawGeneratedArt(c, app.fonts, {r.x + 10, r.y + 10, 106, 60}, 10, "video:" + f.name, "", false);
             drawIcon(c, Icon::Play, float(r.x + 63), float(r.y + 40), 24, rgba(255, 255, 255, 230));
-            app.fonts.bold->draw(c, r.x + 140, r.y + 12, 25, app.fonts.bold->ellipsize(25, f.name, r.w - 360), theme::Text);
+            app.fonts.bold->draw(c, r.x + 140, r.y + 12, 25, app.fonts.bold->ellipsize(25, f.name, r.w - 360), theme::Text());
             std::string where = f.path.compare(0, 8, "/mnt/usb") == 0 ? "pendrive" : "HD do PS4";
             char sz[32];
             std::snprintf(sz, sizeof sz, "%.1f MB", double(f.size) / (1024.0 * 1024.0));
-            app.fonts.regular->draw(c, r.x + 140, r.y + 46, 19, where + "  -  " + sz, theme::TextMute);
+            app.fonts.regular->draw(c, r.x + 140, r.y + 46, 19, where + "  -  " + sz, theme::TextMute());
         }
         c.popClip();
     }
@@ -203,33 +203,33 @@ public:
         newFrame_ = false;
         if (!opened_) {
             drawn_++;
-            app.fonts.bold->draw(c, 80, 50, 40, app.fonts.bold->ellipsize(40, title_, theme::W - 160), theme::Text);
-            app.fonts.regular->draw(c, 200, theme::H / 2 - 20, 30, "Abrindo o video... (pode levar alguns segundos)", theme::TextDim);
+            app.fonts.bold->draw(c, 80, 50, 40, app.fonts.bold->ellipsize(40, title_, theme::W - 160), theme::Text());
+            app.fonts.regular->draw(c, 200, theme::H / 2 - 20, 30, "Abrindo o video... (pode levar alguns segundos)", theme::TextSub());
             return;
         }
         bool overlay = !error_.empty() || details_ || engine_->paused() || app.now() < overlayUntil_;
         if (!overlay) return;
         c.fillGradient(0, theme::H - 220, theme::W, 220, 0, rgba(0, 0, 0, 0), rgba(0, 0, 0, 200), 1);
         c.fillGradient(0, 0, theme::W, 160, 0, rgba(0, 0, 0, 190), rgba(0, 0, 0, 0), 1);
-        app.fonts.bold->draw(c, 80, 50, 40, app.fonts.bold->ellipsize(40, title_, theme::W - 160), theme::Text);
+        app.fonts.bold->draw(c, 80, 50, 40, app.fonts.bold->ellipsize(40, title_, theme::W - 160), theme::Text());
         if (!error_.empty()) {
             auto lines = app.fonts.regular->wrap(28, "Nao foi possivel tocar: " + error_, theme::W - 400, 5);
             int y = theme::H / 2 - 40;
             for (const auto &l : lines) { app.fonts.regular->draw(c, 200, y, 28, l, theme::Warn); y += 40; }
-            app.fonts.regular->draw(c, 200, y + 20, 22, "Ficou anotado em Configuracoes > Problemas ao reproduzir (com os detalhes para foto).", theme::TextDim);
-            app.fonts.regular->draw(c, 200, y + 56, 22, "O para voltar", theme::TextDim);
+            app.fonts.regular->draw(c, 200, y + 20, 22, "Ficou anotado em Configuracoes > Problemas ao reproduzir (com os detalhes para foto).", theme::TextSub());
+            app.fonts.regular->draw(c, 200, y + 56, 22, "O para voltar", theme::TextSub());
             return;
         }
         int64_t pos = engine_->positionMs(), dur = engine_->durationMs();
         int x = 80, y = theme::H - 110, w = theme::W - 160;
-        drawIcon(c, engine_->paused() ? Icon::Play : Icon::Pause, float(x + 20), float(y - 30), 34, theme::Text);
-        drawProgress(c, x + 70, y - 34, w - 340, 8, dur > 0 ? double(pos) / double(dur) : 0, theme::Blue, rgba(255, 255, 255, 50));
-        app.fonts.regular->draw(c, x + w - 250, y - 48, 24, formatTime(pos) + " / " + (dur > 0 ? formatTime(dur) : "--:--"), theme::Text);
+        drawIcon(c, engine_->paused() ? Icon::Play : Icon::Pause, float(x + 20), float(y - 30), 34, theme::Text());
+        drawProgress(c, x + 70, y - 34, w - 340, 8, dur > 0 ? double(pos) / double(dur) : 0, theme::Red, withAlpha(theme::Text(), 50));
+        app.fonts.regular->draw(c, x + w - 250, y - 48, 24, formatTime(pos) + " / " + (dur > 0 ? formatTime(dur) : "--:--"), theme::Text());
         drawHints(c, app.fonts, {{BtnCross, "Pausar"}, {BtnLeft | BtnRight | BtnUp | BtnDown, "-10s / +10s"}, {BtnL1 | BtnR1, "-1 / +1 min"},
                                  {BtnTriangle, "Detalhes"}, {BtnCircle, "Sair"}},
                   x + w, y + 10);
-        if (details_) app.fonts.regular->draw(c, 80, 110, 22, "Motor: " + engine_->status(), theme::TextDim);
-        if (engine_->finished()) app.fonts.bold->draw(c, 80, 150, 26, "Fim do video. O para voltar.", theme::Glow);
+        if (details_) app.fonts.regular->draw(c, 80, 110, 22, "Motor: " + engine_->status(), theme::TextSub());
+        if (engine_->finished()) app.fonts.bold->draw(c, 80, 150, 26, "Fim do video. O para voltar.", theme::TextSub());
     }
 
 private:

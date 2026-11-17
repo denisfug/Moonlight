@@ -42,6 +42,12 @@ float score(const std::string &qTitle, const std::string &qArtist,
 void rankInPlace(const std::string &qTitle, const std::string &qArtist,
                  std::vector<catalog::Song> &songs);
 
+// Free-text search box (the query may be a title, an artist or both): each song gets the best of
+// textScore(query, title), textScore(query, artist) and textScore(query, "title artist"), and the list
+// is sorted best-first (stable). Nothing is removed: the source already matched these songs
+// server-side, and an artist-name query would otherwise drop every result (title score 0).
+void sortFreeText(const std::string &query, std::vector<catalog::Song> &songs);
+
 // Diversity cap: at most maxPerArtist songs with the same normalized artist
 // name are kept (useful for trending/recommendation shelves). Call after
 // rankInPlace if needed.

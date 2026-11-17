@@ -11,8 +11,9 @@
 //
 // Terms of Use: free non-commercial use with attribution; display Jamendo
 // branding when showing results; do NOT cache audio files.
-// client_id must be obtained from devportal.jamendo.com and stored in
-// Settings — never hard-coded here.
+// client_id should be obtained by the user from devportal.jamendo.com.
+// kPublicClientId is a publicly documented demo key; Jamendo may rate-limit
+// or invalidate it at any time. Prefer the user-configured key when set.
 #pragma once
 #include <string>
 #include <vector>
@@ -23,9 +24,12 @@
 namespace ml::jamendo {
 
 using Song = catalog::Song;
-constexpr const char *kName  = "Jamendo";
-constexpr const char *kHost  = "https://api.jamendo.com";
-constexpr int         kLimit = 25;
+constexpr const char *kName          = "Jamendo";
+constexpr const char *kHost          = "https://api.jamendo.com";
+constexpr int         kLimit         = 25;
+// Publicly documented demo client_id. Users should register their own at
+// devportal.jamendo.com. This key may be rate-limited by Jamendo at any time.
+constexpr const char *kPublicClientId = "b6747d04";
 
 // URL builders (base overridden only in tests).
 // client_id must be non-empty for the URL to be valid; callers check that.
@@ -33,6 +37,11 @@ std::string searchUrl(const std::string &query,
                       const std::string &clientId,
                       int limit = kLimit,
                       const std::string &base = kHost);
+
+// Most downloaded tracks of the week (no query), for a "featured" shelf.
+std::string featuredUrl(const std::string &clientId,
+                        int limit = 20,
+                        const std::string &base = kHost);
 
 // Parse the /tracks/ response. Only tracks with a non-empty audio URL are kept.
 // Duration is in seconds (Jamendo field "duration").

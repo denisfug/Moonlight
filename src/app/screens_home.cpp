@@ -13,9 +13,9 @@ using namespace ui;
 
 void drawSectionHeader(App &app, Canvas &c, Rect area, const std::string &title, const std::string &subtitle)
 {
-    app.fonts.bold->draw(c, area.x + theme::Margin, 52, 52, title, theme::Text);
+    app.fonts.bold->draw(c, area.x + theme::Margin, 52, 52, title, theme::Text());
     if (!subtitle.empty())
-        app.fonts.regular->draw(c, area.x + theme::Margin, 122, 24, subtitle, theme::TextDim);
+        app.fonts.regular->draw(c, area.x + theme::Margin, 122, 24, subtitle, theme::TextSub());
 }
 
 void drawPosterCard(App &app, Canvas &c, Rect r, const std::string &seed, const std::string &title,
@@ -24,14 +24,16 @@ void drawPosterCard(App &app, Canvas &c, Rect r, const std::string &seed, const 
     if (focused) {
         int g = 10;   // grow
         r = {r.x - g / 2, r.y - g, r.w + g, r.h + g};
-        drawFocusRing(c, r, 18);
+        drawFocusRing(c, r, theme::Radius);
     }
-    if (const Image *img = app.images.get(posterUrl, r.w, r.h)) c.drawImage(*img, r.x, r.y, 16);
-    else drawGeneratedArt(c, app.fonts, r, 16, seed, title, true);
-    if (progress >= 0) drawProgress(c, r.x + 14, r.bottom() - 16, r.w - 28, 6, progress, theme::Blue, rgba(255, 255, 255, 50));
+    c.fillRoundRect(r.x, r.y, r.w, r.h, theme::Radius, theme::BgCard());
+    if (const Image *img = app.images.get(posterUrl, r.w, r.h)) c.drawImage(*img, r.x, r.y, theme::Radius);
+    else drawGeneratedArt(c, app.fonts, r, theme::Radius, seed, title, true);
+    c.strokeRoundRect(r.x, r.y, r.w, r.h, theme::Radius, 1, theme::Border());
+    if (progress >= 0) drawProgress(c, r.x + 14, r.bottom() - 16, r.w - 28, 6, progress, theme::Red, rgba(255, 255, 255, 50));
     if (!subtitle.empty()) {
         Font *f = app.fonts.regular;
-        f->draw(c, r.x + 4, r.bottom() + 14, 20, f->ellipsize(20, subtitle, r.w - 8), focused ? theme::Text : theme::TextMute);
+        f->draw(c, r.x + 4, r.bottom() + 14, 20, f->ellipsize(20, subtitle, r.w - 8), focused ? theme::Text() : theme::TextMute());
     }
 }
 
@@ -210,6 +212,9 @@ public:
     void draw(Canvas &c, Rect area) override
     {
         const int L = area.x + 52, R = theme::W - 56;
+        // top bar band: flat card colour with a hairline at the bottom
+        c.fillRect(area.x, 0, area.w, 120, theme::BgCard());
+        c.fillRect(area.x, 120, area.w, 1, theme::Border());
         drawTopBar(c, L, R);
         const int bandY = 134, bandH = 544, panelW = 372, gap = 28;
         if (!continue_.empty()) drawContinuePanel(c, {L, bandY, panelW, bandH});
@@ -260,9 +265,10 @@ private:
 
     void glassChip(Canvas &c, int x, int y, int w, int h, const std::string &text, int sz, bool solid)
     {
-        if (solid) c.fillRoundRect(x, y, w, h, h / 2, withAlpha(theme::Text, 235));
-        else { c.fillRoundRect(x, y, w, h, h / 2, theme::Surface); c.strokeRoundRect(x, y, w, h, h / 2, 1, theme::Line); }
-        Color col = solid ? theme::Bg : theme::TextDim;
+        // active tab: identity red; the others: surface + hairline
+        if (solid) c.fillRoundRect(x, y, w, h, theme::RadiusSm, theme::Red);
+        else { c.fillRoundRect(x, y, w, h, theme::RadiusSm, theme::BgSurface()); c.strokeRoundRect(x, y, w, h, theme::RadiusSm, 1, theme::Border()); }
+        Color col = solid ? theme::AccentText() : theme::TextSub();
         app.fonts.bold->draw(c, x + (w - app.fonts.bold->measure(sz, text)) / 2, y + (h - app.fonts.bold->lineHeight(sz)) / 2, sz, text, col);
     }
 
@@ -271,11 +277,11 @@ private:
         int y = 40, h = 60;
         // search field
         int sw = 520;
-        c.fillRoundRect(L, y, sw, h, 30, theme::Surface);
-        c.strokeRoundRect(L, y, sw, h, 30, 1, theme::Line);
-        c.strokeCircle(float(L + 34), float(y + h / 2 - 2), 9, 2, theme::TextMute);
-        c.line(float(L + 41), float(y + h / 2 + 5), float(L + 48), float(y + h / 2 + 12), 2, theme::TextMute);
-        app.fonts.regular->draw(c, L + 62, y + (h - app.fonts.regular->lineHeight(22)) / 2, 22, "Buscar filmes e series", theme::TextMute);
+        c.fillRoundRect(L, y, sw, h, theme::RadiusSm, theme::BgSurface());
+        c.strokeRoundRect(L, y, sw, h, theme::RadiusSm, 1, theme::Border());
+        c.strokeCircle(float(L + 34), float(y + h / 2 - 2), 9, 2, theme::TextMute());
+        c.line(float(L + 41), float(y + h / 2 + 5), float(L + 48), float(y + h / 2 + 12), 2, theme::TextMute());
+        app.fonts.regular->draw(c, L + 62, y + (h - app.fonts.regular->lineHeight(22)) / 2, 22, "Buscar filmes e series", theme::TextMute());
         // top tabs (content filters; the sidebar is the main nav)
         const char *tabs[] = {"Inicio", "Filmes", "Series", "Musica"};
         int tx = L + sw + 22;
@@ -286,32 +292,32 @@ private:
         }
         // profile chip (no fake name)
         int pw = 170, px = R - pw;
-        c.fillRoundRect(px, y, pw, h, 30, theme::Surface);
-        c.strokeRoundRect(px, y, pw, h, 30, 1, theme::Line);
-        c.fillGradient(px + 8, y + 8, 44, 44, 22, rgba(255, 154, 98), rgba(255, 95, 143), 2);
-        app.fonts.bold->draw(c, px + 62, y + 10, 19, "PS4", theme::Text);
-        app.fonts.regular->draw(c, px + 62, y + 33, 15, "GoldHEN", theme::TextMute);
+        c.fillRoundRect(px, y, pw, h, theme::RadiusSm, theme::BgSurface());
+        c.strokeRoundRect(px, y, pw, h, theme::RadiusSm, 1, theme::Border());
+        c.fillCircle(float(px + 30), float(y + 30), 22, theme::BgHover());   // plain avatar, no gradient
+        app.fonts.bold->draw(c, px + 62, y + 10, 19, "PS4", theme::Text());
+        app.fonts.regular->draw(c, px + 62, y + 33, 15, "GoldHEN", theme::TextMute());
     }
 
     void drawContinuePanel(Canvas &c, Rect r)
     {
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 30, theme::Surface);
-        c.strokeRoundRect(r.x, r.y, r.w, r.h, 30, 1, theme::Line);
+        c.fillRoundRect(r.x, r.y, r.w, r.h, theme::Radius, theme::BgCard());
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, theme::Radius, 1, theme::Border());
         int pad = 24;
-        app.fonts.bold->draw(c, r.x + pad, r.y + 22, 24, "Continuar assistindo", theme::Text);
-        app.fonts.regular->draw(c, r.right() - pad - 20, r.y + 24, 18, std::to_string(continue_.size()), theme::TextMute);
+        app.fonts.bold->draw(c, r.x + pad, r.y + 22, 24, "Continuar assistindo", theme::Text());
+        app.fonts.regular->draw(c, r.right() - pad - 20, r.y + 24, 18, std::to_string(continue_.size()), theme::TextMute());
         int y = r.y + 70;
         for (size_t i = 0; i < continue_.size(); i++) {
             const Cont &it = continue_[i];
             bool foc = focus_ == Zone::Cont && int(i) == contSel_ && !app.sidebarFocused();
             Rect row{r.x + 12, y, r.w - 24, 86};
-            if (foc) { c.shadow(row.x, row.y, row.w, row.h, 16, 12, withAlpha(theme::Violet, 90)); c.fillRoundRect(row.x, row.y, row.w, row.h, 16, theme::SurfaceHi); }
+            if (foc) { c.shadow(row.x, row.y, row.w, row.h, 16, 12, withAlpha(rgba(0, 0, 0), 90)); c.fillRoundRect(row.x, row.y, row.w, row.h, 16, theme::BgHover()); }
             Rect thumb{row.x + 12, row.y + 10, 116, 66};
             drawGeneratedArt(c, app.fonts, thumb, 12, it.id + "#t", it.name, true);
             int tx = thumb.right() + 16, tw = row.right() - tx - 12;
-            app.fonts.bold->draw(c, tx, row.y + 12, 19, app.fonts.bold->ellipsize(19, it.name, tw), theme::Text);
-            app.fonts.regular->draw(c, tx, row.y + 36, 15, it.sub, theme::TextMute);
-            drawProgress(c, tx, row.y + 60, tw, 6, it.progress, theme::Violet, withAlpha(theme::Text, 36));
+            app.fonts.bold->draw(c, tx, row.y + 12, 19, app.fonts.bold->ellipsize(19, it.name, tw), theme::Text());
+            app.fonts.regular->draw(c, tx, row.y + 36, 15, it.sub, theme::TextMute());
+            drawProgress(c, tx, row.y + 60, tw, 6, it.progress, theme::Red, withAlpha(theme::Text(), 36));
             y += 94;
         }
         // now playing chip
@@ -320,30 +326,25 @@ private:
         bool musicOn = (app.audio.state() == PlayState::Playing || app.audio.state() == PlayState::Paused) && t < app.music.tracks().size();
         if (liveOn || musicOn) {
             Rect np{r.x + 12, r.bottom() - 84, r.w - 24, 72};
-            c.fillRoundRect(np.x, np.y, np.w, np.h, 18, withAlpha(theme::Text, 16));
-            c.fillGradient(np.x + 14, np.y + 14, 46, 46, 12, theme::Violet, theme::Blue, 2);
-            app.fonts.regular->draw(c, np.x + 74, np.y + 14, 15, "Tocando agora", theme::TextMute);
+            c.fillRoundRect(np.x, np.y, np.w, np.h, 18, withAlpha(theme::Text(), 16));
+            c.fillRoundRect(np.x + 14, np.y + 14, 46, 46, theme::RadiusSm, theme::Red);
+            app.fonts.regular->draw(c, np.x + 74, np.y + 14, 15, "Tocando agora", theme::TextMute());
             std::string nm = liveOn ? app.station.name : app.music.tracks()[t].title;
-            app.fonts.bold->draw(c, np.x + 74, np.y + 36, 18, app.fonts.bold->ellipsize(18, nm, np.w - 90), theme::Text);
+            app.fonts.bold->draw(c, np.x + 74, np.y + 36, 18, app.fonts.bold->ellipsize(18, nm, np.w - 90), theme::Text());
         }
     }
 
     void drawHeroCard(Canvas &c, Rect r)
     {
-        c.fillGradient(r.x, r.y, r.w, r.h, 34, rgba(26, 18, 54), rgba(15, 35, 72), 2);
+        c.fillRoundRect(r.x, r.y, r.w, r.h, theme::Radius, theme::BgCard());
         c.pushClip(r);
-        // moon, top-right
-        float mx = float(r.right() - 150), my = float(r.y + 150);
-        c.fillCircle(mx + 120, my - 120, 330, rgba(124, 92, 255, 26));
-        c.fillCircle(mx, my, 150, rgba(236, 232, 255, 150));
-        c.fillCircle(mx + 54, my - 26, 140, withAlpha(rgba(26, 18, 54), 210));
         // left fade for text legibility (one gradient instead of ~200 per-column fills)
-        c.fillGradient(r.x, r.y, int(r.w * 0.78f), r.h, 0, withAlpha(theme::Bg, 235), withAlpha(theme::Bg, 0), 0);
+        c.fillGradient(r.x, r.y, int(r.w * 0.78f), r.h, 0, withAlpha(theme::Bg(), 235), withAlpha(theme::Bg(), 0), 0);
         c.popClip();
-        c.strokeRoundRect(r.x, r.y, r.w, r.h, 34, 1, theme::Line);
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, theme::Radius, 1, theme::Border());
 
         if (!hasFeatured_) {
-            app.fonts.bold->draw(c, r.x + 48, r.y + r.h / 2, 34, "Adicione fontes para ver destaques", theme::TextDim);
+            app.fonts.bold->draw(c, r.x + 48, r.y + r.h / 2, 34, "Adicione fontes para ver destaques", theme::TextSub());
             return;
         }
         int x = r.x + 48, bottom = r.bottom() - 48;
@@ -351,32 +352,33 @@ private:
         int by = bottom - 64;
         bool foc = focus_ == Zone::Hero && !app.sidebarFocused();
         int bw = app.fonts.bold->measure(22, "Assistir") + 84;
-        if (foc) c.shadow(x, by, bw, 64, 32, 16, withAlpha(theme::Violet, 150));
-        c.fillRoundRect(x, by, bw, 64, 32, foc ? theme::Text : withAlpha(theme::Text, 235));
-        drawIconPlay(c, x + 34, by + 32, 11, theme::Bg);
-        app.fonts.bold->draw(c, x + 54, by + (64 - app.fonts.bold->lineHeight(22)) / 2, 22, "Assistir", theme::Bg);
+        if (foc) c.shadow(x, by, bw, 64, 32, 16, withAlpha(rgba(0, 0, 0), 150));
+        c.fillRoundRect(x, by, bw, 64, theme::RadiusSm, foc ? theme::Red : theme::RedDim);
+        if (foc) drawFocusRing(c, {x, by, bw, 64}, theme::RadiusSm);
+        drawIconPlay(c, x + 34, by + 32, 11, theme::AccentText());
+        app.fonts.bold->draw(c, x + 54, by + (64 - app.fonts.bold->lineHeight(22)) / 2, 22, "Assistir", theme::AccentText());
         int lw = app.fonts.bold->measure(22, "Minha lista") + 76;
-        c.fillRoundRect(x + bw + 14, by, lw, 64, 32, theme::Surface);
-        c.strokeRoundRect(x + bw + 14, by, lw, 64, 32, 1, theme::Line);
-        app.fonts.bold->draw(c, x + bw + 14 + 38, by + (64 - app.fonts.bold->lineHeight(22)) / 2, 22, "Minha lista", theme::Text);
+        c.fillRoundRect(x + bw + 14, by, lw, 64, theme::RadiusSm, theme::BgSurface());
+        c.strokeRoundRect(x + bw + 14, by, lw, 64, theme::RadiusSm, 1, theme::Border());
+        app.fonts.bold->draw(c, x + bw + 14 + 38, by + (64 - app.fonts.bold->lineHeight(22)) / 2, 22, "Minha lista", theme::Text());
         // title + meta + description stacked above the buttons
         int ty = by - 24;
         auto desc = app.fonts.regular->wrap(22, featured_.description, std::min(640, r.w - 96), 2);
         ty -= int(desc.size()) * 32;
-        for (size_t i = 0; i < desc.size(); i++) app.fonts.regular->draw(c, x, ty + int(i) * 32, 22, desc[i], theme::TextDim);
+        for (size_t i = 0; i < desc.size(); i++) app.fonts.regular->draw(c, x, ty + int(i) * 32, 22, desc[i], theme::TextSub());
         ty -= 86;
-        app.fonts.bold->draw(c, x, ty, 72, app.fonts.bold->ellipsize(72, featured_.title, r.w - 96), theme::Text);
+        app.fonts.bold->draw(c, x, ty, 72, app.fonts.bold->ellipsize(72, featured_.title, r.w - 96), theme::Text());
         ty -= 44;
-        if (!featured_.meta.empty()) app.fonts.regular->draw(c, x, ty, 20, featured_.meta, theme::Glow);
+        if (!featured_.meta.empty()) app.fonts.regular->draw(c, x, ty, 20, featured_.meta, theme::TextSub());
         ty -= 42;
         std::string badge = "Em destaque";
         int bgw = app.fonts.bold->measure(17, badge) + 32;
-        c.fillRoundRect(x, ty, bgw, 32, 16, withAlpha(theme::Text, 30));
-        app.fonts.bold->draw(c, x + 16, ty + (32 - app.fonts.bold->lineHeight(17)) / 2, 17, badge, theme::Text);
+        c.fillRoundRect(x, ty, bgw, 32, 6, withAlpha(theme::Red, 200));
+        app.fonts.bold->draw(c, x + 16, ty + (32 - app.fonts.bold->lineHeight(17)) / 2, 17, badge, theme::AccentText());
         // carousel dots, bottom-right
         for (int i = 0; i < 4; i++) {
             int dw = i == 0 ? 32 : 8;
-            c.fillRoundRect(r.right() - 48 - (i == 0 ? 0 : 24 + (i - 1) * 16) - dw, r.bottom() - 40, dw, 8, 4, i == 0 ? theme::Text : withAlpha(theme::Text, 80));
+            c.fillRoundRect(r.right() - 48 - (i == 0 ? 0 : 24 + (i - 1) * 16) - dw, r.bottom() - 40, dw, 8, 4, i == 0 ? theme::Red : withAlpha(theme::Text(), 80));
         }
     }
 
@@ -386,9 +388,9 @@ private:
         Row &r = rows_[size_t(rowSel_)];
         bool rowFocus = focus_ == Zone::Rows && !app.sidebarFocused();
         int x0 = area.x + 52;
-        app.fonts.bold->draw(c, x0, top, 30, r.title, rowFocus ? theme::Text : theme::TextDim);
+        app.fonts.bold->draw(c, x0, top, 30, r.title, rowFocus ? theme::Text() : theme::TextSub());
         if (rows_.size() > 1)
-            app.fonts.regular->draw(c, R - 150, top + 6, 18, "cima/baixo troca", theme::TextMute);
+            app.fonts.regular->draw(c, R - 150, top + 6, 18, "cima/baixo troca", theme::TextMute());
         Rect cs = cardSize(r.shape);
         int cy = top + 50;
         c.pushClip({area.x, cy, area.w, area.bottom() - cy});

@@ -7,6 +7,7 @@
 #include "ui/canvas.hpp"
 #include "ui/font.hpp"
 #include "ui/input_map.hpp"
+#include "ui/theme.hpp"
 #include "player/nv12.hpp"
 #include "ui/image_loader.hpp"
 #include <cstdlib>
@@ -102,6 +103,40 @@ struct Harness {
     }
 };
 }  // namespace
+
+TEST(theme_light_dark_and_persisted)
+{
+    std::string sb = t::scratch + "/appsb_theme";
+    host::HostFileSystem(sb).makeDirs("/");
+    {
+        Harness h(sb);
+        std::string err;
+        CHECK(h.app.init(&err));
+        CHECK(ui::theme::activeTheme == ui::theme::ThemeMode::Dark);   // default
+        CHECK_EQ(ui::theme::Bg(), ui::theme::dark::Bg);
+        h.app.settings.lightTheme = true;
+        h.app.applyTheme();
+        h.app.saveSettings();
+        CHECK_EQ(ui::theme::Bg(), ui::theme::light::Bg);
+        CHECK_EQ(ui::theme::Text(), ui::theme::light::Text);
+        h.app.dirty();
+        h.app.frame();   // hint bar (bottom-right corner, no hint there) is drawn in the light card colour
+        Framebuffer fb = h.plat.display_.backBuffer();
+        CHECK_EQ(fb.pixels[size_t(fb.height - 4) * size_t(fb.stride) + size_t(fb.width - 8)] & 0xFFFFFFu, ui::theme::light::BgCard & 0xFFFFFFu);
+        ui::theme::activeTheme = ui::theme::ThemeMode::Dark;
+    }
+    {
+        Harness h(sb);   // a new start reads it back from settings.json
+        std::string err;
+        CHECK(h.app.init(&err));
+        CHECK(h.app.settings.lightTheme);
+        CHECK(ui::theme::activeTheme == ui::theme::ThemeMode::Light);
+        h.app.settings.lightTheme = false;
+        h.app.applyTheme();
+        h.app.saveSettings();
+    }
+    CHECK(ui::theme::activeTheme == ui::theme::ThemeMode::Dark);
+}
 
 TEST(app_navigation_headless)
 {

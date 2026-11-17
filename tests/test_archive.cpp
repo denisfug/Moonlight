@@ -112,6 +112,8 @@ TEST(archive_live_local_server)
     const char *abase = std::getenv("ML_AUDIUS_URL");
     if (abase) h.app.audiusBase = abase;
     else h.app.settings.audius = false;
+    h.app.settings.deezer = false;    // this test is about Archive + Audius against the local server only:
+    h.app.settings.jamendo = false;   // the other online sources would reach the real internet
     h.app.goSection(Section::Music, true);
     h.app.frame();
     CHECK(h.app.remote->start(&err));

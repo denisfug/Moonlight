@@ -20,11 +20,11 @@ namespace {
 void listRow(App &app, Canvas &c, Rect r, bool focused)
 {
     if (focused) {
-        c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 90));
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
-        c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253));
+        c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(rgba(0, 0, 0), 90));
+        c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgHover());
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, theme::Red);
     } else {
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+        c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgSurface());
     }
     (void)app;
 }
@@ -82,11 +82,11 @@ public:
         if (first_ > maxFirst) first_ = maxFirst;
         int y = 180;
         for (int i = first_; i < int(lines.size()) && i < first_ + visible; i++, y += lineH)
-            app.fonts.regular->draw(c, x, y, 22, lines[size_t(i)], i < 5 ? theme::Text : theme::TextDim);
+            app.fonts.regular->draw(c, x, y, 22, lines[size_t(i)], i < 5 ? theme::Text() : theme::TextSub());
         if (maxFirst > 0) {
             std::string pg = std::to_string(first_ + 1) + "-" + std::to_string(std::min(int(lines.size()), first_ + visible)) + " de " +
                              std::to_string(lines.size()) + " linhas";
-            app.fonts.regular->draw(c, area.right() - theme::Margin - app.fonts.regular->measure(20, pg), 140, 20, pg, theme::TextMute);
+            app.fonts.regular->draw(c, area.right() - theme::Margin - app.fonts.regular->measure(20, pg), 140, 20, pg, theme::TextMute());
         }
     }
 
@@ -130,7 +130,7 @@ public:
                                                               "   -   X abre os detalhes para foto");
         int x = area.x + theme::Margin, w = area.w - 2 * theme::Margin, top = 176;
         if (list.empty()) {
-            app.fonts.regular->draw(c, x, top + 20, 26, "Quando um filme, serie ou video nao tocar, o motivo aparece aqui.", theme::TextDim);
+            app.fonts.regular->draw(c, x, top + 20, 26, "Quando um filme, serie ou video nao tocar, o motivo aparece aqui.", theme::TextSub());
             return;
         }
         if (sel_ >= int(list.size())) sel_ = int(list.size()) - 1;
@@ -146,13 +146,13 @@ public:
             if (const Image *img = p.poster.empty() ? nullptr : app.images.get(p.poster, art.w, art.h)) c.drawImage(*img, art.x, art.y, 8);
             else drawGeneratedArt(c, app.fonts, art, 8, "problem:" + p.title, "", false);
             int tx = art.right() + 22, tw = r.right() - tx - 24;
-            app.fonts.bold->draw(c, tx, r.y + 10, 25, app.fonts.bold->ellipsize(25, p.title.empty() ? "(sem nome)" : p.title, tw - 260), theme::Text);
+            app.fonts.bold->draw(c, tx, r.y + 10, 25, app.fonts.bold->ellipsize(25, p.title.empty() ? "(sem nome)" : p.title, tw - 260), theme::Text());
             std::string when = ago(p.when);
-            app.fonts.regular->draw(c, r.right() - 24 - app.fonts.regular->measure(19, when), r.y + 14, 19, when, theme::TextMute);
+            app.fonts.regular->draw(c, r.right() - 24 - app.fonts.regular->measure(19, when), r.y + 14, 19, when, theme::TextMute());
             int ly = r.y + 46;
             for (const auto &l : app.fonts.regular->wrap(21, p.reason, tw, 2)) { app.fonts.regular->draw(c, tx, ly, 21, l, theme::Warn); ly += 28; }
             std::string from = p.source + (p.source.empty() || p.where.empty() ? "" : "   -   ") + p.where;
-            app.fonts.regular->draw(c, tx, r.bottom() - 28, 18, app.fonts.regular->ellipsize(18, from, tw), theme::TextMute);
+            app.fonts.regular->draw(c, tx, r.bottom() - 28, 18, app.fonts.regular->ellipsize(18, from, tw), theme::TextMute());
         }
     }
 
@@ -187,7 +187,7 @@ public:
         if (started_) return;
         started_ = true;
         path_ = app.platform.dataDir() + "/teste_video.mp4";
-        say("1. Baixando o video de teste (4 MB) com a internet do app...", theme::Text);
+        say("1. Baixando o video de teste (4 MB) com a internet do app...", theme::Text());
         std::shared_ptr<Download> dl = dl_;
         Platform *plat = &app.platform;
         std::string path = path_;
@@ -273,7 +273,7 @@ public:
         int tx = area.right() - theme::Margin - thumbW, ty = 180;
         c.drawImage(thumb_, tx, ty, 12);
         app.fonts.regular->draw(c, tx, ty + thumb_.h + 12, 20, gotFrameEver_ ? "Imagem vinda do player do PS4" : "Aqui aparece a imagem quando o player funciona",
-                                gotFrameEver_ ? theme::Good : theme::TextMute);
+                                gotFrameEver_ ? theme::Good : theme::TextMute());
         const int lineH = 30;
         std::vector<std::pair<std::string, Color>> lines;
         for (const auto &l : report_)
@@ -322,7 +322,7 @@ private:
         location_ = location;
         opened_ = failed_ = gotFrame_ = false;
         drawnSinceBegin_ = false;
-        say(line, theme::Text);
+        say(line, theme::Text());
         engine_ = app.platform.makeVideoEngine();
         if (!engine_) {
             failed_ = true;
@@ -362,11 +362,11 @@ private:
         engine_.reset();
         if (step_ == Step::Local || step_ == Step::LocalLog) {
             localOk_ = true;
-            if (!d.empty()) say(d, theme::TextMute);
+            if (!d.empty()) say(d, theme::TextMute());
             begin(Step::Network, "3. Tocando o mesmo video direto da internet (o app le, o player do PS4 decodifica)...", app.videoTestUrl, false);
         } else {
             networkOk_ = true;
-            if (!d.empty()) say(d, theme::TextMute);
+            if (!d.empty()) say(d, theme::TextMute());
             summary_ = "o player do PS4 funciona com MP4, do HD e pela internet";
             finish();
         }
@@ -376,14 +376,14 @@ private:
     {
         bad("   falhou: " + failure_);
         std::string d = diag();
-        if (!d.empty()) say(d, theme::TextDim);
+        if (!d.empty()) say(d, theme::TextSub());
         if (engine_) { engine_->stop(); engine_.reset(); }
         if (step_ == Step::Local) {
             // once more, now capturing what the system player itself says
             begin(Step::LocalLog, "2b. De novo, anotando as mensagens internas do player do PS4...", path_, true);
         } else if (step_ == Step::LocalLog) {
             summary_ = "o player do PS4 nao tocou nem o MP4 de teste gravado no HD";
-            say("3. Pela internet: pulado (o player nao tocou nem o arquivo do HD).", theme::TextDim);
+            say("3. Pela internet: pulado (o player nao tocou nem o arquivo do HD).", theme::TextSub());
             finish();
         } else {
             summary_ = "o player toca o arquivo do HD, mas nao pela internet (leitura feita pelo app)";
@@ -395,9 +395,9 @@ private:
     {
         step_ = Step::Done;
         bool ok = localOk_ && networkOk_;
-        say("", theme::Text);
+        say("", theme::Text());
         say("RESULTADO: " + summary_ + ".", ok ? theme::Good : theme::Warn);
-        say("Versao " + std::string(ML_VERSION) + ". Role com as setas para ver tudo; a lista tambem fica em Problemas ao reproduzir.", theme::TextMute);
+        say("Versao " + std::string(ML_VERSION) + ". Role com as setas para ver tudo; a lista tambem fica em Problemas ao reproduzir.", theme::TextMute());
         if (!ok) {
             Problem p;
             p.title = "Teste de video";

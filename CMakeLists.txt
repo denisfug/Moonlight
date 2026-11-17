@@ -33,6 +33,7 @@ add_library(ml_core STATIC
     src/music/subsonic.cpp
     src/music/archive.cpp
     src/music/audius.cpp
+    src/music/jamendo.cpp
     src/music/deezer.cpp
     src/music/rank.cpp
     src/music/taste.cpp
@@ -51,6 +52,7 @@ target_compile_options(ml_core PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${ML_WARN}>")
 # ---------------------------------------------------------------- user interface (software renderer)
 add_library(ml_ui STATIC
     src/ui/canvas.cpp
+    src/ui/theme.cpp
     src/ui/font.cpp
     src/ui/input_map.cpp
     src/ui/widgets.cpp
@@ -111,7 +113,7 @@ else()
     target_compile_definitions(moonlight_host PRIVATE ML_PLATFORM_HOST ML_VERSION="${ML_VERSION}")
 
     add_executable(moonlight_tests
-        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp)
+        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_jamendo.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp)
     target_include_directories(moonlight_tests PRIVATE tests)
     target_link_libraries(moonlight_tests PRIVATE ml_ui ml_host)
     enable_testing()

@@ -35,11 +35,11 @@ struct ListScroll {
 void drawListRow(App &app, Canvas &c, Rect r, bool focused)
 {
     if (focused) {
-        c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 90));
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
-        c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253));
+        c.fillRoundRect(r.x, r.y, r.w, r.h, theme::Radius, theme::BgHover());
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, theme::Radius, 2, theme::Red);
     } else {
-        c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+        c.fillRoundRect(r.x, r.y, r.w, r.h, theme::Radius, theme::BgCard());
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, theme::Radius, 1, theme::Border());
     }
 }
 
@@ -48,9 +48,9 @@ void drawTabs(App &app, Canvas &c, int x, int y, const std::vector<std::string> 
     for (size_t i = 0; i < tabs.size(); i++) {
         bool on = int(i) == sel;
         int w = app.fonts.bold->measure(22, tabs[i]) + 44;
-        if (on) c.fillGradient(x, y, w, 48, 24, theme::Violet, theme::Indigo, 0);
-        else c.fillRoundRect(x, y, w, 48, 24, theme::Surface);
-        (on ? app.fonts.bold : app.fonts.regular)->draw(c, x + 22, y + (48 - app.fonts.bold->lineHeight(22)) / 2, 22, tabs[i], on ? theme::Text : theme::TextDim);
+        if (on) c.fillRoundRect(x, y, w, 48, theme::RadiusSm, theme::Red);
+        else c.fillRoundRect(x, y, w, 48, theme::RadiusSm, theme::BgSurface());
+        (on ? app.fonts.bold : app.fonts.regular)->draw(c, x + 22, y + (48 - app.fonts.bold->lineHeight(22)) / 2, 22, tabs[i], on ? theme::AccentText() : theme::TextSub());
         x += w + 12;
     }
 }
@@ -103,7 +103,7 @@ public:
         drawSectionHeader(app, c, area, "Canais ao vivo", "Fonte: " + app.channelsSource);
         int x = area.x + theme::Margin;
         drawTabs(app, c, x, 176, groups_, group_);
-        if (shown_.empty()) { app.fonts.regular->draw(c, x, 270, 26, "Nenhum canal.", theme::TextDim); return; }
+        if (shown_.empty()) { app.fonts.regular->draw(c, x, 270, 26, "Nenhum canal.", theme::TextSub()); return; }
         int top = 256, w = area.w - 2 * theme::Margin;
         c.pushClip({area.x, top - 20, area.w, area.bottom() - top + 20});
         int y = top - int(list_.scroll);
@@ -114,8 +114,8 @@ public:
             drawListRow(app, c, r, int(i) == list_.sel && !app.sidebarFocused());
             drawGeneratedArt(c, app.fonts, {r.x + 10, r.y + 10, 106, 60}, 10, "ch:" + ch.name, "", false);
             drawIcon(c, Icon::Live, float(r.x + 63), float(r.y + 40), 26, rgba(255, 255, 255, 220));
-            app.fonts.bold->draw(c, r.x + 140, r.y + 12, 25, ch.name, theme::Text);
-            app.fonts.regular->draw(c, r.x + 140, r.y + 46, 19, ch.group + (ch.url.empty() ? "  -  demonstracao" : "") + (ch.drmProtected ? "  -  DRM (nao suportado)" : ""), theme::TextMute);
+            app.fonts.bold->draw(c, r.x + 140, r.y + 12, 25, ch.name, theme::Text());
+            app.fonts.regular->draw(c, r.x + 140, r.y + 46, 19, ch.group + (ch.url.empty() ? "  -  demonstracao" : "") + (ch.drmProtected ? "  -  DRM (nao suportado)" : ""), theme::TextMute());
         }
         c.popClip();
     }
@@ -168,7 +168,7 @@ public:
             const char *msg[] = {"Nenhum favorito. Abra um filme ou serie e escolha Favoritar.",
                                  "Nada em andamento. O progresso aparece aqui quando a reproducao de video existir.",
                                  "Historico vazio."};
-            app.fonts.regular->draw(c, x, 280, 26, msg[tab_], theme::TextDim);
+            app.fonts.regular->draw(c, x, 280, 26, msg[tab_], theme::TextSub());
             return;
         }
         int top = 256, w = area.w - 2 * theme::Margin;
@@ -180,11 +180,11 @@ public:
             Rect r{x, y, w, 88};
             drawListRow(app, c, r, int(k) == list_.sel && !app.sidebarFocused());
             drawGeneratedArt(c, app.fonts, {r.x + 10, r.y + 8, 48, 72}, 8, i.id, "", false);
-            app.fonts.bold->draw(c, r.x + 80, r.y + 14, 25, i.name, theme::Text);
+            app.fonts.bold->draw(c, r.x + 80, r.y + 14, 25, i.name, theme::Text());
             std::string sub = i.type == "movie" ? "Filme" : i.type == "series" ? "Serie" : i.type;
             if (i.season) sub += "  -  T" + std::to_string(i.season) + " E" + std::to_string(i.episode);
-            app.fonts.regular->draw(c, r.x + 80, r.y + 50, 19, sub, theme::TextMute);
-            if (i.durationMs > 0) drawProgress(c, r.right() - 300, r.y + 40, 260, 8, i.progress(), theme::Blue, theme::SurfaceHi);
+            app.fonts.regular->draw(c, r.x + 80, r.y + 50, 19, sub, theme::TextMute());
+            if (i.durationMs > 0) drawProgress(c, r.right() - 300, r.y + 40, 260, 8, i.progress(), theme::Red, theme::BgHover());
         }
         c.popClip();
     }
@@ -257,14 +257,14 @@ public:
         int listW = 880;
         if (src.empty()) {
             Rect r{x, top, area.w - 2 * theme::Margin, 300};
-            c.fillRoundRect(r.x, r.y, r.w, r.h, 24, theme::Surface);
-            drawIcon(c, Icon::Sources, float(r.x + 80), float(r.y + 90), 64, theme::Glow);
-            app.fonts.bold->draw(c, r.x + 150, r.y + 50, 32, "Nenhuma fonte adicionada", theme::Text);
+            c.fillRoundRect(r.x, r.y, r.w, r.h, 24, theme::BgSurface());
+            drawIcon(c, Icon::Sources, float(r.x + 80), float(r.y + 90), 64, theme::TextSub());
+            app.fonts.bold->draw(c, r.x + 150, r.y + 50, 32, "Nenhuma fonte adicionada", theme::Text());
             auto lines = app.fonts.regular->wrap(23, "Fontes seguem o protocolo de add-ons do Stremio (endereco terminando em /manifest.json). "
                                                      "Use apenas servicos e servidores que voce esta autorizado a acessar. "
                                                      "Aperte X ou OPTIONS para adicionar.", r.w - 200, 5);
             int y = r.y + 104;
-            for (const auto &l : lines) { app.fonts.regular->draw(c, r.x + 150, y, 23, l, theme::TextDim); y += 34; }
+            for (const auto &l : lines) { app.fonts.regular->draw(c, r.x + 150, y, 23, l, theme::TextSub()); y += 34; }
             return;
         }
         c.pushClip({area.x, top - 20, listW + theme::Margin + 20, area.bottom() - top + 20});
@@ -274,26 +274,26 @@ public:
             Rect r{x, y, listW, 112};
             drawListRow(app, c, r, int(i) == list_.sel && !app.sidebarFocused());
             drawGeneratedArt(c, app.fonts, {r.x + 14, r.y + 14, 84, 84}, 16, "src:" + s.manifest.id, "", false);
-            app.fonts.bold->draw(c, r.x + 120, r.y + 16, 26, app.fonts.bold->ellipsize(26, s.manifest.name, r.w - 300), theme::Text);
-            app.fonts.regular->draw(c, r.x + 120, r.y + 52, 19, "v" + s.manifest.version + "  -  " + std::to_string(s.manifest.catalogs.size()) + " catalogos", theme::TextMute);
-            app.fonts.regular->draw(c, r.x + 120, r.y + 78, 17, app.fonts.regular->ellipsize(17, redactUrl(s.manifestUrl), r.w - 160), theme::TextMute);
+            app.fonts.bold->draw(c, r.x + 120, r.y + 16, 26, app.fonts.bold->ellipsize(26, s.manifest.name, r.w - 300), theme::Text());
+            app.fonts.regular->draw(c, r.x + 120, r.y + 52, 19, "v" + s.manifest.version + "  -  " + std::to_string(s.manifest.catalogs.size()) + " catalogos", theme::TextMute());
+            app.fonts.regular->draw(c, r.x + 120, r.y + 78, 17, app.fonts.regular->ellipsize(17, redactUrl(s.manifestUrl), r.w - 160), theme::TextMute());
             const char *st = s.enabled ? "ATIVA" : "DESATIVADA";
             int w = app.fonts.bold->measure(16, st) + 26;
-            c.fillRoundRect(r.right() - w - 20, r.y + 18, w, 28, 14, s.enabled ? rgba(74, 222, 128, 40) : rgba(255, 255, 255, 20));
-            app.fonts.bold->draw(c, r.right() - w - 7, r.y + 18 + (28 - app.fonts.bold->lineHeight(16)) / 2, 16, st, s.enabled ? theme::Good : theme::TextMute);
+            c.fillRoundRect(r.right() - w - 20, r.y + 18, w, 28, 14, s.enabled ? withAlpha(theme::Good, 40) : theme::BgHover());
+            app.fonts.bold->draw(c, r.right() - w - 7, r.y + 18 + (28 - app.fonts.bold->lineHeight(16)) / 2, 16, st, s.enabled ? theme::Good : theme::TextMute());
             if (!s.lastError.empty()) drawIcon(c, Icon::Warning, float(r.right() - 36), float(r.y + 80), 22, theme::Warn);
         }
         c.popClip();
         // details of the focused source
         const Source &s = src[size_t(std::min(list_.sel, int(src.size()) - 1))];
         Rect d{x + listW + 28, top, area.right() - theme::Margin - (x + listW + 28), area.bottom() - top - 20};
-        c.fillRoundRect(d.x, d.y, d.w, d.h, 24, theme::Surface);
+        c.fillRoundRect(d.x, d.y, d.w, d.h, 24, theme::BgSurface());
         int dy = d.y + 28;
         auto lineOut = [&](const std::string &k, const std::string &v) {
-            app.fonts.bold->draw(c, d.x + 28, dy, 19, k, theme::TextMute);
+            app.fonts.bold->draw(c, d.x + 28, dy, 19, k, theme::TextMute());
             auto ls = app.fonts.regular->wrap(21, v.empty() ? "-" : v, d.w - 56, 3);
             dy += 28;
-            for (const auto &l : ls) { app.fonts.regular->draw(c, d.x + 28, dy, 21, l, theme::Text); dy += 30; }
+            for (const auto &l : ls) { app.fonts.regular->draw(c, d.x + 28, dy, 21, l, theme::Text()); dy += 30; }
             dy += 10;
         };
         lineOut("DESCRICAO", s.manifest.description);
@@ -439,23 +439,23 @@ public:
             app.fonts.regular->draw(c, tx, ty, size, t, col);
             ty += gap;
         };
-        app.fonts.bold->draw(c, tx, ty, 40, "Aponte a camera do celular", theme::Text);
+        app.fonts.bold->draw(c, tx, ty, 40, "Aponte a camera do celular", theme::Text());
         ty += 70;
-        line(28, "1. Conecte o celular no mesmo Wi-Fi do PS4.", theme::TextDim, 50);
-        line(28, "2. Abra a camera e aponte para o codigo.", theme::TextDim, 50);
-        line(28, "3. Toque no link que aparecer: entra direto, sem digitar.", theme::TextDim, 90);
-        line(24, "Sem camera? Digite no navegador:", theme::TextMute, 44);
-        app.fonts.bold->draw(c, tx, ty, 34, app.remote->address(), theme::Text);
+        line(28, "1. Conecte o celular no mesmo Wi-Fi do PS4.", theme::TextSub(), 50);
+        line(28, "2. Abra a camera e aponte para o codigo.", theme::TextSub(), 50);
+        line(28, "3. Toque no link que aparecer: entra direto, sem digitar.", theme::TextSub(), 90);
+        line(24, "Sem camera? Digite no navegador:", theme::TextMute(), 44);
+        app.fonts.bold->draw(c, tx, ty, 34, app.remote->address(), theme::Text());
         ty += 60;
-        app.fonts.bold->draw(c, tx, ty, 34, "PIN  " + app.remote->pin(), theme::Glow);
+        app.fonts.bold->draw(c, tx, ty, 34, "PIN  " + app.remote->pin(), theme::TextSub());
         ty += 90;
-        line(22, "O PIN muda cada vez que o app abre. So funciona na sua rede de casa.", theme::TextMute, 56);
+        line(22, "O PIN muda cada vez que o app abre. So funciona na sua rede de casa.", theme::TextMute(), 56);
         // Diagnostics: if the self-test fails the console side is the problem; if it passes but the
         // phone never connects (counter stays 0), it is the network between them (other Wi-Fi, mobile
         // data, router isolating devices).
         std::string st = app.remote->selfTestResult();
-        line(24, "Teste dentro do PS4: " + (st.empty() ? std::string("testando...") : st), st == "ok" ? theme::Good : st.empty() ? theme::TextDim : theme::Warn, 40);
-        line(24, "Conexoes recebidas: " + std::to_string(app.remote->accepted()), theme::TextDim, 40);
+        line(24, "Teste dentro do PS4: " + (st.empty() ? std::string("testando...") : st), st == "ok" ? theme::Good : st.empty() ? theme::TextSub() : theme::Warn, 40);
+        line(24, "Conexoes recebidas: " + std::to_string(app.remote->accepted()), theme::TextSub(), 40);
         if (app.remote->address().find('<') != std::string::npos)
             line(24, "O PS4 nao informou o IP: veja em Configuracoes do PS4 > Rede > Ver status da conexao.", theme::Warn, 40);
     }
@@ -500,18 +500,18 @@ public:
                     if (modules_[size_t(y * size_ + x)]) c.fillRect(qx + (x + quiet) * px, qy + (y + quiet) * px, px, px, rgba(0, 0, 0));
         }
         int tx = qx + side + 80, ty = qy + 10, tw = area.right() - theme::Margin - tx;
-        app.fonts.bold->draw(c, tx, ty, 36, "Este link abre fora do Moonlight", theme::Text);
+        app.fonts.bold->draw(c, tx, ty, 36, "Este link abre fora do Moonlight", theme::Text());
         ty += 66;
         for (const auto &l : app.fonts.regular->wrap(26, "O PS4 nao toca este tipo de link dentro do app. Aponte a camera do celular para o codigo e "
                                                          "assista no celular (ou espelhe na TV).", tw, 4)) {
-            app.fonts.regular->draw(c, tx, ty, 26, l, theme::TextDim);
+            app.fonts.regular->draw(c, tx, ty, 26, l, theme::TextSub());
             ty += 38;
         }
         ty += 24;
-        app.fonts.regular->draw(c, tx, ty, 22, app.fonts.regular->ellipsize(22, from_, tw), theme::TextMute);
+        app.fonts.regular->draw(c, tx, ty, 22, app.fonts.regular->ellipsize(22, from_, tw), theme::TextMute());
         ty += 34;
         for (const auto &l : app.fonts.regular->wrap(20, url_, tw, 4)) {
-            app.fonts.regular->draw(c, tx, ty, 20, l, theme::TextMute);
+            app.fonts.regular->draw(c, tx, ty, 20, l, theme::TextMute());
             ty += 28;
         }
         if (size_ == 0) app.fonts.regular->draw(c, qx, qy, 24, "Link grande demais para QR code.", theme::Warn);
@@ -540,32 +540,38 @@ public:
             switch (sel_) {
             case 0: app.settings.animations = !app.settings.animations; app.saveSettings(); break;
             case 1:
+                app.settings.lightTheme = !app.settings.lightTheme;
+                app.applyTheme();
+                app.saveSettings();
+                break;
+            case 2:
                 app.settings.showDemo = !app.settings.showDemo;
                 app.saveSettings();
                 app.rescanMusic();
                 app.toast("Reabra as secoes para atualizar o conteudo de demonstracao");
                 break;
-            case 2: {
+            case 3: {
                 app.rescanMusic();
                 size_t real = 0;
                 for (const auto &t : app.music.tracks()) if (!t.demo) real++;
                 app.toast(std::to_string(real) + " faixas encontradas");
                 break;
             }
-            case 3: configureServer(); break;
-            case 4: app.settings.archive = !app.settings.archive; app.saveSettings(); break;
-            case 5: app.settings.audius = !app.settings.audius; app.saveSettings(); break;
-            case 6: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 7: toggleRemote(); break;
-            case 8: updateAction(); break;
-            case 9: testInternet(); break;
-            case 10: app.push(makeVideoTest(app)); break;
-            case 11: app.push(makeProblems(app)); break;
-            case 12:
+            case 4: configureServer(); break;
+            case 5: jamendoAction(); break;
+            case 6: app.settings.archive = !app.settings.archive; app.saveSettings(); break;
+            case 7: app.settings.audius = !app.settings.audius; app.saveSettings(); break;
+            case 8: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
+            case 9: toggleRemote(); break;
+            case 10: updateAction(); break;
+            case 11: testInternet(); break;
+            case 12: app.push(makeVideoTest(app)); break;
+            case 13: app.push(makeProblems(app)); break;
+            case 14:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
-                          "Musica online: Internet Archive (archive.org) e Audius (audius.co). Decodificador MP3: minimp3 (CC0). Texto: stb_truetype (dominio publico).");
+                          "Musica online: Jamendo (jamendo.com, Creative Commons), Internet Archive (archive.org) e Audius (audius.co). Decodificador MP3: minimp3 (CC0). Texto: stb_truetype (dominio publico).");
                 break;
             }
             return true;
@@ -580,6 +586,12 @@ public:
         remoteDesc_ = app.remote->running() ? "Ligado. X mostra o QR code (" + app.remote->address() + "  PIN " + app.remote->pin() + ")"
                                              : "Use o celular (mesmo Wi-Fi) como controle e teclado. Desligado.";
         updateDesc_ = describeUpdate();
+        if (app.settings.jamendoClientId.empty())
+            jamendoDesc_ = std::string(app.settings.jamendo ? "Ligado" : "Desligado") +
+                           " - usa chave publica de demonstracao. X para ligar/desligar ou informar seu client_id (devportal.jamendo.com).";
+        else
+            jamendoDesc_ = std::string(app.settings.jamendo ? "Ligado" : "Desligado") +
+                           " - client_id configurado. X para ligar/desligar ou trocar o client_id.";
         size_t np = app.problems.entries().size();
         problemsDesc_ = np == 0 ? "Nada anotado. Quando algo nao tocar, o nome, a capa e o motivo aparecem aqui."
                                 : std::to_string(np) + (np == 1 ? " anotado" : " anotados") + ". Nome, capa e motivo de cada um, para foto.";
@@ -588,9 +600,11 @@ public:
         struct Item { const char *title, *desc; int toggle; };
         Item items[] = {
             {"Animacoes", "Rolagem suave e transicoes entre telas.", app.settings.animations ? 1 : 0},
+            {"Tema claro", "Fundo branco e texto preto. Desligado: tema escuro (preto, branco e vermelho).", app.settings.lightTheme ? 1 : 0},
             {"Conteudo de demonstracao", "Mostra filmes, series, canais e playlists ficticios enquanto nao ha fontes reais.", app.settings.showDemo ? 1 : 0},
             {"Procurar musicas de novo", "Rele /data/music, /data/moonlight/music, /data/devhub/Music e o pendrive (Music/).", -1},
             {"Servidor de musica (Navidrome / Subsonic)", serverDesc_.c_str(), -1},
+            {"Musica do Jamendo", jamendoDesc_.c_str(), app.settings.jamendo ? 1 : 0},
             {"Musica do Internet Archive", "A busca de musica tambem procura albuns livres (dominio publico / Creative Commons) em archive.org.", app.settings.archive ? 1 : 0},
             {"Musica do Audius", "A busca de musica tambem procura faixas de artistas independentes em audius.co, e mostra as mais tocadas da semana.", app.settings.audius ? 1 : 0},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
@@ -605,19 +619,19 @@ public:
         const int visible = 9;
         if (sel_ < first_) first_ = sel_;
         if (sel_ >= first_ + visible) first_ = sel_ - visible + 1;
-        if (first_ > 0) app.fonts.regular->draw(c, x + w + 24, 196, 20, "mais acima", theme::TextMute);
-        if (first_ + visible < kItems) app.fonts.regular->draw(c, x + w + 24, 186 + (visible - 1) * 90 + 30, 20, "mais abaixo", theme::TextMute);
+        if (first_ > 0) app.fonts.regular->draw(c, x + w + 24, 196, 20, "mais acima", theme::TextMute());
+        if (first_ + visible < kItems) app.fonts.regular->draw(c, x + w + 24, 186 + (visible - 1) * 90 + 30, 20, "mais abaixo", theme::TextMute());
         for (int i = first_; i < kItems && i < first_ + visible; i++, y += 90) {
             Rect r{x, y, w, 82};
             drawListRow(app, c, r, i == sel_ && !app.sidebarFocused());
-            app.fonts.bold->draw(c, r.x + 30, r.y + 12, 27, items[i].title, theme::Text);
-            app.fonts.regular->draw(c, r.x + 30, r.y + 50, 20, items[i].desc, theme::TextMute);
+            app.fonts.bold->draw(c, r.x + 30, r.y + 12, 27, items[i].title, theme::Text());
+            app.fonts.regular->draw(c, r.x + 30, r.y + 50, 20, items[i].desc, theme::TextMute());
             if (items[i].toggle >= 0) {
                 bool on = items[i].toggle == 1;
                 int tx = r.right() - 110, ty = r.y + 22;
-                if (on) c.fillGradient(tx, ty, 76, 38, 19, theme::Violet, theme::Blue, 0);
-                else c.fillRoundRect(tx, ty, 76, 38, 19, theme::SurfaceHi);
-                c.fillCircle(float(on ? tx + 57 : tx + 19), float(ty + 19), 14, theme::Text);
+                if (on) c.fillRoundRect(tx, ty, 76, 38, 19, theme::Red);
+                else { c.fillRoundRect(tx, ty, 76, 38, 19, theme::BgHover()); c.strokeRoundRect(tx, ty, 76, 38, 19, 1, theme::Border()); }
+                c.fillCircle(float(on ? tx + 57 : tx + 19), float(ty + 19), 14, on ? theme::AccentText() : theme::TextSub());
             }
         }
     }
@@ -625,9 +639,9 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    static constexpr int kItems = 13;
+    static constexpr int kItems = 15;
     int sel_ = 0, first_ = 0;
-    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_;
+    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_, jamendoDesc_;
     std::string testHeader_, testResult_;
     std::atomic<bool> testBusy_{false}, testDone_{false};
     bool testOk_ = false;
@@ -779,6 +793,33 @@ private:
 
     // URL -> user -> password, then a ping before saving. The password is turned into a salted token
     // (Subsonic protocol) and discarded; it is never written to disk or logged.
+    // Jamendo needs a client_id (free, from devportal.jamendo.com). It is never shipped in the code:
+    // the user types it once and it is kept in settings.json.
+    void askJamendoClientId()
+    {
+        App *a = &app;
+        app.openKeyboard("Jamendo client_id (devportal.jamendo.com)", app.settings.jamendoClientId, false, [a](const std::string &id) {
+            std::string v;
+            for (char ch : id) if (ch != ' ') v += ch;
+            a->settings.jamendoClientId = v;
+            a->settings.jamendo = !v.empty();
+            a->saveSettings();
+            a->toast(v.empty() ? "Jamendo desligado (sem client_id)" : "Jamendo ligado");
+        });
+    }
+
+    void jamendoAction()
+    {
+        if (app.settings.jamendoClientId.empty()) { askJamendoClientId(); return; }
+        App *a = &app;
+        SettingsScreen *self = this;
+        app.modal("Musica do Jamendo", "Faixas completas em Creative Commons, procuradas primeiro na busca de musica.",
+                  {a->settings.jamendo ? "Desligar" : "Ligar", "Trocar client_id", "Fechar"}, [a, self](int ch) {
+            if (ch == 0) { a->settings.jamendo = !a->settings.jamendo; a->saveSettings(); }
+            else if (ch == 1) self->askJamendoClientId();
+        });
+    }
+
     void configureServer()
     {
         App *a = &app;

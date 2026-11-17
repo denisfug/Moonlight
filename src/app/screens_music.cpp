@@ -220,11 +220,15 @@ private:
     std::vector<size_t> results_;             // songs of the current search (HD, server, Audius, Deezer)
     std::vector<Album> arch_;                 // Internet Archive albums of the current search
     std::vector<size_t> recent_;              // recently played, as library indices
-    std::shared_ptr<MultiFetch> archSearch_, songSearch_, deezerSearch_;
+    std::shared_ptr<MultiFetch> archSearch_, songSearch_, deezerSearch_, jamendoSearch_;
+    size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
 
-    bool searching() const { return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr; }
+    bool searching() const
+    {
+        return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr || jamendoSearch_ != nullptr;
+    }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
     {
@@ -394,6 +398,8 @@ private:
         archSearch_.reset();
         songSearch_.reset();
         deezerSearch_.reset();
+        jamendoSearch_.reset();
+        localCount_ = 0;
         view_ = View::Shelves;
         if (!q.empty()) {
             results_ = app.music.search(q);
@@ -403,7 +409,16 @@ private:
                 results_.insert(results_.end(), remote.begin(), remote.end());
                 if (!e.empty()) app.toast("Busca no servidor: " + e);
             }
+            localCount_ = results_.size();
             if (app.platform.http()) {
+                // Jamendo first: full-length Creative Commons MP3s.
+                // Uses the user's client_id when set; falls back to the public demo key.
+                if (app.settings.jamendo) {
+                    const std::string &cid = app.settings.jamendoClientId.empty()
+                                             ? std::string(jamendo::kPublicClientId)
+                                             : app.settings.jamendoClientId;
+                    jamendoSearch_ = fetchOne(jamendo::kName, jamendo::searchUrl(q, cid, jamendo::kLimit, app.jamendoBase), app.jamendoBase);
+                }
                 if (app.settings.archive) archSearch_ = fetchOne(archive::kName, archive::searchUrl(q, 30, app.archiveBase), app.archiveBase);
                 if (app.settings.audius) songSearch_ = fetchOne(audius::kName, audius::searchUrl(q, app.audiusBase), app.audiusBase);
                 if (app.settings.deezer) deezerSearch_ = fetchOne(deezer::kName, deezer::searchUrl(q, deezer::kLimit, app.deezerBase), app.deezerBase);
@@ -454,6 +469,29 @@ private:
             searchFinished();
             changed = true;
         }
+        if (int r = take(jamendoSearch_, j, e)) {
+            if (r == 1) {
+                // primary online source: placed right after the HD / server results, ahead of
+                // whatever Audius / Deezer already answered
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                std::vector<catalog::Song> fresh;
+                for (auto &sng : jamendo::parseSearch(j)) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    fresh.push_back(std::move(sng));
+                }
+                rank::sortFreeText(search_, fresh);
+                auto idx = addSongs(fresh);
+                size_t at = std::min(localCount_, results_.size());
+                results_.insert(results_.begin() + long(at), idx.begin(), idx.end());
+            } else {
+                app.toast(std::string(jamendo::kName) + ": " + e);
+            }
+            searchFinished();
+            changed = true;
+        }
         if (int r = take(songSearch_, j, e)) {
             if (r == 1) {
                 // the same song already found on the HD / server / twice in the answer is not repeated
@@ -466,7 +504,7 @@ private:
                     seen.push_back(k);
                     fresh.push_back(std::move(sng));
                 }
-                rank::rankInPlace(search_, "", fresh);
+                rank::sortFreeText(search_, fresh);
                 auto idx = addSongs(fresh);
                 results_.insert(results_.end(), idx.begin(), idx.end());
             } else {
@@ -489,7 +527,7 @@ private:
                     seen.push_back(k);
                     fresh.push_back(std::move(sng));
                 }
-                rank::rankInPlace(search_, "", fresh);
+                rank::sortFreeText(search_, fresh);
                 auto idx = addSongs(fresh);
                 results_.insert(results_.end(), idx.begin(), idx.end());
             }
@@ -550,8 +588,8 @@ private:
         const Image *img = art.empty() ? nullptr : app.images.get(art, r.w, r.h);
         if (img) { c.drawImage(*img, r.x, r.y, radius); return; }
         if (online) {   // the source has no cover (or it has not arrived): neutral square, never another picture
-            c.fillRoundRect(r.x, r.y, r.w, r.h, radius, theme::SurfaceHi);
-            drawIcon(c, Icon::Music, float(r.x + r.w / 2), float(r.y + r.h / 2), float(r.w) * 0.36f, theme::TextMute);
+            c.fillRoundRect(r.x, r.y, r.w, r.h, radius, theme::BgHover());
+            drawIcon(c, Icon::Music, float(r.x + r.w / 2), float(r.y + r.h / 2), float(r.w) * 0.36f, theme::TextMute());
             return;
         }
         drawGeneratedArt(c, app.fonts, r, radius, seed, "", false);
@@ -581,14 +619,14 @@ private:
             line2 = al.item.creator.empty() ? "Artista nao informado" : al.item.creator;
             line3 = archive::kName;
         }
-        if (focused) c.strokeRoundRect(cover.x - 4, cover.y - 4, cover.w + 8, cover.h + 8, 18, 4, rgba(196, 181, 253));
+        if (focused) drawFocusRing(c, cover, 14);
         if (playing) {
-            c.fillCircle(float(cover.right() - 28), float(cover.bottom() - 28), 20, theme::Violet);
-            drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(cover.right() - 28), float(cover.bottom() - 28), 18, theme::Text);
+            c.fillCircle(float(cover.right() - 28), float(cover.bottom() - 28), 20, theme::Red);
+            drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(cover.right() - 28), float(cover.bottom() - 28), 18, theme::AccentText());
         }
-        app.fonts.bold->draw(c, x, y + kCover + 10, 20, app.fonts.bold->ellipsize(20, title, kCover), focused ? theme::Text : theme::TextDim);
-        app.fonts.regular->draw(c, x, y + kCover + 36, 17, app.fonts.regular->ellipsize(17, line2, kCover), theme::TextMute);
-        if (!line3.empty()) app.fonts.regular->draw(c, x, y + kCover + 58, 14, line3, theme::Indigo);
+        app.fonts.bold->draw(c, x, y + kCover + 10, 20, app.fonts.bold->ellipsize(20, title, kCover), focused ? theme::Text() : theme::TextSub());
+        app.fonts.regular->draw(c, x, y + kCover + 36, 17, app.fonts.regular->ellipsize(17, line2, kCover), theme::TextMute());
+        if (!line3.empty()) app.fonts.regular->draw(c, x, y + kCover + 58, 14, line3, theme::Red);
     }
 
     void drawShelves(Canvas &c, Rect view)
@@ -596,7 +634,7 @@ private:
         if (shelves_.empty()) {
             std::string msg = !search_.empty() ? (searching() ? "Procurando..." : "Nada encontrado. Aperte OPTIONS para buscar outra coisa.")
                                                : "Nada por aqui ainda. Aperte OPTIONS para buscar uma musica, um artista ou um album.";
-            app.fonts.regular->draw(c, view.x, view.y + 20, 24, msg, theme::TextDim);
+            app.fonts.regular->draw(c, view.x, view.y + 20, 24, msg, theme::TextSub());
             return;
         }
         c.pushClip({view.x - 8, view.y, view.w + 16, view.h});
@@ -607,33 +645,33 @@ private:
             if (y + kPitch < view.y || y > view.bottom()) continue;
             const Shelf &sh = shelves_[size_t(i)];
             bool rowFocus = contentFocus && i == row_;
-            app.fonts.bold->draw(c, view.x, y, 26, sh.title, rowFocus ? theme::Text : theme::TextDim);
+            app.fonts.bold->draw(c, view.x, y, 26, sh.title, rowFocus ? theme::Text() : theme::TextSub());
             int first = std::max(0, sh.col - (cols - 1));
             for (int k = first; k < int(sh.cards.size()) && k < first + cols; k++)
                 drawCard(c, view.x + (k - first) * (kCover + kGap), y + 44, sh.cards[size_t(k)], rowFocus && k == sh.col);
             if (first + cols < int(sh.cards.size()))
-                app.fonts.regular->draw(c, view.right() - 90, y + 6, 17, "+" + std::to_string(int(sh.cards.size()) - first - cols), theme::TextMute);
+                app.fonts.regular->draw(c, view.right() - 90, y + 6, 17, "+" + std::to_string(int(sh.cards.size()) - first - cols), theme::TextMute());
         }
         c.popClip();
     }
 
     void drawDetail(Canvas &c, Rect view)
     {
-        c.fillRoundRect(view.x, view.y, view.w, view.h, 22, theme::Surface);
+        c.fillRoundRect(view.x, view.y, view.w, view.h, 22, theme::BgSurface());
         auto tr = detailTracks();
         Rect art{view.x + 28, view.y + 24, 170, 170};
         const Album *al = detail_.album >= 0 && detail_.album < int(arch_.size()) ? &arch_[size_t(detail_.album)] : nullptr;
         if (al) drawCover(c, art, 14, archive::coverUrl(al->item.id, app.archiveBase), true, "");
         else drawCover(c, art, 14, "", false, "pl:" + detail_.title);
         int hx = art.right() + 28, hw = view.w - (hx - view.x) - 28;
-        app.fonts.regular->draw(c, hx, view.y + 34, 17, detail_.kind, theme::TextMute);
-        app.fonts.bold->draw(c, hx, view.y + 62, 38, app.fonts.bold->ellipsize(38, detail_.title, hw), theme::Text);
+        app.fonts.regular->draw(c, hx, view.y + 34, 17, detail_.kind, theme::TextMute());
+        app.fonts.bold->draw(c, hx, view.y + 62, 38, app.fonts.bold->ellipsize(38, detail_.title, hw), theme::Text());
         std::string who = al ? (al->item.creator.empty() ? "Artista nao informado" : al->item.creator) : "";
-        if (!who.empty()) app.fonts.regular->draw(c, hx, view.y + 116, 22, app.fonts.regular->ellipsize(22, who, hw), theme::TextDim);
+        if (!who.empty()) app.fonts.regular->draw(c, hx, view.y + 116, 22, app.fonts.regular->ellipsize(22, who, hw), theme::TextSub());
         std::string count = std::to_string(tr.size()) + " faixas";
         if (al && al->state == Album::Loading) count = "Abrindo o album no Internet Archive...";
         if (al && al->state == Album::Failed) count = "Nao foi possivel abrir este album. Aperte X para tentar de novo.";
-        app.fonts.regular->draw(c, hx, view.y + 152, 19, count, theme::TextMute);
+        app.fonts.regular->draw(c, hx, view.y + 152, 19, count, theme::TextMute());
         int head = 214;
         c.pushClip({view.x, view.y + head, view.w, view.h - head - 8});
         int ty = view.y + head + 4 - int(detail_.scroll);
@@ -644,23 +682,23 @@ private:
             bool f = i == detail_.sel && !app.sidebarFocused();
             bool isPlaying = tr[size_t(i)] == playing && app.audio.state() != PlayState::Idle && !t.demo;
             Rect r{view.x + 12, ty, view.w - 24, 66};
-            if (f) { c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::SurfaceHi); c.strokeRoundRect(r.x, r.y, r.w, r.h, 14, 2, rgba(196, 181, 253)); }
-            if (isPlaying) drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(r.x + 30), float(r.y + 33), 22, theme::Glow);
-            else app.fonts.regular->draw(c, r.x + 18, r.y + 20, 20, std::to_string(i + 1), theme::TextMute);
+            if (f) { c.fillRoundRect(r.x, r.y, r.w, r.h, 14, theme::BgHover()); c.strokeRoundRect(r.x, r.y, r.w, r.h, 14, 2, theme::Red); }
+            if (isPlaying) drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Music : Icon::Pause, float(r.x + 30), float(r.y + 33), 22, theme::TextSub());
+            else app.fonts.regular->draw(c, r.x + 18, r.y + 20, 20, std::to_string(i + 1), theme::TextMute());
             int textW = r.w / 2 - 90;
-            app.fonts.bold->draw(c, r.x + 66, r.y + 8, 23, app.fonts.bold->ellipsize(23, t.title, textW), isPlaying ? theme::Glow : theme::Text);
-            app.fonts.regular->draw(c, r.x + 66, r.y + 38, 18, app.fonts.regular->ellipsize(18, t.artist, textW), theme::TextDim);
-            app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 22, 19, app.fonts.regular->ellipsize(19, t.album.empty() ? t.genre : t.album, r.w / 2 - 140), theme::TextMute);
+            app.fonts.bold->draw(c, r.x + 66, r.y + 8, 23, app.fonts.bold->ellipsize(23, t.title, textW), isPlaying ? theme::TextSub() : theme::Text());
+            app.fonts.regular->draw(c, r.x + 66, r.y + 38, 18, app.fonts.regular->ellipsize(18, t.artist, textW), theme::TextSub());
+            app.fonts.regular->draw(c, r.x + r.w / 2, r.y + 22, 19, app.fonts.regular->ellipsize(19, t.album.empty() ? t.genre : t.album, r.w / 2 - 140), theme::TextMute());
             if (t.demo) app.fonts.bold->draw(c, r.right() - 104, r.y + 22, 16, "DEMO", theme::Warn);
-            else if (t.durationMs > 0) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, formatTime(t.durationMs), theme::TextMute);
+            else if (t.durationMs > 0) app.fonts.regular->draw(c, r.right() - 104, r.y + 22, 17, formatTime(t.durationMs), theme::TextMute());
         }
         c.popClip();
     }
 
     void drawNowPlaying(Canvas &c, Rect r)
     {
-        c.fillGradient(r.x, r.y, r.w, r.h, 24, rgba(36, 28, 78), rgba(18, 30, 70), 0);
-        c.strokeRoundRect(r.x, r.y, r.w, r.h, 24, 1, theme::Line);
+        c.fillRoundRect(r.x, r.y, r.w, r.h, theme::Radius, theme::BgCard());
+        c.strokeRoundRect(r.x, r.y, r.w, r.h, theme::Radius, 1, theme::Border());
         size_t t = app.queue.current();
         bool active = t < app.music.tracks().size() && app.audio.state() != PlayState::Idle && app.audio.state() != PlayState::Error;
         Rect art{r.x + 20, r.y + 20, r.h - 40, r.h - 40};
@@ -669,28 +707,28 @@ private:
         else drawGeneratedArt(c, app.fonts, art, 14, active ? "al:" + app.music.tracks()[t].album : "idle", "", false);
         int x = r.x + r.h;
         if (!active) {
-            app.fonts.bold->draw(c, x, r.y + 30, 26, "Nada tocando", theme::Text);
-            app.fonts.regular->draw(c, x, r.y + 70, 20, "Escolha uma faixa e aperte X. A musica para se voce sair do app (veja docs/ROADMAP.md).", theme::TextDim);
+            app.fonts.bold->draw(c, x, r.y + 30, 26, "Nada tocando", theme::Text());
+            app.fonts.regular->draw(c, x, r.y + 70, 20, "Escolha uma faixa e aperte X. A musica para se voce sair do app (veja docs/ROADMAP.md).", theme::TextSub());
         } else {
             const music::Track &tr = app.music.tracks()[t];
-            app.fonts.bold->draw(c, x, r.y + 22, 28, app.fonts.bold->ellipsize(28, tr.title, 700), theme::Text);
-            app.fonts.regular->draw(c, x, r.y + 60, 21, app.fonts.regular->ellipsize(21, tr.artist + (tr.album.empty() ? "" : "  -  " + tr.album), 700), theme::TextDim);
+            app.fonts.bold->draw(c, x, r.y + 22, 28, app.fonts.bold->ellipsize(28, tr.title, 700), theme::Text());
+            app.fonts.regular->draw(c, x, r.y + 60, 21, app.fonts.regular->ellipsize(21, tr.artist + (tr.album.empty() ? "" : "  -  " + tr.album), 700), theme::TextSub());
             int64_t pos = app.audio.getPosition(), dur = app.audio.getDuration();
-            drawProgress(c, x, r.y + r.h - 40, 760, 8, dur > 0 ? double(pos) / double(dur) : 0, theme::Blue, rgba(255, 255, 255, 40));
-            app.fonts.regular->draw(c, x + 780, r.y + r.h - 52, 19, formatTime(pos) + " / " + formatTime(dur), theme::TextDim);
+            drawProgress(c, x, r.y + r.h - 40, 760, 8, dur > 0 ? double(pos) / double(dur) : 0, theme::Red, withAlpha(theme::Text(), 40));
+            app.fonts.regular->draw(c, x + 780, r.y + r.h - 52, 19, formatTime(pos) + " / " + formatTime(dur), theme::TextSub());
         }
         // transport + status icons (right side)
         int ix = r.right() - 420;
         float cy = float(r.y + r.h / 2);
-        drawIcon(c, Icon::Prev, float(ix), cy, 28, theme::TextDim);
-        c.fillCircle(float(ix + 70), cy, 34, theme::Text);
-        drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Pause : Icon::Play, float(ix + 72), cy, 28, theme::Bg);
-        drawIcon(c, Icon::Next, float(ix + 140), cy, 28, theme::TextDim);
-        drawIcon(c, Icon::Shuffle, float(ix + 210), cy, 26, app.queue.shuffle() ? theme::Glow : theme::TextMute);
-        drawIcon(c, Icon::Repeat, float(ix + 262), cy, 26, app.queue.repeat() == music::Repeat::Off ? theme::TextMute : theme::Glow);
-        if (app.queue.repeat() == music::Repeat::One) app.fonts.bold->draw(c, ix + 276, int(cy) - 26, 14, "1", theme::Glow);
-        drawIcon(c, Icon::Volume, float(ix + 314), cy, 24, theme::TextDim);
-        drawProgress(c, ix + 336, int(cy) - 4, 70, 8, app.settings.volume / 100.0, theme::Blue, rgba(255, 255, 255, 40));
+        drawIcon(c, Icon::Prev, float(ix), cy, 28, theme::TextSub());
+        c.fillCircle(float(ix + 70), cy, 34, theme::Red);
+        drawIcon(c, app.audio.state() == PlayState::Playing ? Icon::Pause : Icon::Play, float(ix + 72), cy, 28, theme::AccentText());
+        drawIcon(c, Icon::Next, float(ix + 140), cy, 28, theme::TextSub());
+        drawIcon(c, Icon::Shuffle, float(ix + 210), cy, 26, app.queue.shuffle() ? theme::Red : theme::TextMute());
+        drawIcon(c, Icon::Repeat, float(ix + 262), cy, 26, app.queue.repeat() == music::Repeat::Off ? theme::TextMute() : theme::Red);
+        if (app.queue.repeat() == music::Repeat::One) app.fonts.bold->draw(c, ix + 276, int(cy) - 26, 14, "1", theme::TextSub());
+        drawIcon(c, Icon::Volume, float(ix + 314), cy, 24, theme::TextSub());
+        drawProgress(c, ix + 336, int(cy) - 4, 70, 8, app.settings.volume / 100.0, theme::Red, withAlpha(theme::Text(), 40));
     }
 };
 

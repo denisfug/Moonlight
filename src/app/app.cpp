@@ -137,6 +137,11 @@ void App::loadSettings()
     settings.remote = j["remote"].asBool(false);
     settings.archive = j["archive"].asBool(true);
     settings.audius = j["audius"].asBool(true);
+    settings.deezer = j["deezer"].asBool(true);
+    settings.jamendo = j["jamendo"].asBool(true);
+    settings.jamendoClientId = j["jamendoClientId"].str("");
+    settings.lightTheme = j["lightTheme"].asBool(false);
+    applyTheme();
     settings.volume = int(j["volume"].asInt(80));
 }
 
@@ -149,8 +154,18 @@ void App::saveSettings()
     j.set("remote", Json::boolean(settings.remote));
     j.set("archive", Json::boolean(settings.archive));
     j.set("audius", Json::boolean(settings.audius));
+    j.set("deezer", Json::boolean(settings.deezer));
+    j.set("jamendo", Json::boolean(settings.jamendo));
+    j.set("jamendoClientId", Json::string(settings.jamendoClientId));
+    j.set("lightTheme", Json::boolean(settings.lightTheme));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);
+}
+
+void App::applyTheme()
+{
+    theme::activeTheme = settings.lightTheme ? theme::ThemeMode::Light : theme::ThemeMode::Dark;
+    background_ = Image();   // the cached background is redrawn in the new colours
 }
 
 void App::rescanMusic()
@@ -592,16 +607,14 @@ void App::drawSidebar(Canvas &c)
     const int top = 24, bot = theme::H - 24;
     // No soft shadow on the whole pill: blurring a 96x1032 region every frame was a big cost on the
     // PS4 CPU during animations. The border below gives enough separation.
-    c.fillRoundRect(px, top, pw, bot - top, pr, theme::Surface);
-    c.strokeRoundRect(px, top, pw, bot - top, pr, 1, theme::Line);
+    c.fillRoundRect(px, top, pw, bot - top, pr, theme::BgSurface());
+    c.strokeRoundRect(px, top, pw, bot - top, pr, 1, theme::Border());
 
     // moon mark at the top of the pill
     {
         int mx = pcx - 24, my = top + 24;
-        c.shadow(mx, my, 48, 48, 24, 16, withAlpha(theme::Violet, 90));
-        c.fillGradient(mx, my, 48, 48, 24, theme::Glow, theme::Blue, 2);
-        c.fillCircle(float(mx + 34), float(my + 15), 20, theme::Bg);
-        c.fillCircle(float(mx + 38), float(my + 38), 2.2f, rgba(255, 255, 255, 200));
+        c.fillCircle(float(mx + 24), float(my + 24), 24, theme::Red);
+        c.fillCircle(float(mx + 34), float(my + 15), 20, theme::BgSurface());   // crescent cut-out
     }
 
     int y = top + 112;
@@ -612,12 +625,12 @@ void App::drawSidebar(Canvas &c)
         bool foc = sidebarFocus_ && int(it.s) == sidebarSel_;
         int bx = pcx - btn / 2, by = y;
         if (foc) {
-            c.shadow(bx, by, btn, btn, 22, 16, withAlpha(theme::Violet, 130));
-            c.fillGradient(bx, by, btn, btn, 22, theme::Violet, theme::Blue, 2);
+            c.fillRoundRect(bx, by, btn, btn, theme::Radius, theme::Red);
         } else if (cur) {
-            c.fillRoundRect(bx, by, btn, btn, 22, theme::SurfaceHi);
+            c.fillRoundRect(bx, by, btn, btn, theme::Radius, theme::BgHover());
+            c.fillRoundRect(px + 4, by + 16, 4, btn - 32, 2, theme::Red);   // current-section marker
         }
-        drawIcon(c, it.icon, float(pcx), float(by + btn / 2), 26, (foc || cur) ? theme::Text : theme::TextDim);
+        drawIcon(c, it.icon, float(pcx), float(by + btn / 2), 26, foc ? theme::AccentText() : cur ? theme::Text() : theme::TextSub());
         y += step;
     }
 
@@ -627,12 +640,12 @@ void App::drawSidebar(Canvas &c)
     bool musicOn = (audio.state() == PlayState::Playing || audio.state() == PlayState::Paused) && t < music.tracks().size();
     if (liveOn || musicOn) {
         int cy = bot - 90;
-        c.fillRoundRect(pcx - 34, cy, 68, 68, 22, theme::SurfaceHi);
+        c.fillRoundRect(pcx - 34, cy, 68, 68, 22, theme::BgHover());
         Icon ic = audio.state() == PlayState::Paused ? Icon::Pause : (liveOn ? Icon::Live : Icon::Music);
-        drawIcon(c, ic, float(pcx), float(cy + 28), 24, theme::Glow);
+        drawIcon(c, ic, float(pcx), float(cy + 28), 24, theme::TextSub());
         double frac = 1;
         if (musicOn) { double d = double(audio.getDuration()); frac = d > 0 ? audio.getPosition() / d : 0; }
-        drawProgress(c, pcx - 24, cy + 52, 48, 5, frac, theme::Blue, withAlpha(theme::Text, 40));
+        drawProgress(c, pcx - 24, cy + 52, 48, 5, frac, theme::Red, withAlpha(theme::Text(), 40));
     }
 }
 
@@ -644,43 +657,40 @@ void App::drawModal(Canvas &c)
     int h = 230 + int(lines.size()) * fonts.regular->lineHeight(26);
     int x = (c.width() - w) / 2, y = (c.height() - h) / 2;
     c.shadow(x, y, w, h, 28, 40, rgba(0, 0, 0, 170));
-    c.fillRoundRect(x, y, w, h, 28, theme::Surface);
-    c.strokeRoundRect(x, y, w, h, 28, 1, theme::Line);
-    fonts.bold->draw(c, x + 60, y + 44, 34, modal_.title, theme::Text);
+    c.fillRoundRect(x, y, w, h, 28, theme::BgSurface());
+    c.strokeRoundRect(x, y, w, h, 28, 1, theme::Border());
+    fonts.bold->draw(c, x + 60, y + 44, 34, modal_.title, theme::Text());
     int ly = y + 108;
-    for (const auto &l : lines) { fonts.regular->draw(c, x + 60, ly, 26, l, theme::TextDim); ly += fonts.regular->lineHeight(26); }
+    for (const auto &l : lines) { fonts.regular->draw(c, x + 60, ly, 26, l, theme::TextSub()); ly += fonts.regular->lineHeight(26); }
     int bx = x + w - 60;
     for (int i = int(modal_.buttons.size()) - 1; i >= 0; i--) {
         int bw = fonts.bold->measure(24, modal_.buttons[size_t(i)]) + 64;
         bx -= bw;
         bool f = i == modal_.sel;
-        if (f) c.fillGradient(bx, y + h - 96, bw, 56, 28, theme::Violet, theme::Blue, 0);
-        else c.fillRoundRect(bx, y + h - 96, bw, 56, 28, theme::SurfaceHi);
-        fonts.bold->draw(c, bx + 32, y + h - 96 + (56 - fonts.bold->lineHeight(24)) / 2, 24, modal_.buttons[size_t(i)], theme::Text);
+        if (f) c.fillRoundRect(bx, y + h - 96, bw, 56, 28, theme::Red);
+        else c.fillRoundRect(bx, y + h - 96, bw, 56, 28, theme::BgHover());
+        fonts.bold->draw(c, bx + 32, y + h - 96 + (56 - fonts.bold->lineHeight(24)) / 2, 24, modal_.buttons[size_t(i)], f ? theme::AccentText() : theme::Text());
         bx -= 16;
     }
 }
 
 void App::draw(Canvas &c)
 {
-    // background: night gradient + faint moon glow in the corner (rendered once, then copied)
+    // background: flat theme colour (rendered once, then copied; applyTheme() clears it)
     if (background_.empty()) {
         background_.w = theme::W;
         background_.h = theme::H;
         background_.px.assign(size_t(theme::W) * theme::H, 0xFF000000u);
         Canvas bc(background_.fb());
-        bc.fillGradient(0, 0, theme::W, theme::H, 0, theme::BgTop, theme::Bg, 1);
-        // dual radial glow: violet top-right, blue bottom-left (soft concentric discs)
-        for (int i = 0; i < 7; i++) bc.fillCircle(1770, 30, 560.0f - i * 68, rgba(139, 108, 255, 9));
-        for (int i = 0; i < 7; i++) bc.fillCircle(90, 1050, 470.0f - i * 66, rgba(79, 140, 255, 7));
+        bc.fillRect(0, 0, theme::W, theme::H, theme::Bg());
     }
     c.drawImage(background_, 0, 0);
     if (current().fullscreen()) {   // video player: the screen owns the whole display
         current().draw(c, {0, 0, theme::W, theme::H});
         if (!toast_.text.empty()) {
             int w = std::min(1100, fonts.regular->measure(24, toast_.text) + 80);
-            c.fillRoundRect(theme::W - 56 - w, 60, w, 70, 20, withAlpha(theme::SurfaceHi, 230));
-            fonts.regular->draw(c, theme::W - 56 - w + 30, 60 + (70 - fonts.regular->lineHeight(24)) / 2, 24, toast_.text, theme::Text);
+            c.fillRoundRect(theme::W - 56 - w, 60, w, 70, 20, withAlpha(theme::BgHover(), 230));
+            fonts.regular->draw(c, theme::W - 56 - w + 30, 60 + (70 - fonts.regular->lineHeight(24)) / 2, 24, toast_.text, theme::Text());
         }
         if (modal_.open) drawModal(c);
         return;
@@ -690,24 +700,24 @@ void App::draw(Canvas &c)
     c.pushClip(area);
     current().draw(c, area);
     c.popClip();
-    if (fade_ > 0) c.fillRect(area.x, area.y, area.w, area.h, withAlpha(theme::Bg, int(fade_ * 200)));
+    if (fade_ > 0) c.fillRect(area.x, area.y, area.w, area.h, withAlpha(theme::Bg(), int(fade_ * 200)));
     // hint bar
-    c.fillRect(theme::SidebarW, theme::H - 72, theme::W - theme::SidebarW, 72, rgba(8, 8, 20, 230));
-    c.fillRect(theme::SidebarW, theme::H - 72, theme::W - theme::SidebarW, 1, theme::Line);
+    c.fillRect(theme::SidebarW, theme::H - 72, theme::W - theme::SidebarW, 72, theme::BgCard());
+    c.fillRect(theme::SidebarW, theme::H - 72, theme::W - theme::SidebarW, 1, theme::Border());
     Hints h = sidebarFocus_ ? Hints{{BtnUp | BtnDown | BtnLeft | BtnRight, "Navegar"}, {BtnCross, "Entrar"}}
                             : current().hints();
     bool usesL2R2 = false;
     for (const auto &x : h) if (x.first & (BtnL2 | BtnR2)) usesL2R2 = true;
     if (!sidebarFocus_ && stack_.empty() && !usesL2R2) h.push_back({BtnL2 | BtnR2, "Secao"});
     drawHints(c, fonts, h, theme::W - theme::Margin, theme::H - 54);
-    if (!sidebarFocus_ || true) fonts.regular->draw(c, theme::SidebarW + theme::Margin, theme::H - 50, 20, current().title(), theme::TextMute);
+    if (!sidebarFocus_ || true) fonts.regular->draw(c, theme::SidebarW + theme::Margin, theme::H - 50, 20, current().title(), theme::TextMute());
     if (!toast_.text.empty()) {
         int w = std::min(1100, fonts.regular->measure(24, toast_.text) + 80);
         int x = theme::W - theme::Margin - w, y = theme::H - 170;
         c.shadow(x, y, w, 70, 20, 24, rgba(0, 0, 0, 150));
-        c.fillRoundRect(x, y, w, 70, 20, theme::SurfaceHi);
-        c.fillRoundRect(x, y + 18, 5, 34, 2, theme::Glow);
-        fonts.regular->draw(c, x + 30, y + (70 - fonts.regular->lineHeight(24)) / 2, 24, fonts.regular->ellipsize(24, toast_.text, w - 50), theme::Text);
+        c.fillRoundRect(x, y, w, 70, 20, theme::BgHover());
+        c.fillRoundRect(x, y + 18, 5, 34, 2, theme::Red);
+        fonts.regular->draw(c, x + 30, y + (70 - fonts.regular->lineHeight(24)) / 2, 24, fonts.regular->ellipsize(24, toast_.text, w - 50), theme::Text());
     }
     if (modal_.open) drawModal(c);
     keyboard.draw(c, fonts);

@@ -121,16 +121,16 @@ public:
             label = app.fonts.bold->ellipsize(22, label, 260);
             bool on = i == tab_;
             int w = app.fonts.bold->measure(22, label) + 40;
-            if (on) c.fillGradient(x, y, w, 48, 24, theme::Violet, theme::Indigo, 0);
-            else c.fillRoundRect(x, y, w, 48, 24, theme::Surface);
-            (on ? app.fonts.bold : app.fonts.regular)->draw(c, x + 20, y + (48 - app.fonts.bold->lineHeight(22)) / 2, 22, label, on ? theme::Text : theme::TextDim);
+            if (on) c.fillRoundRect(x, y, w, 48, theme::RadiusSm, theme::Red);
+            else c.fillRoundRect(x, y, w, 48, theme::RadiusSm, theme::BgSurface());
+            (on ? app.fonts.bold : app.fonts.regular)->draw(c, x + 20, y + (48 - app.fonts.bold->lineHeight(22)) / 2, 22, label, on ? theme::AccentText() : theme::TextSub());
             x += w + 10;
         }
         x = area.x + theme::Margin;
         int top = 256;
         if (pending_) {
             drawnLoading_ = true;
-            app.fonts.regular->draw(c, x, top + 20, 28, "Carregando radios...", theme::TextDim);
+            app.fonts.regular->draw(c, x, top + 20, 28, "Carregando radios...", theme::TextSub());
             return;
         }
         if (stations_.empty()) {
@@ -140,7 +140,7 @@ public:
                                                  : "Nenhuma radio encontrada.";
             auto lines = app.fonts.regular->wrap(26, msg, area.w - 2 * theme::Margin, 3);
             int ly = top + 20;
-            for (const auto &l : lines) { app.fonts.regular->draw(c, x, ly, 26, l, error_.empty() ? theme::TextDim : theme::Warn); ly += 38; }
+            for (const auto &l : lines) { app.fonts.regular->draw(c, x, ly, 26, l, error_.empty() ? theme::TextSub() : theme::Warn); ly += 38; }
             return;
         }
         int w = area.w - 2 * theme::Margin;
@@ -154,21 +154,21 @@ public:
                            (app.audio.state() == PlayState::Playing || app.audio.state() == PlayState::Paused);
             Rect r{x, ry, w, 80};
             if (f) {
-                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(theme::Violet, 90));
-                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::SurfaceHi);
-                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, rgba(196, 181, 253));
+                c.shadow(r.x, r.y, r.w, r.h, 16, 16, withAlpha(rgba(0, 0, 0), 90));
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgHover());
+                c.strokeRoundRect(r.x, r.y, r.w, r.h, 16, 2, theme::Red);
             } else {
-                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::Surface);
+                c.fillRoundRect(r.x, r.y, r.w, r.h, 16, theme::BgSurface());
             }
             drawGeneratedArt(c, app.fonts, {r.x + 10, r.y + 10, 60, 60}, 12, "radio:" + s.uuid, "", false);
             drawIcon(c, playing ? Icon::Music : Icon::Live, float(r.x + 40), float(r.y + 40), 24, rgba(255, 255, 255, 230));
-            app.fonts.bold->draw(c, r.x + 92, r.y + 12, 25, app.fonts.bold->ellipsize(25, s.name, r.w - 400), playing ? theme::Glow : theme::Text);
+            app.fonts.bold->draw(c, r.x + 92, r.y + 12, 25, app.fonts.bold->ellipsize(25, s.name, r.w - 400), playing ? theme::TextSub() : theme::Text());
             std::string tags = s.tags;
             std::replace(tags.begin(), tags.end(), ',', ' ');
-            app.fonts.regular->draw(c, r.x + 92, r.y + 46, 18, app.fonts.regular->ellipsize(18, s.countryCode + (s.countryCode.empty() || tags.empty() ? "" : "  -  ") + tags, r.w - 400), theme::TextMute);
+            app.fonts.regular->draw(c, r.x + 92, r.y + 46, 18, app.fonts.regular->ellipsize(18, s.countryCode + (s.countryCode.empty() || tags.empty() ? "" : "  -  ") + tags, r.w - 400), theme::TextMute());
             std::string q = std::to_string(s.bitrate) + " kbps";
-            app.fonts.regular->draw(c, r.right() - 250, r.y + 28, 19, q, theme::TextDim);
-            if (app.radioFavorites.contains(s.uuid)) drawIcon(c, Icon::HeartFilled, float(r.right() - 60), float(r.y + 40), 22, theme::Glow);
+            app.fonts.regular->draw(c, r.right() - 250, r.y + 28, 19, q, theme::TextSub());
+            if (app.radioFavorites.contains(s.uuid)) drawIcon(c, Icon::HeartFilled, float(r.right() - 60), float(r.y + 40), 22, theme::TextSub());
         }
         c.popClip();
     }

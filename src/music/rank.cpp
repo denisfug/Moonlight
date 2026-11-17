@@ -195,6 +195,24 @@ void rankInPlace(const std::string &qTitle, const std::string &qArtist,
     songs = std::move(result);
 }
 
+void sortFreeText(const std::string &query, std::vector<catalog::Song> &songs)
+{
+    std::vector<std::pair<float, size_t>> scored;
+    scored.reserve(songs.size());
+    for (size_t i = 0; i < songs.size(); i++) {
+        const catalog::Song &s = songs[i];
+        float best = std::max(textScore(query, s.title), textScore(query, s.artist));
+        best = std::max(best, textScore(query, s.title + " " + s.artist));
+        scored.push_back({best, i});
+    }
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const auto &a, const auto &b) { return a.first > b.first; });
+    std::vector<catalog::Song> result;
+    result.reserve(scored.size());
+    for (auto &p : scored) result.push_back(std::move(songs[p.second]));
+    songs = std::move(result);
+}
+
 void capPerArtist(std::vector<catalog::Song> &songs, int maxPerArtist)
 {
     std::unordered_map<std::string,int> counts;

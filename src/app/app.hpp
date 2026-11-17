@@ -64,7 +64,9 @@ struct Settings {
     bool archive = true;      // music search also asks the Internet Archive (free/public-domain audio)
     bool audius = true;       // music search and "em alta" also ask Audius (independent artists)
     bool deezer = true;       // music search also asks Deezer (30s previews; covers + metadata)
-    std::string jamendoClientId;  // empty = Jamendo disabled; set via Configuracoes or JsonStore
+    bool jamendo = true;      // music search also asks Jamendo (Creative Commons, full-length MP3) first
+    std::string jamendoClientId;  // empty = Jamendo disabled; set via Configuracoes or settings.json
+    bool lightTheme = false;  // false = dark (default), true = light; applied with App::applyTheme()
     int volume = 80;
 };
 
@@ -169,6 +171,7 @@ public:
     void setServer(const subsonic::Config &c);
     void skip(int dir);
     void saveSettings();
+    void applyTheme();   // settings.lightTheme -> theme::activeTheme (+ redraws the cached background)
     void rescanMusic();
 
     // live tv: user list at <dataDir>/channels.m3u, else demo channels

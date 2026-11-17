@@ -54,9 +54,10 @@ void drawGeneratedArt(Canvas &c, Fonts &f, Rect r, int radius, const std::string
 static void renderArt(Canvas &c, Fonts &f, Rect r, int radius, const std::string &seed, const std::string &title, bool showTitle)
 {
     uint32_t h = hashStr(seed);
-    // hues stay in the cool night range (blue/violet/teal/magenta) to match the identity
-    float hue = 190.0f + float(h % 140);
-    Color a = hsv(hue, 0.65f, 0.55f), b = hsv(hue + 35.0f, 0.75f, 0.16f);
+    // charcoal with a low-saturation warm/red tint (black / white / red identity)
+    float hue = 345.0f + float(h % 30);
+    float sat = 0.08f + float((h >> 3) % 40) / 100.0f;
+    Color a = hsv(hue, sat, 0.30f + float((h >> 11) % 12) / 100.0f), b = hsv(hue, sat * 0.5f, 0.06f);
     c.fillGradient(r.x, r.y, r.w, r.h, radius, a, b, 2);
     c.pushClip(r);
     // decorative orbits / moons
@@ -208,8 +209,8 @@ void drawIcon(Canvas &c, Icon icon, float x, float y, float s, Color col)
     case Icon::Warning: {
         float p[] = {x, y - h * 0.9f, x + h * 0.95f, y + h * 0.75f, x - h * 0.95f, y + h * 0.75f};
         c.fillConvex(p, 3, col);
-        c.line(x, y - h * 0.35f, x, y + h * 0.2f, t * 1.1f, theme::Bg);
-        c.fillCircle(x, y + h * 0.48f, t * 0.7f, theme::Bg);
+        c.line(x, y - h * 0.35f, x, y + h * 0.2f, t * 1.1f, theme::Bg());
+        c.fillCircle(x, y + h * 0.48f, t * 0.7f, theme::Bg());
         break;
     }
     }
@@ -242,8 +243,8 @@ static int glyphWidth(Fonts &f, uint32_t b, int s)
 int drawButtonGlyph(Canvas &c, Fonts &f, uint32_t b, int x, int y, int s)
 {
     float cx = x + s / 2.0f, cy = y + s / 2.0f, h = s / 2.0f;
-    Color ring = rgba(255, 255, 255, 60), fg = theme::Text;
-    auto disc = [&] { c.fillCircle(cx, cy, h, rgba(255, 255, 255, 24)); c.strokeCircle(cx, cy, h, 1.5f, ring); };
+    Color ring = withAlpha(theme::Text(), 60), fg = theme::Text();
+    auto disc = [&] { c.fillCircle(cx, cy, h, withAlpha(theme::Text(), 24)); c.strokeCircle(cx, cy, h, 1.5f, ring); };
     switch (b) {
     case BtnCross:
         disc();
@@ -270,7 +271,7 @@ int drawButtonGlyph(Canvas &c, Fonts &f, uint32_t b, int x, int y, int s)
         const char *label = pillLabel(b);
         int px = int(s * 0.45f);
         int w = glyphWidth(f, b, s);
-        c.fillRoundRect(x, y + s / 8, w, s - s / 4, (s - s / 4) / 2, rgba(255, 255, 255, 24));
+        c.fillRoundRect(x, y + s / 8, w, s - s / 4, (s - s / 4) / 2, withAlpha(theme::Text(), 24));
         c.strokeRoundRect(x, y + s / 8, w, s - s / 4, (s - s / 4) / 2, 1, ring);
         f.bold->draw(c, x + s / 4, y + (s - f.bold->lineHeight(px)) / 2, px, label, fg);
         return w;
@@ -285,7 +286,7 @@ void drawHints(Canvas &c, Fonts &f, const std::vector<std::pair<uint32_t, std::s
     for (auto it = hints.rbegin(); it != hints.rend(); ++it) {
         int tw = f.regular->measure(px, it->second);
         x -= tw;
-        f.regular->draw(c, x, y + (s - f.regular->lineHeight(px)) / 2, px, it->second, theme::TextDim);
+        f.regular->draw(c, x, y + (s - f.regular->lineHeight(px)) / 2, px, it->second, theme::TextSub());
         x -= 10;
         int gw = glyphWidth(f, it->first, s);
         x -= gw;
@@ -300,13 +301,13 @@ void drawProgress(Canvas &c, int x, int y, int w, int h, double frac, Color fg, 
     if (frac > 1) frac = 1;
     c.fillRoundRect(x, y, w, h, h / 2, bg);
     int fw = int(w * frac);
-    if (fw > 0) c.fillGradient(x, y, std::max(fw, h), h, h / 2, theme::Violet, fg, 0);
+    if (fw > 0) c.fillRoundRect(x, y, std::max(fw, h), h, h / 2, fg);
 }
 
 void drawFocusRing(Canvas &c, Rect r, int radius)
 {
-    c.shadow(r.x, r.y, r.w, r.h, radius, 26, withAlpha(theme::Glow, 110));
-    c.strokeRoundRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8, radius + 4, 3, rgba(196, 181, 253));
+    // clean red outline, no glow
+    c.strokeRoundRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, radius + 3, 2, theme::Red);
 }
 
 std::string formatTime(int64_t ms)
@@ -391,17 +392,17 @@ void Keyboard::draw(Canvas &c, Fonts &f)
     int panelW = kw + 120, panelH = 260 + int(rs.size()) * (key + gap);
     int px = (c.width() - panelW) / 2, py = (c.height() - panelH) / 2;
     c.shadow(px, py, panelW, panelH, 28, 40, rgba(0, 0, 0, 160));
-    c.fillRoundRect(px, py, panelW, panelH, 28, theme::Surface);
-    c.strokeRoundRect(px, py, panelW, panelH, 28, 1, theme::Line);
-    f.bold->draw(c, px + 60, py + 36, 34, title_, theme::Text);
+    c.fillRoundRect(px, py, panelW, panelH, 28, theme::BgSurface());
+    c.strokeRoundRect(px, py, panelW, panelH, 28, 1, theme::Border());
+    f.bold->draw(c, px + 60, py + 36, 34, title_, theme::Text());
     // text field
     int fx = px + 60, fy = py + 96, fw = kw, fh = 76;
-    c.fillRoundRect(fx, fy, fw, fh, 16, theme::Bg);
-    c.strokeRoundRect(fx, fy, fw, fh, 16, 2, theme::Violet);
+    c.fillRoundRect(fx, fy, fw, fh, 16, theme::Bg());
+    c.strokeRoundRect(fx, fy, fw, fh, theme::RadiusSm, 2, theme::Red);
     std::string shown = text_;
     while (f.regular->measure(32, shown + "|") > fw - 40 && !shown.empty()) shown.erase(0, 1);
-    int tw = f.regular->draw(c, fx + 20, fy + (fh - f.regular->lineHeight(32)) / 2, 32, shown, theme::Text);
-    c.fillRect(fx + 22 + tw, fy + 18, 3, fh - 36, theme::Glow);
+    int tw = f.regular->draw(c, fx + 20, fy + (fh - f.regular->lineHeight(32)) / 2, 32, shown, theme::Text());
+    c.fillRect(fx + 22 + tw, fy + 18, 3, fh - 36, theme::TextSub());
     int y = fy + fh + 36;
     for (size_t r = 0; r < rs.size(); r++) {
         int n = int(rs[r].size());
@@ -409,12 +410,12 @@ void Keyboard::draw(Canvas &c, Fonts &f)
         int x = fx;
         for (int i = 0; i < n; i++) {
             bool foc = int(r) == row_ && i == col_;
-            if (foc) c.fillGradient(x, y, w, key, 14, theme::Violet, theme::Blue, 2);
-            else c.fillRoundRect(x, y, w, key, 14, theme::SurfaceHi);
+            if (foc) c.fillRoundRect(x, y, w, key, 14, theme::Red);
+            else c.fillRoundRect(x, y, w, key, 14, theme::BgHover());
             int ts = rs[r][size_t(i)].size() > 1 ? 26 : 36;
             Font *fn = foc ? f.bold : f.regular;
             int lw = fn->measure(ts, rs[r][size_t(i)]);
-            fn->draw(c, x + (w - lw) / 2, y + (key - fn->lineHeight(ts)) / 2, ts, rs[r][size_t(i)], theme::Text);
+            fn->draw(c, x + (w - lw) / 2, y + (key - fn->lineHeight(ts)) / 2, ts, rs[r][size_t(i)], foc ? theme::AccentText() : theme::Text());
             x += w + gap;
         }
         y += key + gap;
