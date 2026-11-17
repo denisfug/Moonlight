@@ -1,0 +1,62 @@
+name: Build PS4 PKG
+
+on:
+  push:
+    branches:
+      - 'claude/fase-1-base'
+      - 'main'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake make clang lld python3 wget tar zip xz-utils
+
+      - name: Download OpenOrbis Toolchain
+        run: |
+          wget -q https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
+          mkdir -p oosdk
+          tar -xzf toolchain-llvm-18.tar.gz -C oosdk --strip-components=1
+          echo "OO_PS4_TOOLCHAIN=$(pwd)/oosdk" >> $GITHUB_ENV
+
+      - name: Verify toolchain
+        run: |
+          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN"
+          ls "$OO_PS4_TOOLCHAIN"
+          test -f "$OO_PS4_TOOLCHAIN/link.x" && echo "link.x OK" || (echo "ERRO: link.x não encontrado"; find oosdk -name "link.x" | head -5; exit 1)
+
+      - name: Download GoldHEN SDK
+        run: |
+          wget -q https://github.com/GoldHEN/GoldHEN_Plug_SDK/archive/refs/heads/main.zip -O goldhen.zip
+          unzip -q goldhen.zip
+          echo "GOLDHEN_SDK=$(pwd)/GoldHEN_Plug_SDK-main" >> $GITHUB_ENV
+
+      - name: Build libc++ for PS4
+        run: |
+          cd $GITHUB_WORKSPACE
+          bash toolchain/build-libcxx.sh
+
+      - name: Build PS4 PKG
+        run: |
+          cd $GITHUB_WORKSPACE
+          make pkg
+
+      - name: Upload PKG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moonlight-HB-PKG
+          path: out/*.pkg
+          retention-days: 30
+
+      - name: Show result
+        run: ls -lh out/*.pkg
