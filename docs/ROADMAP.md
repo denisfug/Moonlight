@@ -138,6 +138,12 @@ a memória; nenhuma versão testou os três fatores corretos juntos até agora. 
 **01.30**: Openverse integrado (fonte CC Wikimedia, full-length MP3, sem DRM, sem conta). No av_engine, fallback
 `posix_memalign` disponível via `ML_AV_TEX_MALLOC` para o caso da GPU memory não produzir quadros: se definido
 em tempo de compilação, `texAlloc` usa `posix_memalign` como o PS4 IPTV Player que funciona no console.
+
+**Bug corrigido (01.30+)**: `sceAvPlayerAddSource` sempre falha com URLs `.m3u8` no PS4. O player exige
+`sceAvPlayerAddSourceEx(handle, SCE_AVPLAYER_SOURCE_TYPE_HLS=3, url)` para streams HLS. Declaração
+adicionada em `avplayer_api.h`; `av_engine.cpp::open()` agora detecta `.m3u8` e usa a chamada correta.
+Para HLS o `RangeReader` não é criado — o player resolve segmentos diretamente pela rede do sistema.
+Referência: PS4 IPTV Player (OpenOrbis, confirmado funcionando no console).
 Nenhum teste de vídeo novo rodou no console nesta versão.
 
 **Referência externa:** o PS4 IPTV Player (OpenOrbis, código aberto) usa `posix_memalign` para a textura e
