@@ -32,14 +32,89 @@ void *avAlloc(void *, uint32_t align, uint32_t size)
 }
 void avFree(void *, void *mem) { std::free(mem); }
 
-// Decoder output buffers. 01.24: plain aligned memory, like the working PS4-IPTV-Player reference
-// (Rissx223) whose AvPlayer path decodes H.264 on real hardware. 01.13-01.23 used GPU direct memory
-// here (sceKernelAllocateDirectMemory + Map); on the console the player reserved the buffers but never
-// produced a frame (video test: "62 MB, aguardando o decodificador, parado", 0 quadros). AvPlayer
-// copies the decoded NV12 into these buffers, so plain CPU-readable memory is what it needs; the
-// direct-memory mapping is the suspected cause of the stall.
-void *avAllocTex(void *obj, uint32_t align, uint32_t size) { return avAlloc(obj, align, size); }
-void avFreeTex(void *obj, void *mem) { avFree(obj, mem); }
+// Decoder output buffers: NV12 frames that the system decoder fills and the CPU reads for conversion.
+//
+// Memory type history:
+//   01.13-01.23: sceKernelAllocateDirectMemory (GPU, type=3, prot=0x33) — 0 frames produced.
+//                At the time: basePriority=700 (low), numOutputVideoFramebuffers=2.
+//   01.24-01.28: posix_memalign (CPU-only) — also 0 frames. Comments blamed direct memory, but
+//                plain malloc was never confirmed as correct either. avplayer_api.h says
+//                "allocateTexture: must be GPU-visible memory".
+//   01.29+: Back to GPU-visible, with the SAME parameters as video_out.cpp (which works on console):
+//           type=3, prot=0x33, align≥0x200000. The root cause in 01.13-01.23 was most likely the
+//           thread starvation (priority=700) and insufficient buffers (2), not the memory type.
+//           Diagnostics now record every allocation so the console test can confirm.
+//
+// If 01.29 also yields 0 frames, the next attempt is WC (write-combining) mapping (prot=0x32).
+struct TexBlock {
+    off_t  dmemOffset = 0;   // physical offset returned by AllocateDirectMemory
+    void  *vaddr      = nullptr;
+    size_t mappedSize = 0;
+};
+static constexpr size_t kTexAlign = 0x200000;   // 2 MiB, same as video_out.cpp
+
+static TexBlock texAlloc(uint32_t align, uint32_t size)
+{
+    TexBlock b;
+    if (align < uint32_t(kTexAlign)) align = uint32_t(kTexAlign);
+    b.mappedSize = (size_t(size) + align - 1) / align * align;
+    if (sceKernelAllocateDirectMemory(0, off_t(sceKernelGetDirectMemorySize()),
+                                      off_t(b.mappedSize), off_t(align), 3, &b.dmemOffset) < 0) {
+        b.dmemOffset = 0;
+        return b;   // vaddr stays nullptr → caller treats as failure
+    }
+    if (sceKernelMapDirectMemory(&b.vaddr, b.mappedSize, 0x33, 0, b.dmemOffset, align) < 0) {
+        sceKernelReleaseDirectMemory(b.dmemOffset, off_t(b.mappedSize));
+        b.vaddr = nullptr;
+        b.dmemOffset = 0;
+    }
+    return b;
+}
+
+static void texFreeBlock(TexBlock &b)
+{
+    if (b.vaddr) {
+        sceKernelMunmap(b.vaddr, b.mappedSize);
+        b.vaddr = nullptr;
+    }
+    if (b.dmemOffset) {
+        sceKernelReleaseDirectMemory(b.dmemOffset, off_t(b.mappedSize));
+        b.dmemOffset = 0;
+    }
+}
+
+// Per-engine table of live texture allocations (small: sceAvPlayer asks for 4 buffers × ~8 MB each).
+// NO destructor: the PS4 binary has no .init_array / __cxa_guard. Caller MUST call releaseAll()
+// explicitly (AvEngine::stop() does this) before the AvEngine is destroyed.
+struct TexTable {
+    static constexpr int kMax = 16;
+    TexBlock blocks[kMax];
+    int      count = 0;
+
+    void *alloc(uint32_t align, uint32_t size)
+    {
+        if (count >= kMax) return nullptr;
+        TexBlock b = texAlloc(align, size);
+        if (!b.vaddr) return nullptr;
+        blocks[count++] = b;
+        return b.vaddr;
+    }
+    void free(void *p)
+    {
+        for (int i = 0; i < count; i++) {
+            if (blocks[i].vaddr == p) {
+                texFreeBlock(blocks[i]);
+                blocks[i] = blocks[--count];
+                return;
+            }
+        }
+    }
+    void releaseAll()
+    {
+        for (int i = 0; i < count; i++) texFreeBlock(blocks[i]);
+        count = 0;
+    }
+};
 
 class AvEngine;
 AvEngine *g_logEngine = nullptr;   // engine receiving the player's internal log (plain pointer)
@@ -56,6 +131,7 @@ public:
     explicit AvEngine(Ps4Platform &p) : plat_(p)
     {
         for (auto &e : events_) e = 0;
+        // TexTable has no constructor — zero-initialized by member init below.
     }
     ~AvEngine() override
     {
@@ -161,6 +237,8 @@ public:
         paused_ = false;
         stopFetch();
         reader_.reset();
+        // Release GPU-visible texture buffers after the player is closed (it must not hold references).
+        texTable_.releaseAll();
         traceStep("video fechado", true);
     }
 
@@ -219,7 +297,8 @@ public:
         for (const auto &j : journal_) d += "\n  - " + j;
         std::vector<std::string> sys = sysLog_;
         statusLock_.clear(std::memory_order_release);
-        d += "\nmemoria de video: " + std::to_string(texOk_.load()) + " blocos ok, " + std::to_string(texFail_.load()) + " recusados (" +
+        d += "\nmemoria de video (GPU direta): " + std::to_string(texOk_.load()) + " blocos ok, " +
+             std::to_string(texFail_.load()) + " recusados, " + std::to_string(texFallback_.load()) + " fallback-malloc (" +
              std::to_string(texBytes_.load() / (1024 * 1024)) + " MB)";
         d += "\nmemoria comum: " + std::to_string(memFail_.load()) + " pedidos recusados";
         d += "\nleituras pelo app: " + std::to_string(reads_.load()) + " (" + std::to_string(readBytes_.load() / 1024) + " KB), " +
@@ -322,10 +401,14 @@ private:
         return self->reader_ && self->reader_->size() > 0 ? uint64_t(self->reader_->size()) : 0;
     }
 
+    // GPU-visible texture allocation table (NV12 decode buffers, up to 16 blocks × ~8 MB each).
+    // Freed automatically by TexTable destructor when AvEngine is destroyed.
+    TexTable texTable_;
+
     // ---- diagnostics counters (callbacks run on the player's threads)
     std::vector<std::string> journal_, sysLog_;   // guarded by statusLock_
     bool internalLog_ = false;
-    std::atomic<int> texOk_{0}, texFail_{0}, memFail_{0}, reads_{0}, readFails_{0}, frames_{0}, audioBlocks_{0};
+    std::atomic<int> texOk_{0}, texFail_{0}, texFallback_{0}, memFail_{0}, reads_{0}, readFails_{0}, frames_{0}, audioBlocks_{0};
     std::atomic<long long> texBytes_{0}, readBytes_{0};
     int32_t eventIds_[16] = {0};
     std::atomic<int> events_[16];
@@ -350,12 +433,30 @@ private:
     static void *allocTex(void *obj, uint32_t align, uint32_t size)
     {
         auto *self = static_cast<AvEngine *>(obj);
-        void *p = avAllocTex(obj, align, size);
+        // GPU-visible direct memory (type=3, prot=0x33) — required by avplayer_api.h.
+        // Uses same parameters as video_out.cpp (confirmed working on PS4).
+        void *p = self->texTable_.alloc(align, size);
         if (p) { self->texOk_++; self->texBytes_ += size; }
-        else self->texFail_++;
+        else {
+            self->texFail_++;
+            // Fallback: plain aligned memory — wrong type but avoids hard crash on alloc failure.
+            if (align < 16) align = 16;
+            if (posix_memalign(&p, align, size) != 0) p = nullptr;
+            if (p) self->texFallback_++;
+        }
         return p;
     }
-    static void freeTex(void *obj, void *mem) { avFreeTex(obj, mem); }
+    static void freeTex(void *obj, void *mem)
+    {
+        auto *self = static_cast<AvEngine *>(obj);
+        // Try the GPU table first; if not found it was a fallback malloc.
+        bool found = false;
+        for (int i = 0; i < self->texTable_.count; i++) {
+            if (self->texTable_.blocks[i].vaddr == mem) { found = true; break; }
+        }
+        if (found) self->texTable_.free(mem);
+        else std::free(mem);
+    }
 
     static int onSysLog(void *user, const char *format, va_list args)
     {
