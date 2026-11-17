@@ -7,7 +7,7 @@ project(MoonlightHB VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(ML_VERSION "01.30")
+set(ML_VERSION "01.31")
 
 set(ML_WARN -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=return-type -Werror=uninitialized)
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>")
@@ -95,14 +95,15 @@ if(ML_PS4)
     )
     target_link_libraries(moonlight PRIVATE ml_ui)
     target_compile_definitions(moonlight PRIVATE ML_PLATFORM_PS4 ML_VERSION="${ML_VERSION}")
-    # ML_AV_TEX_MALLOC: use posix_memalign instead of GPU-visible memory for sceAvPlayer texture buffers.
-    # Set via: cmake -DML_AV_TEX_MALLOC=1 ...  or  make pkg ML_AV_TEX_MALLOC=1
-    # Use when GPU memory (01.29) produces 0 frames; matches the working PS4 IPTV Player reference.
-    if(ML_AV_TEX_MALLOC)
-        target_compile_definitions(moonlight PRIVATE ML_AV_TEX_MALLOC)
-        message(STATUS "av_engine: texture memory = posix_memalign (ML_AV_TEX_MALLOC)")
+    # ML_AV_GPU_TEX: use sceKernelAllocateDirectMemory (GPU-visible) instead of posix_memalign.
+    # Default (01.31+): posix_memalign, same as PS4 IPTV Player (confirmed working on console).
+    # Set via: cmake -DML_AV_GPU_TEX=1 ...  or  make pkg ML_AV_GPU_TEX=1
+    # Use only to compare GPU path after posix_memalign path is validated.
+    if(ML_AV_GPU_TEX)
+        target_compile_definitions(moonlight PRIVATE ML_AV_GPU_TEX)
+        message(STATUS "av_engine: texture memory = GPU-visible sceKernelAllocateDirectMemory (ML_AV_GPU_TEX)")
     else()
-        message(STATUS "av_engine: texture memory = GPU-visible sceKernelAllocateDirectMemory (default)")
+        message(STATUS "av_engine: texture memory = posix_memalign (default, like PS4 IPTV Player)")
     endif()
     if(ML_GOLDHEN_INCLUDE)
         target_include_directories(moonlight PRIVATE ${ML_GOLDHEN_INCLUDE})

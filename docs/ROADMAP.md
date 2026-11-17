@@ -135,23 +135,24 @@ a memória; nenhuma versão testou os três fatores corretos juntos até agora. 
 `releaseAll()` chamado em `stop()`. Tipos corrigidos em `texAlloc`: `size_t` para `len`/`alignment` em vez de
 `off_t` (como exige `libkernel.h`). **PC: 99 testes, 0 falhas. PS4: aguardando teste.**
 
-**01.30**: Openverse integrado (fonte CC Wikimedia, full-length MP3, sem DRM, sem conta). No av_engine, fallback
-`posix_memalign` disponível via `ML_AV_TEX_MALLOC` para o caso da GPU memory não produzir quadros: se definido
-em tempo de compilação, `texAlloc` usa `posix_memalign` como o PS4 IPTV Player que funciona no console.
+**01.30**: Openverse integrado (fonte CC Wikimedia, full-length MP3, sem DRM, sem conta). No av_engine,
+`posix_memalign` disponível via flag de compilação `ML_AV_TEX_MALLOC`. PKG gerado; aguardando teste no console.
 
-**Bug corrigido (01.30+)**: `sceAvPlayerAddSource` sempre falha com URLs `.m3u8` no PS4. O player exige
-`sceAvPlayerAddSourceEx(handle, SCE_AVPLAYER_SOURCE_TYPE_HLS=3, url)` para streams HLS. Declaração
-adicionada em `avplayer_api.h`; `av_engine.cpp::open()` agora detecta `.m3u8` e usa a chamada correta.
-Para HLS o `RangeReader` não é criado — o player resolve segmentos diretamente pela rede do sistema.
-Referência: PS4 IPTV Player (OpenOrbis, confirmado funcionando no console).
-Nenhum teste de vídeo novo rodou no console nesta versão.
+**Bug documentado (01.30, corrigido em 01.31)**: `avplayer_api.h` declarava `MlAvSourceHLS = 0x00000003`
+(valor do emulador shadPS4). O PS4 IPTV Player (OpenOrbis, confirmado funcionando no console) usa
+`SCE_AVPLAYER_SOURCE_TYPE_HLS = 8`. Valor errado podia fazer o player ignorar ou tratar mal o stream HLS.
 
-**Referência externa:** o PS4 IPTV Player (OpenOrbis, código aberto) usa `posix_memalign` para a textura e
-funciona no console. Se a 01.29 (GPU memory) também não produzir quadros, a próxima hipótese é: reverte para
-`posix_memalign` como o IPTV Player — ou seja, o problema pode nunca ter sido o tipo de memória, mas sim
-priority=700 e 2 buffers. As versões 01.24-01.28 que usavam `posix_memalign` **nunca chegaram ao console**
-(fechavam ao abrir por bugs do toolchain v0.5.2 e libc++ antiga, corrigidos em 01.28). A 01.28 abriu no console
-mas o teste de vídeo falhou sem detalhes suficientes para diagnosticar.
+**01.31**: Duas correções baseadas na análise do PS4 IPTV Player (fonte aberta, confirmado no console):
+1. `MlAvSourceHLS` corrigido de `0x00000003` para `0x00000008` em `avplayer_api.h` — valor real do PS4.
+2. `texAlloc` agora usa `posix_memalign` **por padrão** (mesmo que o IPTV Player). GPU path (`ML_AV_GPU_TEX=1`)
+   disponível como opt-in para comparação. Lógica: o IPTV Player usa `posix_memalign` e toca vídeo no console;
+   as versões 01.24-01.28 do Moonlight que tentaram `posix_memalign` **nunca chegaram ao console** (fechavam ao
+   abrir por bugs do toolchain), então o tipo de memória nunca foi testado empiricamente.
+   **PC: 99 testes, 0 falhas. PS4: aguardando teste.**
+
+**Resumo das duas hipóteses ainda a confirmar no console:**
+- O valor `HLS=8` era incorreto → streams HLS nunca funcionariam (confirmado pela referência)
+- `posix_memalign` vs GPU memory: o IPTV Player usa `posix_memalign` → adotado como padrão agora
 
 ## Fase 4 — Reprodução
 
@@ -169,12 +170,13 @@ Pendentes. Precisam do resultado do primeiro teste no console.
 ## Próxima tarefa recomendada
 
 **Para o dono (teste no console):**
-1. Instalar `Moonlight-HB_01.30.pkg` e rodar o Teste de Vídeo (Configurações > Problemas ao reproduzir).
+1. Instalar `Moonlight-HB_01.31.pkg` e rodar o Teste de Vídeo (Configurações > Problemas ao reproduzir).
    - Registrar o diagnóstico completo (passos do player, contagem de blocos de memória, quadros produzidos).
-   - Se `texOk > 0` mas `quadros = 0` → próximo passo: build com `-DML_AV_TEX_MALLOC=1` (posix_memalign).
-   - Se `texFail > 0` → GPU memory não alocou; build com `-DML_AV_TEX_MALLOC=1` diretamente.
-2. Música do Openverse: após conectar à internet no console, buscar qualquer artista e confirmar se faixas aparecem.
+   - Se `quadros = 0` com `posix_memalign`: reportar o diagnóstico completo — próximo passo a definir.
+   - Se `quadros > 0`: vídeo funciona. Confirmar HLS com uma URL `.m3u8` real.
+2. Música do Openverse: buscar qualquer artista e confirmar se faixas aparecem.
 
-**Para o agente (próxima build):**
-- Gerar PKG 01.30 assim que a pasta do toolchain for compartilhada pelo dispositivo.
-- Próximos recursos: busca/adicionar-fonte fora da thread UI; controle pelo celular; rádio durante jogos (plugin GoldHEN).
+**Para o agente (próximas builds):**
+- P5: AudioPlayer — posição inicial inesperada, avanço prematuro de faixa, dados fictícios de artistas.
+- P2: suporte a links externos reais (URL HTTP/HTTPS direto no campo de busca / adicionar fonte).
+- Busca/adicionar-fonte fora da thread UI; controle pelo celular; rádio durante jogos (plugin GoldHEN).

@@ -37,22 +37,18 @@ void avFree(void *, void *mem) { std::free(mem); }
 // Memory type history:
 //   01.13-01.23: sceKernelAllocateDirectMemory (GPU, type=3, prot=0x33) — 0 frames produced.
 //                At the time: basePriority=700 (low), numOutputVideoFramebuffers=2.
-//   01.24-01.28: posix_memalign (CPU-only) — also 0 frames. Comments blamed direct memory, but
-//                plain malloc was never confirmed as correct either. avplayer_api.h says
-//                "allocateTexture: must be GPU-visible memory".
-//   01.29+: Back to GPU-visible, with the SAME parameters as video_out.cpp (which works on console):
-//           type=3, prot=0x33, align≥0x200000. The root cause in 01.13-01.23 was most likely the
-//           thread starvation (priority=700) and insufficient buffers (2), not the memory type.
-//           Diagnostics now record every allocation so the console test can confirm.
+//   01.24-01.28: posix_memalign — also 0 frames. These versions never actually ran on the console
+//                (closed on startup due to toolchain bugs before the video test ran).
+//   01.29-01.30: Back to GPU-visible memory. Awaiting console test.
+//   01.31+: posix_memalign by default (ML_AV_GPU_TEX=1 to test GPU path).
+//           Rationale: PS4 IPTV Player (OpenOrbis, confirmed playing video on console) uses
+//           posix_memalign for allocateTexture with basePriority=160, numOutputVideoFrameBuffers=4.
+//           avplayer_api.h comment "must be GPU-visible memory" came from shadPS4 emulator docs
+//           and may not reflect the real PS4 ABI requirement. The IPTV Player is empirical evidence.
 //
-// If 01.29 also yields 0 frames, rebuild with -DML_AV_TEX_MALLOC (posix_memalign, like the IPTV Player).
-// Or try WC mapping (prot=0x32) on a third attempt.
-//
-// ML_AV_TEX_MALLOC: use posix_memalign instead of GPU-visible memory.
-//   Evidence: PS4 IPTV Player (OpenOrbis, confirmed working on console) uses posix_memalign with
-//   basePriority=160 and 4 buffers. If 01.29 GPU path produces 0 frames, the conclusion is that
-//   priority+buffers was always the issue, not the memory type, since 01.24-01.28 (posix_memalign)
-//   never actually ran on console (they crashed at startup due to toolchain bugs).
+// ML_AV_GPU_TEX (opt-in): use sceKernelAllocateDirectMemory instead of posix_memalign.
+//   Build with -DML_AV_GPU_TEX=1 to test whether GPU memory makes a difference after posix_memalign
+//   produces frames (or still 0 frames).
 struct TexBlock {
     off_t  dmemOffset = 0;   // physical offset; 0 when using posix_memalign path
     void  *vaddr      = nullptr;
@@ -63,32 +59,28 @@ static constexpr size_t kTexAlign = 0x200000;   // 2 MiB, same as video_out.cpp
 static TexBlock texAlloc(uint32_t align, uint32_t size)
 {
     TexBlock b;
-#ifdef ML_AV_TEX_MALLOC
-    // posix_memalign path: same as the working PS4 IPTV Player reference.
-    // dmemOffset stays 0 so texFreeBlock knows to call free(), not Munmap/ReleaseDirectMemory.
-    if (align < 64) align = 64;   // posix_memalign requires power-of-two, minimum 64 is safe
-    b.mappedSize = size_t(size);
-    if (posix_memalign(&b.vaddr, size_t(align), b.mappedSize) != 0) b.vaddr = nullptr;
-    return b;
-#else
-    // GPU-visible path: type=3, prot=0x33, align≥2 MiB (identical to video_out.cpp, known working).
-    // Enforce minimum 2 MiB alignment (same as video_out.cpp, confirmed working on console).
+#ifdef ML_AV_GPU_TEX
+    // GPU-visible path (opt-in via -DML_AV_GPU_TEX=1): type=3, prot=0x33, align≥2 MiB.
+    // Identical to video_out.cpp parameters (confirmed working on console for display output).
     if (size_t(align) < kTexAlign) align = uint32_t(kTexAlign);
     b.mappedSize = (size_t(size) + size_t(align) - 1u) / size_t(align) * size_t(align);
-    // Exact parameter types (from OpenOrbis libkernel.h):
-    //   sceKernelAllocateDirectMemory(off_t, off_t, size_t len, size_t alignment, int32_t, off_t*)
-    //   sceKernelMapDirectMemory(void**, size_t len, int32_t prot, int32_t flags, off_t, size_t alignment)
     if (sceKernelAllocateDirectMemory(0, off_t(sceKernelGetDirectMemorySize()),
                                       b.mappedSize, size_t(align), 3, &b.dmemOffset) < 0) {
         b.dmemOffset = 0;
-        return b;   // vaddr stays nullptr → caller treats as failure
+        return b;
     }
     if (sceKernelMapDirectMemory(&b.vaddr, b.mappedSize, 0x33, 0, b.dmemOffset, size_t(align)) < 0) {
-        // sceKernelReleaseDirectMemory(off_t start, size_t len)
         sceKernelReleaseDirectMemory(b.dmemOffset, b.mappedSize);
         b.vaddr = nullptr;
         b.dmemOffset = 0;
     }
+    return b;
+#else
+    // posix_memalign path (default, 01.31+): same as PS4 IPTV Player (confirmed playing video on console).
+    // dmemOffset stays 0 so texFreeBlock knows to call free(), not Munmap/ReleaseDirectMemory.
+    if (align < 64) align = 64;
+    b.mappedSize = size_t(size);
+    if (posix_memalign(&b.vaddr, size_t(align), b.mappedSize) != 0) b.vaddr = nullptr;
     return b;
 #endif
 }
@@ -345,10 +337,10 @@ public:
         for (const auto &j : journal_) d += "\n  - " + j;
         std::vector<std::string> sys = sysLog_;
         statusLock_.clear(std::memory_order_release);
-#ifdef ML_AV_TEX_MALLOC
-        d += "\nmemoria de video (posix_memalign, como IPTV Player): ";
+#ifdef ML_AV_GPU_TEX
+        d += "\nmemoria de video (GPU direta sceKernelAllocateDirectMemory, ML_AV_GPU_TEX): ";
 #else
-        d += "\nmemoria de video (GPU direta sceKernelAllocateDirectMemory): ";
+        d += "\nmemoria de video (posix_memalign, padrao 01.31, como IPTV Player): ";
 #endif
         d += std::to_string(texOk_.load()) + " blocos ok, " +
              std::to_string(texFail_.load()) + " recusados, " + std::to_string(texFallback_.load()) + " fallback-malloc (" +
