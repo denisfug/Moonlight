@@ -5,3 +5,4 @@ build-*/
 out/
 *.o
 create-fself
+tests/fixtures/tmp_ytauth*/
