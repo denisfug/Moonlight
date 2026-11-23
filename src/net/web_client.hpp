@@ -45,15 +45,18 @@ public:
     WebClient(Sockets *sockets, std::string userAgent) : sockets_(sockets), ua_(std::move(userAgent)) {}
 
     HttpResponse get(const HttpRequest &req) override;
+    HttpResponse post(const HttpRequest &req, const std::string &body) override;
     std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error) override;
     bool supportsHttps() const override { return true; }
     std::string name() const override { return "moonlight-web"; }
 
     // Sends the request (following redirects) and returns after the headers, whatever the final status.
-    std::unique_ptr<WebStream> open(const HttpRequest &req, std::string *error);
+    std::unique_ptr<WebStream> open(const HttpRequest &req, std::string *error,
+                                    const std::string *postBody = nullptr);
 
 private:
-    std::unique_ptr<WebStream> openOnce(const Url &u, const HttpRequest &req, std::string *error);
+    std::unique_ptr<WebStream> openOnce(const Url &u, const HttpRequest &req, std::string *error,
+                                        const std::string *postBody = nullptr);
     Sockets *sockets_;
     std::string ua_;
 };

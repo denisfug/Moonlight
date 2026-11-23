@@ -63,6 +63,13 @@ class HttpClient {
 public:
     virtual ~HttpClient() = default;
     virtual HttpResponse get(const HttpRequest &req) = 0;
+    // POST with a body (application/json by default unless Content-Type is in req.headers).
+    virtual HttpResponse post(const HttpRequest &req, const std::string &body)
+    {
+        HttpResponse r;
+        r.error = "POST nao suportado por " + name();
+        return r;
+    }
     // Opens a GET and returns after the headers (status 2xx), or nullptr with *error set.
     virtual std::unique_ptr<HttpStream> openStream(const HttpRequest &req, std::string *error)
     {

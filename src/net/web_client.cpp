@@ -114,7 +114,8 @@ long WebStream::read(void *buf, size_t len)
 }
 
 // ---------------------------------------------------------------- client
-std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &req, std::string *error)
+std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &req, std::string *error,
+                                               const std::string *postBody)
 {
     auto fail = [&](const std::string &m) { if (error) *error = m; return std::unique_ptr<WebStream>(); };
     if (!sockets_) return fail("sem rede neste aparelho");
@@ -130,22 +131,29 @@ std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &
         if (!c) return fail(host + ": " + e);
     }
     bool defPort = (u.scheme == "https" && u.port == 443) || (u.scheme == "http" && u.port == 80);
-    bool ownUa = false, ownAccept = false;
+    bool ownUa = false, ownAccept = false, ownCt = false;
     for (const auto &h : req.headers) {
         std::string k = lower(h.first);
         ownUa = ownUa || k == "user-agent";
         ownAccept = ownAccept || k == "accept";
+        ownCt = ownCt || k == "content-type";
     }
-    std::string q = "GET " + (u.path.empty() ? std::string("/") : u.path) + (u.query.empty() ? "" : "?" + u.query) +
+    std::string method = postBody ? "POST" : "GET";
+    std::string q = method + " " + (u.path.empty() ? std::string("/") : u.path) + (u.query.empty() ? "" : "?" + u.query) +
                     " HTTP/1.1\r\nHost: " + u.host + (defPort ? "" : ":" + std::to_string(u.port)) + "\r\n" +
                     (ownUa ? "" : "User-Agent: " + ua_ + "\r\n") + (ownAccept ? "" : "Accept: */*\r\n") +
                     "Accept-Encoding: identity\r\nConnection: close\r\n";
+    if (postBody) {
+        if (!ownCt) q += "Content-Type: application/json\r\n";
+        q += "Content-Length: " + std::to_string(postBody->size()) + "\r\n";
+    }
     for (const auto &h : req.headers) {
         // one header per line: a value with CR/LF (from an addon's JSON) must not inject extra lines
         if (h.first.find_first_of("\r\n:") != std::string::npos || h.second.find_first_of("\r\n") != std::string::npos) continue;
         q += h.first + ": " + h.second + "\r\n";
     }
     q += "\r\n";
+    if (postBody) q += *postBody;
     if (!sendAll(*c, q)) return fail(host + ": envio falhou (" + c->lastError() + ")");
 
     std::unique_ptr<WebStream> s(new WebStream);
@@ -196,12 +204,13 @@ std::unique_ptr<WebStream> WebClient::openOnce(const Url &u, const HttpRequest &
     return s;
 }
 
-std::unique_ptr<WebStream> WebClient::open(const HttpRequest &req, std::string *error)
+std::unique_ptr<WebStream> WebClient::open(const HttpRequest &req, std::string *error,
+                                           const std::string *postBody)
 {
     Url u = parseUrl(req.url);
     if (!u.valid) { if (error) *error = "URL invalida"; return nullptr; }
     for (int hop = 0; hop <= 5; ++hop) {
-        std::unique_ptr<WebStream> s = openOnce(u, req, error);
+        std::unique_ptr<WebStream> s = openOnce(u, req, error, hop == 0 ? postBody : nullptr);
         if (!s) return nullptr;
         int st = s->status();
         bool redirect = st == 301 || st == 302 || st == 303 || st == 307 || st == 308;
@@ -217,6 +226,25 @@ std::unique_ptr<WebStream> WebClient::open(const HttpRequest &req, std::string *
     }
     if (error) *error = "redirecionamentos demais";
     return nullptr;
+}
+
+HttpResponse WebClient::post(const HttpRequest &req, const std::string &body)
+{
+    HttpResponse r;
+    std::unique_ptr<WebStream> s = open(req, &r.error, &body);
+    if (!s) return r;
+    r.status = s->status();
+    r.contentType = s->contentType();
+    if (s->contentLength() > int64_t(req.maxBytes)) { r.error = "resposta maior que o limite"; return r; }
+    char buf[16384];
+    for (;;) {
+        long n = s->read(buf, sizeof buf);
+        if (n < 0) { r.error = s->lastError().empty() ? "leitura falhou" : s->lastError(); r.body.clear(); return r; }
+        if (n == 0) break;
+        if (r.body.size() + size_t(n) > req.maxBytes) { r.error = "resposta maior que o limite"; r.body.clear(); return r; }
+        r.body.append(buf, size_t(n));
+    }
+    return r;
 }
 
 HttpResponse WebClient::get(const HttpRequest &req)
