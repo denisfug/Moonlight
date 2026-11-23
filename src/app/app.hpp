@@ -55,7 +55,7 @@ protected:
     App &app;
 };
 
-enum class Section { Home, Music, Radio, Movies, Series, Videos, Live, Library, Games, VipStore, Sources, Settings, Count };
+enum class Section { Home, Music, Radio, Movies, Series, Videos, Live, Library, Games, Support, Sources, Settings, Count };
 
 struct Settings {
     bool animations = true;
@@ -264,7 +264,7 @@ std::unique_ptr<Screen> makeLibrary(App &);
 std::unique_ptr<Screen> makeSources(App &);
 std::unique_ptr<Screen> makeSettings(App &);
 std::unique_ptr<Screen> makeGames(App &);
-std::unique_ptr<Screen> makeVipStore(App &);
+std::unique_ptr<Screen> makeSupport(App &);
 
 // shared drawing helpers (screens_home.cpp)
 void drawPosterCard(App &app, ui::Canvas &c, ui::Rect r, const std::string &seed, const std::string &title,

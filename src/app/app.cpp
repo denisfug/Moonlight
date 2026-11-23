@@ -23,7 +23,7 @@ const NavItem kNav[] = {
     {Section::Radio, Icon::Live, "Radios"},
     {Section::Movies, Icon::Film, "Filmes"},     {Section::Series, Icon::Series, "Series"},   {Section::Videos, Icon::Play, "Videos"},
     {Section::Live, Icon::Live, "Canais"},       {Section::Library, Icon::Library, "Biblioteca"},
-    {Section::Games, Icon::Play, "Jogos"},        {Section::VipStore, Icon::Library, "VIP Store"},
+    {Section::Games, Icon::Play, "Jogos"},        {Section::Support, Icon::Library, "Apoie"},
     {Section::Sources, Icon::Sources, "Fontes"}, {Section::Settings, Icon::Settings, "Configuracoes"},
 };
 }  // namespace
@@ -109,7 +109,7 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Live)] = makeLive(*this);
     roots_[size_t(Section::Library)] = makeLibrary(*this);
     roots_[size_t(Section::Games)] = makeGames(*this);
-    roots_[size_t(Section::VipStore)] = makeVipStore(*this);
+    roots_[size_t(Section::Support)] = makeSupport(*this);
     roots_[size_t(Section::Sources)] = makeSources(*this);
     roots_[size_t(Section::Settings)] = makeSettings(*this);
     roots_[0]->onEnter();
