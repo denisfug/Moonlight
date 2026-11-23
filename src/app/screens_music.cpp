@@ -6,6 +6,7 @@
 
 #include "app/app.hpp"
 #include "app/multi_fetch.hpp"
+#include "app/yt_post_fetch.hpp"
 #include "music/archive.hpp"
 #include "music/audius.hpp"
 #include "music/deezer.hpp"
@@ -14,6 +15,7 @@
 #include "music/youtube.hpp"
 #include "music/jiosaavn.hpp"
 #include "music/ytmusic.hpp"
+#include "music/ytauth.hpp"
 #include "music/rank.hpp"
 #include "ui/theme.hpp"
 
@@ -241,7 +243,10 @@ private:
     std::shared_ptr<MultiFetch> jiosaavnSearch_;
     // YouTube Music metadata-only results (no stream — covers + track info only).
     std::vector<catalog::Song> ytmusicResults_;
-    std::shared_ptr<MultiFetch> ytmusicSearch_;
+    std::shared_ptr<YtPostFetch> ytmusicSearch_;   // POST via YtPostFetch (InnerTube)
+    // YTMusic auth session (loaded once; never logged)
+    ytauth::Session ytSession_;
+    bool ytSessionLoaded_ = false;
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
@@ -251,7 +256,7 @@ private:
         return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr
             || jamendoSearch_ != nullptr || openverseSearch_ != nullptr
             || youtubeSearch_ != nullptr || youtubeDurations_ != nullptr
-            || jiosaavnSearch_ != nullptr || ytmusicSearch_ != nullptr;
+            || jiosaavnSearch_ != nullptr || (ytmusicSearch_ != nullptr && !ytmusicSearch_->done());
     }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
@@ -486,10 +491,33 @@ private:
                 // JioSaavn: metadata + covers, no stream. Public GET endpoint.
                 if (app.settings.jiosaavn)
                     jiosaavnSearch_ = fetchOne(jiosaavn::kName, jiosaavn::searchUrl(q, jiosaavn::kLimit, app.jiosaavnBase), app.jiosaavnBase);
-                // YouTube Music InnerTube: requires HTTP POST with JSON body.
-                // MultiFetch is GET-only; ytmusicSearch_ is left null until MultiFetch
-                // gains POST support. ytmusicResults_ will remain empty in the meantime.
-                (void)app.settings.ytmusic;  // suppress unused-variable warning
+                // YouTube Music InnerTube: POST via YtPostFetch (WebClient now supports POST).
+                if (app.settings.ytmusic) {
+                    // Load auth session once (never log the token)
+                    if (!ytSessionLoaded_) {
+                        ytSessionLoaded_ = true;
+                        ytauth::loadSession(app.store, ytSession_);
+                        // Refresh if expired
+                        if (ytauth::currentState(ytSession_) == ytauth::AuthState::kExpired) {
+                            if (HttpClient *hc = app.platform.http()) {
+                                std::string err;
+                                ytauth::refresh(*hc, ytSession_, err);
+                                if (err.empty()) ytauth::saveSession(app.store, ytSession_);
+                            }
+                        }
+                    }
+                    YtPostFetch::Headers hdr;
+                    hdr.push_back({"Origin", ytmusic::kHost});
+                    hdr.push_back({"Referer", std::string(ytmusic::kHost) + "/"});
+                    hdr.push_back({"X-YouTube-Client-Name", "67"});
+                    hdr.push_back({"X-YouTube-Client-Version", "1.20260707.12.00"});
+                    std::string bearer = ytauth::bearerHeader(ytSession_);
+                    if (!bearer.empty()) hdr.push_back({"Authorization", bearer});
+                    std::string postUrl = std::string(ytmusic::kHost) +
+                                         "/youtubei/v1/search?prettyPrint=false";
+                    ytmusicSearch_ = YtPostFetch::start(app.platform, postUrl,
+                                                        ytmusic::searchBody(q), std::move(hdr));
+                }
             }
         }
         shelves_.clear();
@@ -693,6 +721,26 @@ private:
                 }
             }
             // JioSaavn failures are silent: supplementary metadata source.
+            searchFinished();
+            changed = true;
+        }
+        // YouTube Music InnerTube: metadata + covers only (no authorized audio stream).
+        if (ytmusicSearch_ && ytmusicSearch_->done()) {
+            ytmusicSearch_->poll(j, e);
+            ytmusicSearch_.reset();
+            if (e.empty()) {
+                std::vector<catalog::Song> fresh = ytmusic::parseSearch(j);
+                std::vector<std::string> seen;
+                for (size_t i : results_) seen.push_back(lowered(app.music.tracks()[i].title + "|" + app.music.tracks()[i].artist));
+                for (auto &sng : ytResults_) seen.push_back(lowered(sng.title + "|" + sng.artist));
+                for (auto &sng : fresh) {
+                    std::string k = lowered(sng.title + "|" + sng.artist);
+                    if (std::find(seen.begin(), seen.end(), k) != seen.end()) continue;
+                    seen.push_back(k);
+                    ytResults_.push_back(std::move(sng));
+                }
+            }
+            // YTMusic failures are silent: supplementary metadata source.
             searchFinished();
             changed = true;
         }
