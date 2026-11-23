@@ -90,7 +90,9 @@ void AudioPlayer::stop()
 {
     joinThread();
     if (state_.load() != PlayState::Idle && state_.load() != PlayState::Error) state_ = PlayState::Ready;
-    positionMs_ = 0;
+    // Do NOT reset positionMs_ here: the UI reads it on the next frame before open() sets the new
+    // value, and seeing 0 makes the progress bar flash to the start between tracks.
+    // positionMs_ is reset by open() and openStream() when a new track is loaded.
     seekTo_ = -1;
 }
 
@@ -227,7 +229,11 @@ void AudioPlayer::run()
                 state_ = PlayState::Error;
                 break;
             }
-            positionMs_ = durationMs_;
+            // Use the real decoded length, not the metadata durationMs_. When durationMs_ was
+            // capped to a preview length (Deezer 30 s), the stream ends at the right time but
+            // durationMs_ might still differ slightly from the actual PCM length.
+            int64_t realEnd = baseMs + static_cast<int64_t>(framesAtBase * 1000 / 48000);
+            positionMs_ = durationMs_ > 0 ? durationMs_ : realEnd;
             state_ = PlayState::Ended;
             break;
         }

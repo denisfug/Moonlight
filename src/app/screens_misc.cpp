@@ -375,9 +375,17 @@ private:
     {
         App *a = &app;
         app.openKeyboard("Endereco da fonte (.../manifest.json)", "https://", true, [a](const std::string &url) {
-            std::string e = a->addSourceByUser(url);
-            if (e.empty()) { a->toast("Fonte adicionada: " + a->sources.sources().back().manifest.name); }
-            else a->modal("Nao foi possivel adicionar", e);
+            // Run the manifest fetch off the UI thread so the app stays responsive.
+            a->toast("Adicionando fonte...");
+            a->addSourceAsync(url, [a](const std::string &e) {
+                if (e.empty()) {
+                    const auto &all = a->sources.sources();
+                    std::string name = all.empty() ? "nova fonte" : all.back().manifest.name;
+                    a->toast("Fonte adicionada: " + name);
+                } else {
+                    a->modal("Nao foi possivel adicionar", e);
+                }
+            });
         });
     }
 };

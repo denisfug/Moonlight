@@ -452,6 +452,61 @@ std::string App::addSourceByUser(const std::string &url)
     return e;
 }
 
+void App::addSourceAsync(const std::string &url,
+                         std::function<void(const std::string &)> onDone)
+{
+    // Run quick local validation synchronously (no I/O) so the caller gets
+    // an instant error for obviously-wrong inputs without spawning a thread.
+    std::string trimmed = url;
+    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\n' || trimmed.back() == '\r')) trimmed.pop_back();
+    if (trimmed.size() > 2048) { onDone("URL longa demais"); return; }
+    Url uv = parseUrl(trimmed);
+    if (!uv.valid) { onDone("URL invalida"); return; }
+    if (uv.path.size() < 14 || uv.path.compare(uv.path.size() - 14, 14, "/manifest.json") != 0)
+        { onDone("a URL precisa terminar em /manifest.json"); return; }
+    // Duplicate check is fast (memory).
+    for (const auto &s : sources.sources())
+        if (s.manifestUrl == trimmed) { onDone("essa fonte ja esta na lista"); return; }
+
+    // Determine plain-HTTP flag on the calling thread (UI-safe, no I/O).
+    std::string low = trimmed.substr(0, 7);
+    for (auto &ch : low) ch = char(ch >= 'A' && ch <= 'Z' ? ch + 32 : ch);
+    bool plain = low == "http://";
+
+    // If a previous async add is still in flight, let it complete; its callback
+    // runs before this one is set, so there is no race.
+    auto ps = std::make_shared<PendingSource>();
+    ps->cb = std::move(onDone);
+    pendingSource_ = ps;
+
+    // Run the blocking manifest fetch on a background thread.
+    int64_t tsNow = int64_t(now_);
+    MultiFetch::runDetached(platform, [this, ps, trimmed, plain, tsNow]() {
+        // sources.add() calls fetchManifest() — blocking HTTP.
+        std::string e = sources.add(trimmed, plain, tsNow);
+        // Capture display name before signalling done.
+        if (e.empty()) {
+            // Grab title from the newly-added source (last one added).
+            const auto &all = sources.sources();
+            ps->name = all.empty() ? trimmed : all.back().manifest.name;
+        }
+        ps->error = e;
+        ps->done.store(true);
+    });
+}
+
+bool App::drainPendingSource(std::string *name, std::string *error)
+{
+    if (!pendingSource_ || !pendingSource_->done.load()) return false;
+    auto ps = pendingSource_;
+    pendingSource_.reset();
+    if (ps->error.empty()) sourcesVersion++;
+    if (name)  *name  = ps->name;
+    if (error) *error = ps->error;
+    if (ps->cb) ps->cb(ps->error);
+    return true;
+}
+
 void App::togglePause()
 {
     if (audio.live() && audio.state() == PlayState::Error) { playStation(station); return; }
@@ -507,6 +562,8 @@ bool App::frame()
     uint32_t pressed = systemKeyboard_ ? 0 : input_.update(platform.input().read(), now_);
     if (pressed) { handleInput(pressed); dirty(); }
     if (remote->running()) serviceRemote();
+    // Drain any finished async source-add (addSourceAsync). The callback runs on the UI thread here.
+    { std::string sName, sErr; if (drainPendingSource(&sName, &sErr)) dirty(); }
     if (!stableWritten_ && renderedLastFrame()) { writeCrumb(kStable, true); stableWritten_ = true; }
     // Update check 6 s after start, once the screen is up (so a failure there is distinguishable).
     if (!updateCheckDone_ && now_ > 6000 + startMs_) { updateCheckDone_ = true; updater->check(); }

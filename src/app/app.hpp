@@ -1,6 +1,7 @@
 // Application shell: services, sidebar navigation, screen stack, modal/toast/keyboard overlays,
 // and the frame loop. Screens only talk to the platform through App's services.
 #pragma once
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -164,7 +165,15 @@ public:
     bool videoDemo() const;
     // Source the user typed/imported/sent from the phone. An http:// address the user chose himself is
     // accepted (plain HTTP opt-in for that source); TLS verification for https:// is never relaxed.
+    // Blocking version (used by remote control, which already runs off the UI thread):
     std::string addSourceByUser(const std::string &url);
+    // Non-blocking version: fetches the manifest on a background thread, then calls onDone(error)
+    // on the UI thread (via pendingSourceResult_). onDone("") means success. The UI must check
+    // drainPendingSource() every frame and call onDone if it returns true.
+    void addSourceAsync(const std::string &url,
+                        std::function<void(const std::string &)> onDone);
+    // Called by App::frame(); returns true and fills *result if a background source add finished.
+    bool drainPendingSource(std::string *name, std::string *error);
     int sourcesVersion = 0;   // bumped when sources change, screens reload their catalogs
 
     // Playback resilience (Ember-style dead-tracks + error-streak guard).
@@ -238,6 +247,16 @@ private:
     bool systemKeyboard_ = false;   // PS4 system keyboard open: keep presenting frames, poll for the result
     PlayState lastAudioState_ = PlayState::Idle;
     int64_t lastAudioPos_ = -1;
+
+    // Async source-add state (addSourceAsync / drainPendingSource).
+    // Written by background thread, read on UI thread inside frame().
+    struct PendingSource {
+        std::atomic<bool> done{false};
+        std::string name;   // display name (from manifest title or the URL itself)
+        std::string error;  // "" = success
+        std::function<void(const std::string &)> cb;
+    };
+    std::shared_ptr<PendingSource> pendingSource_;
 
     Screen &current();
     void handleInput(uint32_t pressed);
