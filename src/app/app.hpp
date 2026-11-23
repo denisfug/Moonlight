@@ -78,6 +78,8 @@ struct Settings {
     bool introSound = true;   // play startup audio signature (assets/audio/moonlight_signature.mp3)
     int introVolume = 80;     // 0–100; mixed with main volume
     bool introPlayed = false; // transient: true once per session so it doesn't replay on re-enter
+    bool introAnim = true;    // show animated intro vignette on startup
+    bool introAnimPlayed = false; // transient: pushed once per session
 };
 
 class App {
@@ -272,6 +274,7 @@ std::unique_ptr<Screen> makeSources(App &);
 std::unique_ptr<Screen> makeSettings(App &);
 std::unique_ptr<Screen> makeGames(App &);
 std::unique_ptr<Screen> makeSupport(App &);
+std::unique_ptr<Screen> makeIntro(App &);    // animated intro vignette (screens_intro.cpp)
 
 // shared drawing helpers (screens_home.cpp)
 void drawPosterCard(App &app, ui::Canvas &c, ui::Rect r, const std::string &seed, const std::string &title,

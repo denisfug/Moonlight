@@ -78,6 +78,7 @@ add_library(ml_ui STATIC
     src/app/screens_radio.cpp
     src/app/screens_video.cpp
     src/app/screens_misc.cpp
+    src/app/screens_intro.cpp
     src/app/screens_diag.cpp
     src/app/screens_games.cpp
     src/app/screens_vipstore.cpp

@@ -552,39 +552,50 @@ public:
                     app.toast("Som de inicializacao desligado");
                 }
                 break;
-            case 1: app.settings.animations = !app.settings.animations; app.saveSettings(); break;
-            case 2:
+            case 1:
+                app.settings.introAnim = !app.settings.introAnim;
+                app.saveSettings();
+                if (app.settings.introAnim) {
+                    app.settings.introAnimPlayed = false;
+                    app.push(makeIntro(app));
+                    app.toast("Vinheta ligada — reproduzindo agora como pre-visualizacao");
+                } else {
+                    app.toast("Vinheta de abertura desligada");
+                }
+                break;
+            case 2: app.settings.animations = !app.settings.animations; app.saveSettings(); break;
+            case 3:
                 app.settings.lightTheme = !app.settings.lightTheme;
                 app.applyTheme();
                 app.saveSettings();
                 break;
-            case 3:
+            case 4:
                 app.settings.showDemo = !app.settings.showDemo;
                 app.saveSettings();
                 app.rescanMusic();
                 app.toast("Reabra as secoes para atualizar o conteudo de demonstracao");
                 break;
-            case 4: {
+            case 5: {
                 app.rescanMusic();
                 size_t real = 0;
                 for (const auto &t : app.music.tracks()) if (!t.demo) real++;
                 app.toast(std::to_string(real) + " faixas encontradas");
                 break;
             }
-            case 5: configureServer(); break;
-            case 6: jamendoAction(); break;
-            case 7: app.settings.archive = !app.settings.archive; app.saveSettings(); break;
-            case 8: app.settings.audius = !app.settings.audius; app.saveSettings(); break;
-            case 9: app.settings.openverse = !app.settings.openverse; app.saveSettings(); break;
-            case 10: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 11: app.settings.ytmusic = !app.settings.ytmusic; app.saveSettings(); break;
-            case 12: googleAction(); break;
-            case 13: toggleRemote(); break;
-            case 14: updateAction(); break;
-            case 15: testInternet(); break;
-            case 16: app.push(makeVideoTest(app)); break;
-            case 17: app.push(makeProblems(app)); break;
-            case 18:
+            case 6: configureServer(); break;
+            case 7: jamendoAction(); break;
+            case 8: app.settings.archive = !app.settings.archive; app.saveSettings(); break;
+            case 9: app.settings.audius = !app.settings.audius; app.saveSettings(); break;
+            case 10: app.settings.openverse = !app.settings.openverse; app.saveSettings(); break;
+            case 11: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
+            case 12: app.settings.ytmusic = !app.settings.ytmusic; app.saveSettings(); break;
+            case 13: googleAction(); break;
+            case 14: toggleRemote(); break;
+            case 15: updateAction(); break;
+            case 16: testInternet(); break;
+            case 17: app.push(makeVideoTest(app)); break;
+            case 18: app.push(makeProblems(app)); break;
+            case 19:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -632,6 +643,7 @@ public:
         struct Item { const char *title, *desc; int toggle; };
         Item items[] = {
             {"Som de inicializacao", "Toca a assinatura sonora do Moonlight ao abrir o app. Ligado por padrao.", app.settings.introSound ? 1 : 0},
+            {"Vinheta de abertura", "Exibe a animacao cinematica ao iniciar o app. X para ligar/desligar ou pre-visualizar.", app.settings.introAnim ? 1 : 0},
             {"Animacoes", "Rolagem suave e transicoes entre telas.", app.settings.animations ? 1 : 0},
             {"Tema claro", "Fundo branco e texto preto. Desligado: tema escuro (preto, branco e vermelho).", app.settings.lightTheme ? 1 : 0},
             {"Conteudo de demonstracao", "Mostra filmes, series, canais e playlists ficticios enquanto nao ha fontes reais.", app.settings.showDemo ? 1 : 0},
@@ -675,7 +687,7 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    static constexpr int kItems = 19;
+    static constexpr int kItems = 20;
     int sel_ = 0, first_ = 0;
     std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_, jamendoDesc_, googleDesc_;
     std::string testHeader_, testResult_;

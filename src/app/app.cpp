@@ -114,6 +114,12 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Sources)] = makeSources(*this);
     roots_[size_t(Section::Settings)] = makeSettings(*this);
     roots_[0]->onEnter();
+    // Show animated intro only on real hardware (not in headless tests or PC host builds).
+    if (settings.introAnim && !settings.introAnimPlayed && platform.name() == "ps4") {
+        settings.introAnimPlayed = true;
+        stack_.push_back(makeIntro(*this));
+        stack_.back()->onEnter();
+    }
     crumb("abrindo o app (primeira tela)");
     now_ = last_ = startMs_ = platform.nowMs();
     if (!crashedAt_.empty()) {
@@ -151,6 +157,7 @@ void App::loadSettings()
     settings.volume = int(j["volume"].asInt(80));
     settings.introSound = j["introSound"].asBool(true);
     settings.introVolume = int(j["introVolume"].asInt(80));
+    settings.introAnim = j["introAnim"].asBool(true);
     // Load YTMusic auth session (never logged)
     ytauth::loadSession(store, ytSession);
 }
@@ -173,6 +180,7 @@ void App::saveSettings()
     j.set("volume", Json::number(settings.volume));
     j.set("introSound", Json::boolean(settings.introSound));
     j.set("introVolume", Json::number(settings.introVolume));
+    j.set("introAnim", Json::boolean(settings.introAnim));
     store.save("settings.json", j);
 }
 
@@ -678,14 +686,24 @@ void App::drawSidebar(Canvas &c)
     const int top = 24, bot = theme::H - 24;
     // No soft shadow on the whole pill: blurring a 96x1032 region every frame was a big cost on the
     // PS4 CPU during animations. The border below gives enough separation.
-    c.fillRoundRect(px, top, pw, bot - top, pr, theme::BgSurface());
-    c.strokeRoundRect(px, top, pw, bot - top, pr, 1, theme::Border());
+    // Space sidebar: deep purple pill with lilac border
+    c.fillGradient(px, top, pw, bot - top, pr, theme::SidebarBg(), withAlpha(theme::space::DeepPurple, 220), 1);
+    c.strokeRoundRect(px, top, pw, bot - top, pr, 1, withAlpha(theme::Highlight(), 50));
 
-    // moon mark at the top of the pill
+    // Moonlight logo mark: crescent moon (lunar white) + rocket (rocket red)
     {
-        int mx = pcx - 24, my = top + 24;
-        c.fillCircle(float(mx + 24), float(my + 24), 24, theme::Red);
-        c.fillCircle(float(mx + 34), float(my + 15), 20, theme::BgSurface());   // crescent cut-out
+        int mx = pcx - 20, my = top + 20;
+        // Lunar white circle (moon body)
+        c.fillCircle(float(mx + 20), float(my + 20), 20, theme::space::LunarWhite);
+        // Deep purple cut-out (crescent shape)
+        c.fillCircle(float(mx + 28), float(my + 12), 16, theme::SidebarBg());
+        // Rocket: small red triangle/pill above the crescent
+        c.fillCircle(float(pcx), float(top + 18), 5, theme::Red);     // rocket body top
+        c.fillRoundRect(pcx - 4, top + 20, 8, 20, 3, theme::Red);    // rocket body
+        c.fillCircle(float(pcx - 6), float(top + 44), 5, theme::Red); // left fin
+        c.fillCircle(float(pcx + 6), float(top + 44), 5, theme::Red); // right fin
+        // Small flame trail
+        c.fillCircle(float(pcx), float(top + 50), 3, withAlpha(theme::space::Lilac, 160));
     }
 
     int y = top + 112;
@@ -696,12 +714,14 @@ void App::drawSidebar(Canvas &c)
         bool foc = sidebarFocus_ && int(it.s) == sidebarSel_;
         int bx = pcx - btn / 2, by = y;
         if (foc) {
-            c.fillRoundRect(bx, by, btn, btn, theme::Radius, theme::Red);
+            // Focus: lilac background with white icon
+            c.fillRoundRect(bx, by, btn, btn, theme::Radius, withAlpha(theme::Highlight(), 200));
+            c.strokeRoundRect(bx - 1, by - 1, btn + 2, btn + 2, theme::Radius + 1, 1, theme::Highlight());
         } else if (cur) {
-            c.fillRoundRect(bx, by, btn, btn, theme::Radius, theme::BgHover());
-            c.fillRoundRect(px + 4, by + 16, 4, btn - 32, 2, theme::Red);   // current-section marker
+            c.fillRoundRect(bx, by, btn, btn, theme::Radius, theme::SidebarBgSel());
+            c.fillRoundRect(px + 4, by + 16, 4, btn - 32, 2, theme::Red);   // current-section: red marker
         }
-        drawIcon(c, it.icon, float(pcx), float(by + btn / 2), 26, foc ? theme::AccentText() : cur ? theme::Text() : theme::TextSub());
+        drawIcon(c, it.icon, float(pcx), float(by + btn / 2), 26, foc ? theme::AccentText() : cur ? theme::Text() : withAlpha(theme::Text(), 130));
         y += step;
     }
 
