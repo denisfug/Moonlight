@@ -8,6 +8,8 @@
 #include "app/app.hpp"
 #include "app/demo_data.hpp"
 #include "app/updater.hpp"
+#include "app/multi_fetch.hpp"
+#include "music/ytauth.hpp"
 #include "qrcodegen/qrcodegen.h"
 #include "net/tls.hpp"
 #include "ui/theme.hpp"
@@ -563,12 +565,14 @@ public:
             case 7: app.settings.audius = !app.settings.audius; app.saveSettings(); break;
             case 8: app.settings.openverse = !app.settings.openverse; app.saveSettings(); break;
             case 9: app.settings.showRadio = !app.settings.showRadio; app.saveSettings(); break;
-            case 10: toggleRemote(); break;
-            case 11: updateAction(); break;
-            case 12: testInternet(); break;
-            case 13: app.push(makeVideoTest(app)); break;
-            case 14: app.push(makeProblems(app)); break;
-            case 15:
+            case 10: app.settings.ytmusic = !app.settings.ytmusic; app.saveSettings(); break;
+            case 11: googleAction(); break;
+            case 12: toggleRemote(); break;
+            case 13: updateAction(); break;
+            case 14: testInternet(); break;
+            case 15: app.push(makeVideoTest(app)); break;
+            case 16: app.push(makeProblems(app)); break;
+            case 17:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -593,6 +597,21 @@ public:
         else
             jamendoDesc_ = std::string(app.settings.jamendo ? "Ligado" : "Desligado") +
                            " - client_id configurado. X para ligar/desligar ou trocar o client_id.";
+        {
+            ytauth::AuthState gs = ytauth::currentState(app.ytSession);
+            if (gs == ytauth::AuthState::kActive) {
+                googleDesc_ = "Conectado";
+                if (!app.ytSession.accountEmail.empty()) googleDesc_ += " como " + app.ytSession.accountEmail;
+                googleDesc_ += ". X para ver opcoes ou desconectar.";
+            } else if (gs == ytauth::AuthState::kExpired) {
+                googleDesc_ = "Token expirado. X para reconectar.";
+            } else if (deviceCodePending_) {
+                googleDesc_ = "Aguardando autorizacao em " + pendingDc_.verificationUrl +
+                              "  Codigo: " + pendingDc_.userCode + "  (atualizando...)";
+            } else {
+                googleDesc_ = "Nao conectado. X para vincular sua conta Google e acessar biblioteca e curtidas do YouTube Music.";
+            }
+        }
         size_t np = app.problems.entries().size();
         problemsDesc_ = np == 0 ? "Nada anotado. Quando algo nao tocar, o nome, a capa e o motivo aparecem aqui."
                                 : std::to_string(np) + (np == 1 ? " anotado" : " anotados") + ". Nome, capa e motivo de cada um, para foto.";
@@ -610,6 +629,8 @@ public:
             {"Musica do Audius", "A busca de musica tambem procura faixas de artistas independentes em audius.co, e mostra as mais tocadas da semana.", app.settings.audius ? 1 : 0},
             {"Musica do Openverse", "A busca de musica tambem procura audios Creative Commons do Openverse (Wikimedia Foundation), com MP3 de duracao completa.", app.settings.openverse ? 1 : 0},
             {"Secao Radios", "Mostra a secao de radios online na barra lateral.", app.settings.showRadio ? 1 : 0},
+            {"YouTube Music", "Busca de musica por metadados e capas via InnerTube (sem stream de audio). Sem API key — ative para incluir resultados do YTMusic.", app.settings.ytmusic ? 1 : 0},
+            {"Conta Google (YouTube Music)", googleDesc_.c_str(), -1},
             {"Controle pelo celular", remoteDesc_.c_str(), app.remote->running() ? 1 : 0},
             {"Atualizar o Moonlight", updateDesc_.c_str(), -1},
             {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
@@ -641,12 +662,20 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    static constexpr int kItems = 16;
+    static constexpr int kItems = 18;
     int sel_ = 0, first_ = 0;
-    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_, jamendoDesc_;
+    std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_, jamendoDesc_, googleDesc_;
     std::string testHeader_, testResult_;
     std::atomic<bool> testBusy_{false}, testDone_{false};
     bool testOk_ = false;
+
+    // Device Flow state (Google OAuth2 — RFC 8628)
+    bool deviceCodePending_ = false;
+    ytauth::DeviceCode pendingDc_;
+    float devicePollTimer_ = 0.0f;
+    std::atomic<bool> devicePollDone_{false};
+    bool devicePollOk_ = false;
+    std::string devicePollError_;
 
     std::string describeUpdate()
     {
@@ -777,7 +806,7 @@ private:
         testDone_.store(true, std::memory_order_release);
     }
 
-    void update(float) override
+    void update(float dt) override
     {
         if (testBusy_.load() && testDone_.load(std::memory_order_acquire)) {
             testBusy_ = false;
@@ -790,8 +819,54 @@ private:
                 app.modal("Testar internet", testHeader_ + testResult_);
             }
         }
+
+        // Device Flow polling: check every interval seconds until token arrives or expires
+        if (deviceCodePending_ && !devicePollDone_.load(std::memory_order_acquire)) {
+            devicePollTimer_ -= dt;
+            if (devicePollTimer_ <= 0.0f) {
+                devicePollTimer_ = float(pendingDc_.intervalSec > 0 ? pendingDc_.intervalSec : 5);
+                // Poll on background thread
+                HttpClient *hc = app.platform.http();
+                if (hc) {
+                    ytauth::DeviceCode dc = pendingDc_;
+                    auto *donePtr  = &devicePollDone_;
+                    auto *okPtr    = &devicePollOk_;
+                    auto *errPtr   = &devicePollError_;
+                    ytauth::Session *sess = &app.ytSession;
+                    JsonStore *store = &app.store;
+                    bool ok2 = MultiFetch::runDetached(app.platform, [hc, dc, donePtr, okPtr, errPtr, sess, store]() {
+                        std::string err;
+                        bool got = ytauth::pollDeviceToken(*hc, dc, *sess, err);
+                        if (got) {
+                            ytauth::saveSession(*store, *sess);
+                            *okPtr = true;
+                        } else {
+                            *errPtr = err;
+                            *okPtr = false;
+                        }
+                        donePtr->store(true, std::memory_order_release);
+                    });
+                    if (!ok2) { deviceCodePending_ = false; }
+                }
+            }
+        }
+
+        if (deviceCodePending_ && devicePollDone_.load(std::memory_order_acquire)) {
+            devicePollDone_.store(false, std::memory_order_relaxed);
+            if (devicePollOk_) {
+                deviceCodePending_ = false;
+                std::string msg = "Conta conectada!";
+                if (!app.ytSession.accountEmail.empty()) msg += " (" + app.ytSession.accountEmail + ")";
+                app.toast(msg);
+            } else if (!devicePollError_.empty()) {
+                // Real error (not authorization_pending) — abort
+                deviceCodePending_ = false;
+                app.toast("Falha ao conectar: " + devicePollError_);
+            }
+            // If error is empty, still pending — keep polling
+        }
     }
-    bool animating() const override { return testBusy_.load(); }
+    bool animating() const override { return testBusy_.load() || deviceCodePending_; }
 
     // URL -> user -> password, then a ping before saving. The password is turned into a salted token
     // (Subsonic protocol) and discarded; it is never written to disk or logged.
@@ -820,6 +895,66 @@ private:
             if (ch == 0) { a->settings.jamendo = !a->settings.jamendo; a->saveSettings(); }
             else if (ch == 1) self->askJamendoClientId();
         });
+    }
+
+    void googleAction()
+    {
+        ytauth::AuthState gs = ytauth::currentState(app.ytSession);
+        App *a = &app;
+        SettingsScreen *self = this;
+
+        if (gs == ytauth::AuthState::kActive) {
+            // Already connected — offer disconnect or info
+            std::string info = "Conectado como " + (app.ytSession.accountEmail.empty() ? "conta Google" : app.ytSession.accountEmail) + ".";
+            app.modal("Conta Google", info, {"Desconectar", "Fechar"}, [a](int ch) {
+                if (ch == 0) {
+                    ytauth::clearSession(a->store);
+                    a->ytSession = ytauth::Session{};
+                    a->toast("Conta desconectada.");
+                }
+            });
+            return;
+        }
+
+        if (deviceCodePending_) {
+            // Show current code again
+            app.modal("Autorizacao pendente",
+                      std::string("Acesse ") + pendingDc_.verificationUrl + " e insira o codigo:\n\n" + pendingDc_.userCode +
+                      "\n\nAguardando confirmacao...", {"Cancelar"}, [self](int) {
+                self->deviceCodePending_ = false;
+            });
+            return;
+        }
+
+        // Start Device Flow: request code on background thread, then show modal
+        HttpClient *hc = app.platform.http();
+        if (!hc) { app.toast("Sem conexao de rede."); return; }
+
+        // Request device code synchronously on a background thread
+        auto *doneFlag = &devicePollDone_;
+        ytauth::DeviceCode *dcOut = &pendingDc_;
+        bool *pending = &deviceCodePending_;
+        devicePollDone_.store(false, std::memory_order_relaxed);
+
+        bool started = MultiFetch::runDetached(app.platform, [hc, doneFlag, dcOut, pending, a, self]() {
+            *dcOut = ytauth::requestDeviceCode(*hc);
+            if (dcOut->error.empty()) {
+                *pending = true;
+                self->devicePollTimer_ = 0.0f; // poll immediately on first tick
+            }
+            doneFlag->store(true, std::memory_order_release);
+        });
+        if (!started) { app.toast("Nao foi possivel iniciar a autorizacao."); return; }
+
+        // Wait briefly for the code (it's fast — usually < 1s), then show modal via toast
+        // The update() loop will handle polling. Show instructions once code arrives.
+        // We use a small trick: schedule a check on the next draw cycle via a toast placeholder.
+        // The actual modal is shown as soon as pendingDc_ is populated (detected in update() next tick).
+        // For immediate feedback, show a "aguardando..." toast:
+        app.toast("Solicitando codigo de autorizacao...");
+        // The draw() loop will update googleDesc_ dynamically once deviceCodePending_ = true
+        (void)a;
+        (void)self;
     }
 
     void configureServer()

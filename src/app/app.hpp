@@ -19,6 +19,7 @@
 #include "app/remote.hpp"
 #include "app/updater.hpp"
 #include "music/subsonic.hpp"
+#include "music/ytauth.hpp"
 #include "storage/store.hpp"
 #include "ui/canvas.hpp"
 #include "ui/font.hpp"
@@ -108,6 +109,7 @@ public:
     subsonic::Config server;  // user's music server (Navidrome etc.)
     std::string serverStatus; // "" = not loaded yet
     Settings settings;
+    ytauth::Session ytSession;  // shared Google/YTMusic auth session (loaded on startup, saved by ytauth::saveSession)
     ui::Fonts fonts;
     ProblemLog problems;
     // Waiting times of the player and of the video test (tests shorten them), and where the known-good

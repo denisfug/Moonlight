@@ -144,9 +144,12 @@ void App::loadSettings()
     settings.jamendo = j["jamendo"].asBool(true);
     settings.jamendoClientId = j["jamendoClientId"].str("");
     settings.openverse = j["openverse"].asBool(true);
+    settings.ytmusic = j["ytmusic"].asBool(false);
     settings.lightTheme = j["lightTheme"].asBool(false);
     applyTheme();
     settings.volume = int(j["volume"].asInt(80));
+    // Load YTMusic auth session (never logged)
+    ytauth::loadSession(store, ytSession);
 }
 
 void App::saveSettings()
@@ -162,6 +165,7 @@ void App::saveSettings()
     j.set("jamendo", Json::boolean(settings.jamendo));
     j.set("jamendoClientId", Json::string(settings.jamendoClientId));
     j.set("openverse", Json::boolean(settings.openverse));
+    j.set("ytmusic", Json::boolean(settings.ytmusic));
     j.set("lightTheme", Json::boolean(settings.lightTheme));
     j.set("volume", Json::number(settings.volume));
     store.save("settings.json", j);

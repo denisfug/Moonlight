@@ -53,6 +53,7 @@ public:
         if (app.server.configured() && app.serverStatus.empty()) { serverPending_ = true; drawnLoading_ = false; }
         enteredMs_ = app.now();
         homeAsked_ = false;
+        ytBrowseAsked_ = false;
         rebuild();
     }
 
@@ -159,7 +160,8 @@ public:
     bool animating() const override { return anim_ || serverPending_; }
     bool busy() const override
     {
-        if (searching() || fetchTrend_ || fetchForYou_ || fetchMore_) return true;
+        if (searching() || fetchTrend_ || fetchForYou_ || fetchMore_ ||
+            ytLikedFetch_ || ytHistoryFetch_ || ytPlaylistsFetch_) return true;
         for (const auto &al : arch_) if (al.state == Album::Loading) return true;
         return false;
     }
@@ -244,9 +246,12 @@ private:
     // YouTube Music metadata-only results (no stream — covers + track info only).
     std::vector<catalog::Song> ytmusicResults_;
     std::shared_ptr<YtPostFetch> ytmusicSearch_;   // POST via YtPostFetch (InnerTube)
-    // YTMusic auth session (loaded once; never logged)
-    ytauth::Session ytSession_;
-    bool ytSessionLoaded_ = false;
+    // YTMusic auth session is shared via app.ytSession (loaded once from store; never logged here)
+    // Authenticated browse: liked songs, history, playlists (requires app.ytSession active)
+    std::shared_ptr<YtPostFetch> ytLikedFetch_, ytHistoryFetch_, ytPlaylistsFetch_;
+    std::vector<catalog::Song> ytLikedSongs_, ytHistorySongs_;
+    std::vector<ytmusic::Playlist> ytPlaylists_;
+    bool ytBrowseAsked_ = false;  // set once per session entry when session is active
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
@@ -363,6 +368,22 @@ private:
         out.push_back(std::move(sh));
     }
 
+    // Helper: appends songs to ytResults_ and returns a shelf of YoutubeRef cards for them.
+    // Used for authenticated YTMusic browse shelves (liked, history). Clears existing entries
+    // from previous refresh for the same title before adding new ones.
+    void addYtMusicAuthShelf(std::vector<Shelf> &out, const std::string &title,
+                             const std::vector<catalog::Song> &songs)
+    {
+        if (songs.empty()) return;
+        size_t base = ytResults_.size();
+        for (const auto &s : songs) ytResults_.push_back(s);
+        Shelf sh;
+        sh.title = title;
+        for (size_t i = 0; i < songs.size() && i < 30; i++) sh.cards.push_back({Card::YoutubeRef, base + i});
+        for (const auto &old : shelves_) if (old.title == title) sh.col = std::min(old.col, int(sh.cards.size()) - 1);
+        out.push_back(std::move(sh));
+    }
+
     // Rebuilds the shelves from the current state, keeping the selected card of each shelf.
     void rebuild()
     {
@@ -386,6 +407,29 @@ private:
             std::vector<size_t> pls;
             for (size_t i = 0; i < app.music.playlists().size(); i++) pls.push_back(i);
             addShelf(out, "Suas playlists", Card::Playlist, pls);
+            // Authenticated YouTube Music shelves (shown when session is active)
+            if (app.settings.ytmusic &&
+                ytauth::currentState(app.ytSession) == ytauth::AuthState::kActive) {
+                // Reset ytResults_ to only hold authenticated browse data for the home view
+                ytResults_.clear();
+                addYtMusicAuthShelf(out, "Curtidas no YouTube Music", ytLikedSongs_);
+                addYtMusicAuthShelf(out, "Historico do YouTube Music", ytHistorySongs_);
+                // Playlists shelf (reuse existing Playlist card type with Playlist structs)
+                if (!ytPlaylists_.empty()) {
+                    // Add ytPlaylists_ as server-style playlists via a YoutubeRef shelf
+                    // using the playlist title as the song title and playlist art as cover
+                    std::vector<catalog::Song> plSongs;
+                    for (const auto &pl : ytPlaylists_) {
+                        catalog::Song s;
+                        s.title  = pl.title;
+                        s.url    = "ytmusic:playlist:" + pl.id;
+                        s.art    = pl.art;
+                        s.source = ytmusic::kName;
+                        plSongs.push_back(std::move(s));
+                    }
+                    addYtMusicAuthShelf(out, "Suas playlists no YouTube Music", plSongs);
+                }
+            }
         }
         shelves_ = std::move(out);
         row_ = 0;
@@ -421,21 +465,44 @@ private:
     // Shelves that come from the network. Failures here are silent: the shelf simply does not appear.
     void startHomeFetches()
     {
-        if (!app.settings.audius || !app.platform.http()) return;
-        auto &h = app.musicHome;
-        if (!h.trendingAsked) {
-            h.trendingAsked = true;
-            fetchTrend_ = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase), app.audiusBase);
+        HttpClient *hc = app.platform.http();
+        if (app.settings.audius && hc) {
+            auto &h = app.musicHome;
+            if (!h.trendingAsked) {
+                h.trendingAsked = true;
+                fetchTrend_ = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase), app.audiusBase);
+            }
+            std::string g = app.taste.topGenre();
+            if (!g.empty() && g != h.forYouGenre && !fetchForYou_) {
+                pendingGenre_ = g;
+                fetchForYou_ = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase, g), app.audiusBase);
+            }
+            std::string a = app.taste.topArtist();
+            if (!a.empty() && a != h.moreOfArtist && !fetchMore_) {
+                pendingArtist_ = a;
+                fetchMore_ = fetchOne(audius::kName, audius::searchUrl(a, app.audiusBase), app.audiusBase);
+            }
         }
-        std::string g = app.taste.topGenre();
-        if (!g.empty() && g != h.forYouGenre && !fetchForYou_) {
-            pendingGenre_ = g;
-            fetchForYou_ = fetchOne(audius::kName, audius::trendingUrl(app.audiusBase, g), app.audiusBase);
-        }
-        std::string a = app.taste.topArtist();
-        if (!a.empty() && a != h.moreOfArtist && !fetchMore_) {
-            pendingArtist_ = a;
-            fetchMore_ = fetchOne(audius::kName, audius::searchUrl(a, app.audiusBase), app.audiusBase);
+
+        // Authenticated YouTube Music browse (liked songs, history, playlists).
+        // Only when session is active and not already fetched this visit.
+        if (hc && !ytBrowseAsked_ && app.settings.ytmusic &&
+            ytauth::currentState(app.ytSession) == ytauth::AuthState::kActive) {
+            ytBrowseAsked_ = true;
+            YtPostFetch::Headers hdr;
+            hdr.push_back({"Origin", ytmusic::kHost});
+            hdr.push_back({"Referer", std::string(ytmusic::kHost) + "/"});
+            hdr.push_back({"X-YouTube-Client-Name", "67"});
+            hdr.push_back({"X-YouTube-Client-Version", "1.20260707.12.00"});
+            std::string bearer = ytauth::bearerHeader(app.ytSession);
+            if (!bearer.empty()) hdr.push_back({"Authorization", bearer});
+            const std::string base = std::string(ytmusic::kHost) + "/youtubei/v1/browse?prettyPrint=false";
+            ytLikedFetch_    = YtPostFetch::start(app.platform, base,
+                                                  ytmusic::browseBody(ytmusic::kBrowseLiked), hdr);
+            ytHistoryFetch_  = YtPostFetch::start(app.platform, base,
+                                                  ytmusic::browseBody(ytmusic::kBrowseHistory), hdr);
+            ytPlaylistsFetch_= YtPostFetch::start(app.platform, base,
+                                                  ytmusic::browseBody(ytmusic::kBrowseLibPlaylists), hdr);
         }
     }
 
@@ -493,17 +560,12 @@ private:
                     jiosaavnSearch_ = fetchOne(jiosaavn::kName, jiosaavn::searchUrl(q, jiosaavn::kLimit, app.jiosaavnBase), app.jiosaavnBase);
                 // YouTube Music InnerTube: POST via YtPostFetch (WebClient now supports POST).
                 if (app.settings.ytmusic) {
-                    // Load auth session once (never log the token)
-                    if (!ytSessionLoaded_) {
-                        ytSessionLoaded_ = true;
-                        ytauth::loadSession(app.store, ytSession_);
-                        // Refresh if expired
-                        if (ytauth::currentState(ytSession_) == ytauth::AuthState::kExpired) {
-                            if (HttpClient *hc = app.platform.http()) {
-                                std::string err;
-                                ytauth::refresh(*hc, ytSession_, err);
-                                if (err.empty()) ytauth::saveSession(app.store, ytSession_);
-                            }
+                    // Refresh session if expired (uses app.ytSession, shared with Configuracoes)
+                    if (ytauth::currentState(app.ytSession) == ytauth::AuthState::kExpired) {
+                        if (HttpClient *hc = app.platform.http()) {
+                            std::string err;
+                            ytauth::refresh(*hc, app.ytSession, err);
+                            if (err.empty()) ytauth::saveSession(app.store, app.ytSession);
                         }
                     }
                     YtPostFetch::Headers hdr;
@@ -511,7 +573,7 @@ private:
                     hdr.push_back({"Referer", std::string(ytmusic::kHost) + "/"});
                     hdr.push_back({"X-YouTube-Client-Name", "67"});
                     hdr.push_back({"X-YouTube-Client-Version", "1.20260707.12.00"});
-                    std::string bearer = ytauth::bearerHeader(ytSession_);
+                    std::string bearer = ytauth::bearerHeader(app.ytSession);
                     if (!bearer.empty()) hdr.push_back({"Authorization", bearer});
                     std::string postUrl = std::string(ytmusic::kHost) +
                                          "/youtubei/v1/search?prettyPrint=false";
@@ -743,6 +805,27 @@ private:
             // YTMusic failures are silent: supplementary metadata source.
             searchFinished();
             changed = true;
+        }
+        // Authenticated YTMusic browse: liked songs
+        if (ytLikedFetch_ && ytLikedFetch_->done()) {
+            ytLikedFetch_->poll(j, e);
+            ytLikedFetch_.reset();
+            if (e.empty()) ytLikedSongs_ = ytmusic::parseBrowseSongs(j, nullptr);
+            rebuild(); changed = true;
+        }
+        // Authenticated YTMusic browse: history
+        if (ytHistoryFetch_ && ytHistoryFetch_->done()) {
+            ytHistoryFetch_->poll(j, e);
+            ytHistoryFetch_.reset();
+            if (e.empty()) ytHistorySongs_ = ytmusic::parseBrowseSongs(j, nullptr);
+            rebuild(); changed = true;
+        }
+        // Authenticated YTMusic browse: liked playlists
+        if (ytPlaylistsFetch_ && ytPlaylistsFetch_->done()) {
+            ytPlaylistsFetch_->poll(j, e);
+            ytPlaylistsFetch_.reset();
+            if (e.empty()) ytPlaylists_ = ytmusic::parsePlaylists(j);
+            rebuild(); changed = true;
         }
         if (int r = take(fetchTrend_, j, e)) {
             if (r == 1) app.musicHome.trending = addSongs(audius::parseTracks(j, app.audiusBase));
