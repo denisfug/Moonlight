@@ -2,7 +2,9 @@
 // returns songs and albums with covers, a detail view (playlist / album track list) and the
 // now-playing panel. Online sources (Audius, Internet Archive) are asked in background threads.
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <mutex>
 
 #include "app/app.hpp"
 #include "app/multi_fetch.hpp"
@@ -14,6 +16,7 @@
 #include "music/openverse.hpp"
 #include "music/youtube.hpp"
 #include "music/jiosaavn.hpp"
+#include "music/subsonic.hpp"
 #include "music/ytmusic.hpp"
 #include "music/ytauth.hpp"
 #include "music/rank.hpp"
@@ -255,13 +258,21 @@ private:
     size_t localCount_ = 0;                   // results_ that came from the HD / server (online ones follow)
     std::shared_ptr<MultiFetch> fetchTrend_, fetchForYou_, fetchMore_;
     std::string pendingGenre_, pendingArtist_;
+    // Subsonic server search runs on a background thread (never blocks the UI).
+    // serverSearchDone_: set to true by the worker; poll() drains it.
+    std::atomic<bool> serverSearchDone_{false};
+    std::mutex serverSearchMtx_;
+    std::vector<size_t> serverSearchResults_;
+    std::string serverSearchError_;
+    std::string serverSearchQuery_;   // query that is in-flight (guards against stale results)
 
     bool searching() const
     {
         return archSearch_ != nullptr || songSearch_ != nullptr || deezerSearch_ != nullptr
             || jamendoSearch_ != nullptr || openverseSearch_ != nullptr
             || youtubeSearch_ != nullptr || youtubeDurations_ != nullptr
-            || jiosaavnSearch_ != nullptr || (ytmusicSearch_ != nullptr && !ytmusicSearch_->done());
+            || jiosaavnSearch_ != nullptr || (ytmusicSearch_ != nullptr && !ytmusicSearch_->done())
+            || (!serverSearchDone_.load() && !serverSearchQuery_.empty());
     }
 
     std::vector<size_t> songsOf(const Shelf &sh) const
@@ -529,17 +540,50 @@ private:
         jiosaavnSearch_.reset();
         ytmusicSearch_.reset();
         ytmusicResults_.clear();
+        // Cancel any in-flight server search by clearing the query sentinel.
+        serverSearchQuery_.clear();
+        serverSearchDone_.store(false);
         localCount_ = 0;
         view_ = View::Shelves;
         if (!q.empty()) {
             results_ = app.music.search(q);
-            if (app.server.configured()) {
-                std::string e;
-                auto remote = app.searchServer(q, &e);
-                results_.insert(results_.end(), remote.begin(), remote.end());
-                if (!e.empty()) app.toast("Busca no servidor: " + e);
-            }
             localCount_ = results_.size();
+
+            // Server search: runs on a background thread to avoid blocking the UI.
+            // The PS4 DNS lookup alone can take up to 15 s (3 retries × 5 s timeout).
+            if (app.server.configured()) {
+                serverSearchQuery_ = q;
+                serverSearchDone_.store(false);
+                // Safe: App outlives all workers (destructor waits for activeThreads == 0).
+                // app.platform.http() is thread-safe (same pointer MultiFetch workers use).
+                MultiFetch::runDetached(app.platform, [this, q]() {
+                    subsonic::Client cl(app.platform.http(), app.server);
+                    std::vector<subsonic::Song> songs;
+                    std::string e = cl.search(q, songs);
+                    std::lock_guard<std::mutex> lk(serverSearchMtx_);
+                    // Only commit if the query has not changed (user typed something else).
+                    if (serverSearchQuery_ == q) {
+                        serverSearchError_ = e;
+                        serverSearchResults_.clear();
+                        if (e.empty()) {
+                            std::vector<music::Track> tracks;
+                            for (const auto &s : songs) {
+                                music::Track t;
+                                t.path = s.id;
+                                t.title = s.title;
+                                t.artist = s.artist;
+                                t.album = s.album;
+                                t.durationMs = int64_t(s.durationSec) * 1000;
+                                t.remote = true;
+                                tracks.push_back(t);
+                            }
+                            serverSearchResults_ = app.music.addRemote("", tracks, false);
+                        }
+                        serverSearchDone_.store(true);
+                    }
+                });
+            }
+
             if (app.platform.http()) {
                 // Jamendo first: full-length Creative Commons MP3s.
                 // Uses the user's client_id when set; falls back to the public demo key.
@@ -560,13 +604,17 @@ private:
                     jiosaavnSearch_ = fetchOne(jiosaavn::kName, jiosaavn::searchUrl(q, jiosaavn::kLimit, app.jiosaavnBase), app.jiosaavnBase);
                 // YouTube Music InnerTube: POST via YtPostFetch (WebClient now supports POST).
                 if (app.settings.ytmusic) {
-                    // Refresh session if expired (uses app.ytSession, shared with Configuracoes)
+                    // If session is expired, refresh on a background thread before searching.
+                    // The search fires immediately with whatever token state we have; if expired,
+                    // the InnerTube request simply returns unauthenticated results (still useful).
                     if (ytauth::currentState(app.ytSession) == ytauth::AuthState::kExpired) {
-                        if (HttpClient *hc = app.platform.http()) {
-                            std::string err;
-                            ytauth::refresh(*hc, app.ytSession, err);
-                            if (err.empty()) ytauth::saveSession(app.store, app.ytSession);
-                        }
+                        MultiFetch::runDetached(app.platform, [this]() {
+                            if (HttpClient *hc = app.platform.http()) {
+                                std::string err;
+                                ytauth::refresh(*hc, app.ytSession, err);
+                                if (err.empty()) ytauth::saveSession(app.store, app.ytSession);
+                            }
+                        });
                     }
                     YtPostFetch::Headers hdr;
                     hdr.push_back({"Origin", ytmusic::kHost});
@@ -611,6 +659,26 @@ private:
     // Collects answers of the background requests (called every frame; cheap when nothing is pending).
     void poll()
     {
+        // Drain server search result from background thread (non-blocking check).
+        if (serverSearchDone_.load()) {
+            serverSearchDone_.store(false);
+            std::vector<size_t> res;
+            std::string err;
+            {
+                std::lock_guard<std::mutex> lk(serverSearchMtx_);
+                res = std::move(serverSearchResults_);
+                err = std::move(serverSearchError_);
+            }
+            serverSearchQuery_.clear();
+            if (!err.empty()) {
+                app.toast("Busca no servidor: " + err);
+            } else if (!res.empty()) {
+                results_.insert(results_.begin() + long(localCount_), res.begin(), res.end());
+                rebuild();
+            }
+            searchFinished();
+        }
+
         Json j;
         std::string e;
         bool changed = false;
