@@ -306,8 +306,9 @@ void drawProgress(Canvas &c, int x, int y, int w, int h, double frac, Color fg, 
 
 void drawFocusRing(Canvas &c, Rect r, int radius)
 {
-    // clean red outline, no glow
-    c.strokeRoundRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, radius + 3, 2, theme::Red);
+    // Lilac glow ring (space identity: purple highlight on focused elements)
+    c.strokeRoundRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8, radius + 4, 1, withAlpha(theme::Highlight(), 60));
+    c.strokeRoundRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4, radius + 2, 2, theme::Highlight());
 }
 
 std::string formatTime(int64_t ms)

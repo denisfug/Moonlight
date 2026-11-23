@@ -13,9 +13,12 @@ using namespace ui;
 
 void drawSectionHeader(App &app, Canvas &c, Rect area, const std::string &title, const std::string &subtitle)
 {
+    // Accent bar: lilac vertical stripe on the left of the title (space identity)
+    int barX = area.x + theme::Margin - 20;
+    c.fillRoundRect(barX, 44, 4, 56, 2, theme::Highlight());
     app.fonts.bold->draw(c, area.x + theme::Margin, 52, 52, title, theme::Text());
     if (!subtitle.empty())
-        app.fonts.regular->draw(c, area.x + theme::Margin, 122, 24, subtitle, theme::TextSub());
+        app.fonts.regular->draw(c, area.x + theme::Margin, 122, 24, subtitle, theme::TextMute());
 }
 
 void drawPosterCard(App &app, Canvas &c, Rect r, const std::string &seed, const std::string &title,
