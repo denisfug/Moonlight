@@ -295,6 +295,7 @@ std::unique_ptr<Screen> makeSettings(App &);
 std::unique_ptr<Screen> makeGames(App &);
 std::unique_ptr<Screen> makeSupport(App &);
 std::unique_ptr<Screen> makeIntro(App &);    // animated intro vignette (screens_intro.cpp)
+std::unique_ptr<Screen> makeTester(App &);  // light tester — interactive diagnostics (screens_tester.cpp)
 
 // shared drawing helpers (screens_home.cpp)
 void drawPosterCard(App &app, ui::Canvas &c, ui::Rect r, const std::string &seed, const std::string &title,

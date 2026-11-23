@@ -81,6 +81,7 @@ add_library(ml_ui STATIC
     src/app/screens_intro.cpp
     src/app/screens_diag.cpp
     src/app/screens_games.cpp
+    src/app/screens_tester.cpp
     src/app/screens_vipstore.cpp
     src/recommend/recommend.cpp
 )

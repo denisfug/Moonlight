@@ -603,7 +603,8 @@ public:
             case 16: testInternet(); break;
             case 17: app.push(makeVideoTest(app)); break;
             case 18: app.push(makeProblems(app)); break;
-            case 19:
+            case 19: app.push(makeTester(app)); break;
+            case 20:
                 app.modal("Sobre o Moonlight HB",
                           std::string("Versao ") + ML_VERSION + " (" + app.platform.name() + "). Centro multimidia homebrew para PS4. "
                           "Conteudo apenas de fontes autorizadas; sem contorno de DRM. Fontes de texto: Outfit (OFL). "
@@ -669,6 +670,7 @@ public:
             {"Testar internet", "Tenta iniciar a internet do PS4 e abrir um site seguro (HTTPS). Mostra o erro exato.", -1},
             {"Testar video", "Baixa um video de teste e toca do HD e pela internet, mostrando o codigo de cada passo.", -1},
             {"Problemas ao reproduzir", problemsDesc_.c_str(), -1},
+            {"Light Tester", "Testa teclado, audio, HTTP, TLS, radio e busca de musica de forma interativa.", -1},
             {"Sobre", "Versao, plataforma e licencas.", -1},
         };
         // the list scrolls: 9 rows fit
@@ -695,7 +697,7 @@ public:
     Hints hints() const override { return {{BtnCross, "Alterar"}, {BtnCircle, "Voltar"}}; }
 
 private:
-    static constexpr int kItems = 20;
+    static constexpr int kItems = 21;
     int sel_ = 0, first_ = 0;
     std::string serverDesc_, newUrl_, newUser_, remoteDesc_, updateDesc_, problemsDesc_, jamendoDesc_, googleDesc_;
     std::string testHeader_, testResult_;
