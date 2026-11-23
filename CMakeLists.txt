@@ -39,6 +39,7 @@ add_library(ml_core STATIC
     src/music/youtube.cpp
     src/music/jiosaavn.cpp
     src/music/ytmusic.cpp
+    src/music/ytauth.cpp
     src/music/rank.cpp
     src/music/taste.cpp
     src/radio/radio.cpp
@@ -69,6 +70,7 @@ add_library(ml_ui STATIC
     src/app/catalog_loader.cpp
     src/app/updater.cpp
     src/app/multi_fetch.cpp
+    src/app/yt_post_fetch.cpp
     src/app/problem_log.cpp
     src/app/screens_home.cpp
     src/app/screens_media.cpp
@@ -77,6 +79,9 @@ add_library(ml_ui STATIC
     src/app/screens_video.cpp
     src/app/screens_misc.cpp
     src/app/screens_diag.cpp
+    src/app/screens_games.cpp
+    src/app/screens_vipstore.cpp
+    src/recommend/recommend.cpp
 )
 target_link_libraries(ml_ui PUBLIC ml_core)
 target_compile_options(ml_ui PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:${ML_WARN}>")
@@ -127,7 +132,7 @@ else()
     target_compile_definitions(moonlight_host PRIVATE ML_PLATFORM_HOST ML_VERSION="${ML_VERSION}")
 
     add_executable(moonlight_tests
-        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_jamendo.cpp tests/test_openverse.cpp tests/test_youtube.cpp tests/test_jiosaavn.cpp tests/test_ytmusic.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp)
+        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_jamendo.cpp tests/test_openverse.cpp tests/test_youtube.cpp tests/test_jiosaavn.cpp tests/test_ytmusic.cpp tests/test_ytauth.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp tests/test_recommend.cpp)
     target_include_directories(moonlight_tests PRIVATE tests)
     target_link_libraries(moonlight_tests PRIVATE ml_ui ml_host)
     enable_testing()

@@ -164,6 +164,9 @@ a memória; nenhuma versão testou os três fatores corretos juntos até agora. 
 | Prova de vídeo com sceAvPlayer (MP4 local), tela Vídeos, player em tela cheia | sim (UI; sem motor no PC) | **01.04 aguardando teste** |
 | VideoPlayer real, legendas, streaming | não | não |
 | Música em segundo plano durante jogos | fora do app (o PS4 fecha o app); ver plugin GoldHEN do projeto DevHub | — |
+| **Nível 1 — Player interno** | Player completo dentro do Moonlight: play/pause, fila, histórico, favoritos, fontes integradas | Implementado (01.13+). `sceSystemServiceTickVideoPlayback()` chamado a cada ~5s de reprodução para suprimir screensaver; `sceSystemServiceDisableMusicPlayer()` ao abrir AudioOut para evitar conflito com BGM do sistema. Testado: pendente no console. |
+| **Nível 2 — Reprodução fora do Moonlight** | Música continua ao abrir jogos | **BLOQUEIO TÉCNICO CONFIRMADO — permanente.** O kernel do PS4 (SceShellCore) envia SIGKILL ao processo do app ao lançar um jogo. `sceAudioOut` está vinculado ao processo; morre com ele. GoldHEN plugins (.sprx) sobrevivem no contexto do shell, mas o GoldHEN Plugins SDK não expõe APIs de áudio (sceAudioOut requer processo de app). Nenhum homebrew confirmou bypass. Reabrir investigação só se surgir prova concreta de API disponível. |
+| **Nível 3 — Menu Rápido nativo (Quick Menu)** | Controles no Menu Rápido do PS4 (segurar botão PS) | **BLOQUEIO TÉCNICO CONFIRMADO — permanente.** Requer `SceNpCommerce` + sistema interno de notificação de mídia Sony (APIs privadas). Não disponível no OpenOrbis. Spotify/PS Music usam APIs Sony não publicadas. Nenhum homebrew alcançou isso. Registrar como limitação permanente; não simular integração inexistente. |
 
 ## Fases 5–6 — Integração e testes
 
