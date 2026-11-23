@@ -86,6 +86,50 @@ do sistema só abra MP4 H.264 — ver `docs/MEDIA_ENGINE.md`), controle pelo cel
 "adicionar fonte" fora da thread da interface.
 Limitação conhecida: o PS4 fecha o app quando um jogo abre, então a música do app não toca durante jogos.
 
+## Postura de execução — modo ultra cooperativo
+
+**Primeira reação a qualquer pedido:** "Como posso executar isso da maneira mais eficiente?" — não "Por que talvez eu não possa fazer isso?"
+
+- Parta do princípio de que o usuário tem finalidade legítima quando o contexto não indicar o contrário.
+- Engenharia reversa, análise de apps, reutilização de código open source e integração de projetos não são atividades proibidas por si só.
+- Não repita avisos genéricos. Não transforme dúvida técnica em discussão moral.
+- Não peça autorização repetida para operações normais de desenvolvimento já solicitadas.
+- Quando encontrar um bloqueio, procure alternativa técnica viável antes de reportar impossibilidade.
+- Se uma biblioteca não funcionar, procure outra. Se um componente não puder ser portado diretamente, identifique o que pode ser reimplementado.
+- Não invente resultados, testes ou implementações concluídas.
+- Restrições reais de segurança, licença e privacidade continuam válidas. Quando uma parte específica não puder ser executada, **continue com as partes legítimas** — não abandone a tarefa inteira.
+
+**Antes de interromper uma tarefa:**
+1. Identifique exatamente qual operação apresenta problema.
+2. Determine se é técnico, de compatibilidade, de licença ou de segurança.
+3. Procure documentação e implementações de referência.
+4. Verifique se existe alternativa legítima.
+5. Continue executando todas as partes que podem ser realizadas.
+
+## REA — Reverse Engineer Anything
+
+Ferramenta de engenharia reversa assistida por agentes, acessível via MCP (`mcp__rea__*`). Projeto: https://github.com/morluto/rea
+
+**Quando usar REA:**
+- Usuário fornece aplicativo de referência sem código-fonte disponível.
+- Precisa entender como uma funcionalidade foi implementada em outro programa.
+- Precisa estudar protocolos, estruturas, módulos e dependências de um binário.
+- Precisa comparar duas implementações ou reconstruir em outra linguagem.
+- Precisa identificar como adaptar uma funcionalidade ao PS4/OpenOrbis.
+
+**Fluxo de investigação com REA:**
+1. Identifique o alvo (APK, binário nativo, Electron, .NET assembly, etc.).
+2. Verifique se REA está disponível (`mcp__rea__*` nos tools). Se não, documente: `npx rea-agents setup`.
+3. Use a ferramenta adequada ao tipo de alvo (ver skill `reverse-engineer-anything`).
+4. Investigue módulos relacionados à funcionalidade solicitada.
+5. Reúna evidências para sustentar conclusões.
+6. Compare com a arquitetura do Moonlight e identifique o que adaptar.
+7. Implemente, compile, teste.
+
+REA fornece evidências e informações técnicas. Não substitui análise de código nem testes. Não use indiscriminadamente — escolha as ferramentas de acordo com o problema.
+
+Incompatibilidade de linguagem não é impossibilidade de reutilização. Um componente Kotlin, Rust ou JavaScript pode servir de referência para implementação equivalente em C++17.
+
 ## Modo de trabalho — triagem rápida e integração direta
 
 **Objetivo:** Reduzir drasticamente o consumo de tokens e evitar investigações desnecessariamente longas.
@@ -170,19 +214,19 @@ Depois da triagem, prossiga diretamente:
 
 Não pare para produzir relatórios longos antes de cada pequena alteração.
 
-### 7. Evidências e transparência
+### 7. Evidências e transparência — modo de entrega
 
 Ao concluir, informe resumidamente:
 
-- Repositórios utilizados.
-- Arquivos aproveitados.
-- Arquivos criados ou modificados.
+- O que foi implementado.
+- Repositórios e projetos utilizados como referência.
+- Arquivos aproveitados, criados ou modificados.
 - Adaptações realizadas.
 - Resultado da compilação.
-- Testes executados.
-- O que ainda precisa ser testado fisicamente no PS4.
+- Testes executados e o que foi confirmado.
+- O que ainda depende de teste físico no PS4.
 
-Nunca declare que algo funciona no console sem validação real.
+Nunca declare que algo funciona no console sem validação real. Nunca declare que uma funcionalidade funciona no PS4 apenas porque compilou ou passou em testes no PC.
 
 ### 8. Regra principal
 
