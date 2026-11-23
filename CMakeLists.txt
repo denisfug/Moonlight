@@ -133,7 +133,7 @@ else()
     target_compile_definitions(moonlight_host PRIVATE ML_PLATFORM_HOST ML_VERSION="${ML_VERSION}")
 
     add_executable(moonlight_tests
-        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_jamendo.cpp tests/test_openverse.cpp tests/test_youtube.cpp tests/test_jiosaavn.cpp tests/test_ytmusic.cpp tests/test_ytauth.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp tests/test_recommend.cpp)
+        tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_jamendo.cpp tests/test_openverse.cpp tests/test_youtube.cpp tests/test_jiosaavn.cpp tests/test_ytmusic.cpp tests/test_ytauth.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp tests/test_recommend.cpp tests/test_audio_player.cpp)
     target_include_directories(moonlight_tests PRIVATE tests)
     target_link_libraries(moonlight_tests PRIVATE ml_ui ml_host)
     enable_testing()
