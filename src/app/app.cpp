@@ -97,6 +97,7 @@ bool App::init(std::string *error)
     loadChannels();
     audio.setVolume(settings.volume);
     images.start();
+    playIntroSound();   // play startup signature (async, non-blocking)
 
     crumb("abrindo o app (montando as telas)");
     roots_.resize(size_t(Section::Count));
@@ -148,6 +149,8 @@ void App::loadSettings()
     settings.lightTheme = j["lightTheme"].asBool(false);
     applyTheme();
     settings.volume = int(j["volume"].asInt(80));
+    settings.introSound = j["introSound"].asBool(true);
+    settings.introVolume = int(j["introVolume"].asInt(80));
     // Load YTMusic auth session (never logged)
     ytauth::loadSession(store, ytSession);
 }
@@ -168,6 +171,8 @@ void App::saveSettings()
     j.set("ytmusic", Json::boolean(settings.ytmusic));
     j.set("lightTheme", Json::boolean(settings.lightTheme));
     j.set("volume", Json::number(settings.volume));
+    j.set("introSound", Json::boolean(settings.introSound));
+    j.set("introVolume", Json::number(settings.introVolume));
     store.save("settings.json", j);
 }
 
@@ -175,6 +180,24 @@ void App::applyTheme()
 {
     theme::activeTheme = settings.lightTheme ? theme::ThemeMode::Light : theme::ThemeMode::Dark;
     background_ = Image();   // the cached background is redrawn in the new colours
+}
+
+void App::playIntroSound()
+{
+    if (!settings.introSound || settings.introPlayed) return;
+    settings.introPlayed = true;
+    // The AudioPlayer is used for music/radio; to avoid interrupting an ongoing stream,
+    // we only play the signature if nothing else is currently playing.
+    if (audio.state() == PlayState::Playing || audio.state() == PlayState::Paused) return;
+    std::string path = platform.assetDir() + "/audio/moonlight_signature.mp3";
+    std::string err;
+    if (audio.open(path, &err)) {
+        audio.setVolume(settings.introVolume);
+        audio.play();
+        // Restore the user's volume after the signature (the audio thread plays it fully).
+        // We rely on natural completion — the audio thread stops on its own.
+    }
+    // err is silently ignored: the sound is cosmetic and must not block startup.
 }
 
 void App::rescanMusic()
@@ -724,13 +747,19 @@ void App::drawModal(Canvas &c)
 
 void App::draw(Canvas &c)
 {
-    // background: flat theme colour (rendered once, then copied; applyTheme() clears it)
+    // background: space gradient (rendered once, then copied; applyTheme() clears it)
     if (background_.empty()) {
         background_.w = theme::W;
         background_.h = theme::H;
         background_.px.assign(size_t(theme::W) * theme::H, 0xFF000000u);
         Canvas bc(background_.fb());
-        bc.fillRect(0, 0, theme::W, theme::H, theme::Bg());
+        // Space gradient: BgGrad0 (top) -> BgGrad1 (bottom) with subtle purple vignette
+        bc.fillGradient(0, 0, theme::W, theme::H, 0, theme::BgGrad0(), theme::BgGrad1(), 1);
+        // Subtle radial glow at top-right (nebula effect, very subtle)
+        if (theme::isDark()) {
+            bc.fillCircle(float(theme::W) * 0.85f, float(theme::H) * 0.15f, 320.f,
+                          withAlpha(theme::space::DeepPurple, 60));
+        }
     }
     c.drawImage(background_, 0, 0);
     if (current().fullscreen()) {   // video player: the screen owns the whole display

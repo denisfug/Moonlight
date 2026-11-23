@@ -75,6 +75,9 @@ struct Settings {
     bool ytmusic = false;     // music search also asks YouTube Music InnerTube (metadata only; no stream — off by default; no API key needed)
     bool lightTheme = false;  // false = dark (default), true = light; applied with App::applyTheme()
     int volume = 80;
+    bool introSound = true;   // play startup audio signature (assets/audio/moonlight_signature.mp3)
+    int introVolume = 80;     // 0–100; mixed with main volume
+    bool introPlayed = false; // transient: true once per session so it doesn't replay on re-enter
 };
 
 class App {
@@ -193,6 +196,8 @@ public:
     void skip(int dir);
     void saveSettings();
     void applyTheme();   // settings.lightTheme -> theme::activeTheme (+ redraws the cached background)
+    // Play the startup audio signature once per session (no-op if disabled or already played).
+    void playIntroSound();
     void rescanMusic();
 
     // live tv: user list at <dataDir>/channels.m3u, else demo channels
