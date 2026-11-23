@@ -371,10 +371,10 @@ Keyboard::Result Keyboard::handle(uint32_t p)
     if (p & BtnTriangle) text_ += ' ';
     if (p & BtnL1) upper_ = !upper_;
     if (p & BtnCircle) { active_ = false; return Result::Cancelled; }
-    if (p & BtnOptions) { active_ = false; return Result::Done; }
+    if (p & (BtnR2 | BtnOptions)) { active_ = false; return Result::Done; }
     if (p & BtnCross) {
         const std::string &k = rs[size_t(row_)][size_t(col_)];
-        if (k == "OK") { active_ = false; return Result::Done; }
+        if (k == "OK") { /* R2 confirms; X on OK key still confirms for convenience */ active_ = false; return Result::Done; }
         if (k == "Apagar") return handle(BtnSquare);
         if (k == "Espaco") text_ += ' ';
         else if (k == "Maiusc") upper_ = !upper_;
@@ -421,7 +421,7 @@ void Keyboard::draw(Canvas &c, Fonts &f)
         }
         y += key + gap;
     }
-    drawHints(c, f, {{BtnSquare, "Apagar"}, {BtnTriangle, "Espaco"}, {BtnL1, "Maiusc"}, {BtnOptions, "Confirmar"}, {BtnCircle, "Cancelar"}},
+    drawHints(c, f, {{BtnSquare, "Apagar"}, {BtnTriangle, "Espaco"}, {BtnL1, "Maiusc"}, {BtnR2, "Confirmar"}, {BtnCircle, "Cancelar"}},
               px + panelW - 60, py + panelH - 62);
 }
 
