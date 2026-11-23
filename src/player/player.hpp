@@ -47,7 +47,7 @@ public:
     void setVolume(int percent) override;
     int volume() const override { return volume_.load(); }
     int64_t getPosition() const override { return positionMs_.load(); }
-    int64_t getDuration() const override { return durationMs_; }
+    int64_t getDuration() const override { return durationMs_.load(); }
     PlayState state() const override { return state_.load(); }
     // Frames written to the audio device since open() (diagnostics/tests).
     uint64_t framesOut() const { return framesOut_.load(); }
@@ -57,12 +57,12 @@ public:
 private:
     Platform &platform_;
     std::string data_;
-    int64_t durationMs_ = 0;
     bool live_ = false, remote_ = false;
     std::string streamUrl_, lastError_;
     HttpClient *http_ = nullptr;
     std::atomic<PlayState> state_{PlayState::Idle};
     std::atomic<int64_t> positionMs_{0};
+    std::atomic<int64_t> durationMs_{0};   // atomic: read by UI thread, written by open/openStream
     std::atomic<int64_t> seekTo_{-1};
     std::atomic<int> volume_{80};
     std::atomic<bool> quit_{false};

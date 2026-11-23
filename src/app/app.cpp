@@ -332,6 +332,7 @@ bool App::startTrack(size_t t, std::string *err)
     }
     if (ok) {
         audio.play();
+        trackStartMs_ = now_;   // record when playback started for the premature-advance guard
         taste.notePlay(tr);
         store.save("music_taste.json", taste.save());
         errorStreak = 0;   // reset streak on success
@@ -581,7 +582,10 @@ bool App::frame()
     PlayState st = audio.state();
     if (st == PlayState::Error && lastAudioState_ != PlayState::Error && audio.live())
         toast(station.name + ": " + audio.lastError());
-    if (st == PlayState::Ended && lastAudioState_ == PlayState::Playing && !audio.live()) {
+    // Only auto-advance if the track played for at least 500 ms. This prevents a network hiccup
+    // that causes an instant Ended right after play() from silently skipping the whole queue.
+    if (st == PlayState::Ended && lastAudioState_ == PlayState::Playing && !audio.live()
+        && (now_ - trackStartMs_) >= 500) {
         if (queue.next(false)) {
             // Error-streak guard: stop auto-advancing after kMaxAutoSkip consecutive failures
             // so a queue full of broken tracks does not loop silently for ever.

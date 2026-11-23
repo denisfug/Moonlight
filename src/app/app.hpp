@@ -247,6 +247,7 @@ private:
     bool systemKeyboard_ = false;   // PS4 system keyboard open: keep presenting frames, poll for the result
     PlayState lastAudioState_ = PlayState::Idle;
     int64_t lastAudioPos_ = -1;
+    uint64_t trackStartMs_ = 0;   // now_ when play() was last called; guards against instant auto-advance
 
     // Async source-add state (addSourceAsync / drainPendingSource).
     // Written by background thread, read on UI thread inside frame().

@@ -32,7 +32,7 @@ bool AudioPlayer::openStream(const std::string &url, HttpClient *http, std::stri
     remote_ = true;
     streamUrl_ = u.str();
     http_ = http;
-    durationMs_ = live ? 0 : durationMs;
+    durationMs_.store(live ? 0 : durationMs);
     positionMs_ = 0;
     seekTo_ = -1;
     framesOut_ = 0;
@@ -52,8 +52,8 @@ bool AudioPlayer::open(const std::string &path, std::string *error)
         state_ = PlayState::Error;
         return false;
     }
-    durationMs_ = pc_scan_duration_ms(reinterpret_cast<const uint8_t *>(data_.data()), data_.size());
-    if (durationMs_ <= 0) {
+    durationMs_.store(pc_scan_duration_ms(reinterpret_cast<const uint8_t *>(data_.data()), data_.size()));
+    if (durationMs_.load() <= 0) {
         if (error) *error = "arquivo nao contem audio MP3 valido";
         state_ = PlayState::Error;
         data_.clear();
@@ -100,7 +100,7 @@ void AudioPlayer::seek(int64_t ms)
 {
     if (remote_) return;   // streams play from the start (no seeking yet)
     if (ms < 0) ms = 0;
-    if (durationMs_ > 0 && ms > durationMs_) ms = durationMs_;
+    { int64_t dur = durationMs_.load(); if (dur > 0 && ms > dur) ms = dur; }
     seekTo_ = ms;
     positionMs_ = ms;
 }
@@ -201,7 +201,8 @@ void AudioPlayer::run()
             if (data_.size() > 10 && b[0] == 'I' && b[1] == 'D' && b[2] == '3')
                 audioStart = 10 + ((b[6] & 0x7F) << 21 | (b[7] & 0x7F) << 14 | (b[8] & 0x7F) << 7 | (b[9] & 0x7F));
             if (audioStart > data_.size()) audioStart = 0;
-            double ratio = durationMs_ > 0 ? double(want) / double(durationMs_) : 0;
+            int64_t dur0 = durationMs_.load();
+            double ratio = dur0 > 0 ? double(want) / double(dur0) : 0;
             rd.pos = want <= 0 ? 0 : audioStart + static_cast<size_t>(ratio * double(data_.size() - audioStart));
             if (rd.pos > data_.size()) rd.pos = data_.size();
             pc_start(dec, memRead, &rd);
@@ -233,7 +234,7 @@ void AudioPlayer::run()
             // capped to a preview length (Deezer 30 s), the stream ends at the right time but
             // durationMs_ might still differ slightly from the actual PCM length.
             int64_t realEnd = baseMs + static_cast<int64_t>(framesAtBase * 1000 / 48000);
-            positionMs_ = durationMs_ > 0 ? durationMs_ : realEnd;
+            { int64_t dur = durationMs_.load(); positionMs_ = dur > 0 ? dur : realEnd; }
             state_ = PlayState::Ended;
             break;
         }
