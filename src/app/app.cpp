@@ -64,6 +64,9 @@ App::~App()
 
 bool App::init(std::string *error)
 {
+    // DIAG 01.38: notificações em cada passo para identificar onde o PS4 trava.
+    // Remover quando o problema for identificado.
+    platform.notify("ML 01.38: carregando fontes...");
     std::string r, b;
     platform.fs().readFile(platform.assetDir() + "/fonts/Outfit-Regular.ttf", r, 4 << 20);
     platform.fs().readFile(platform.assetDir() + "/fonts/Outfit-Bold.ttf", b, 4 << 20);
@@ -74,6 +77,7 @@ bool App::init(std::string *error)
         return false;
     }
     fonts = {regular_.get(), bold_.get()};
+    platform.notify("ML 01.38: fontes ok, carregando dados...");
     platform.afterAssetsLoaded();
     platform.fs().makeDirs(platform.dataDir());
     platform.fs().makeDirs(platform.dataDir() + "/music");
@@ -91,6 +95,7 @@ bool App::init(std::string *error)
     problems.load();
     sources.load();
     radioFavorites.load();
+    platform.notify("ML 01.38: dados ok, escaneando musica...");
     crumb("abrindo o app (musicas e canais)");
     server = subsonic::loadConfig(store);
     rescanMusic();
@@ -99,6 +104,7 @@ bool App::init(std::string *error)
     images.start();
     playIntroSound();   // play startup signature (async, non-blocking)
 
+    platform.notify("ML 01.38: musica ok, montando telas...");
     crumb("abrindo o app (montando as telas)");
     roots_.resize(size_t(Section::Count));
     roots_[size_t(Section::Home)] = makeHome(*this);
@@ -113,6 +119,7 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Support)] = makeSupport(*this);
     roots_[size_t(Section::Sources)] = makeSources(*this);
     roots_[size_t(Section::Settings)] = makeSettings(*this);
+    platform.notify("ML 01.38: telas ok, entrando...");
     roots_[0]->onEnter();
     // Show animated intro only on real hardware (not in headless tests or PC host builds).
     if (settings.introAnim && !settings.introAnimPlayed && platform.name() == "ps4") {
