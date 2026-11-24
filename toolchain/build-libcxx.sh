@@ -11,9 +11,12 @@
 #   - exceptions OFF, localization/wide chars/filesystem OFF (no iostream, no std::filesystem)
 #   - -U__FreeBSD__: OpenOrbis' libc is musl, not FreeBSD libc; libc++'s FreeBSD paths
 #     (xlocale.h, sys/umtx.h, arc4random) do not exist there
-#   - -nostdinc: never let host (Linux) headers leak into the target build
-#   - overlay/math.h: OpenOrbis math.h defines C++ overloads (isinf...) that clash with
-#     libc++ 18; the overlay switches it to the plain C macros.
+#   - -nostdinc++: blocks host C++ stdlib headers; host C headers (pthread, stdlib…)
+#     remain visible via /usr/include — they are needed by libc++ internals during
+#     the cross-compile step and do not affect the PS4 binary (this is a host build)
+#   - overlay/math.h: OpenOrbis math.h defines C++ overloads (isinf…) that clash with
+#     libc++ 18; the overlay comes first in -isystem so it shadows the OpenOrbis
+#     math.h without blocking any host C header.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 T="${OO_PS4_TOOLCHAIN:?set OO_PS4_TOOLCHAIN to the OpenOrbis toolchain}"
@@ -28,8 +31,8 @@ if [ ! -d "$W/src/.git" ]; then
   git -C "$W/src" sparse-checkout set libcxx libcxxabi libunwind runtimes cmake llvm/cmake llvm/utils/llvm-lit
 fi
 
-F="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc \
-   -isystem $here/overlay -isystem $T/include -isystem $RES"
+F="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc++ \
+   -isystem $here/overlay -isystem $T/include -isystem $RES -isystem /usr/include"
 rm -rf "$W/build" && mkdir -p "$W/build"
 cmake -S "$W/src/runtimes" -B "$W/build" -G "Unix Makefiles" \
   -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" -DCMAKE_BUILD_TYPE=Release \
