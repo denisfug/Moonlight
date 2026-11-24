@@ -3,7 +3,8 @@
 #ifndef _PTHREAD_H
 #define _PTHREAD_H
 
-#include <time.h>
+/* timespec stub — avoids pulling in time.h (not available with -nostdinc) */
+struct timespec { long tv_sec; long tv_nsec; };
 
 typedef unsigned long pthread_t;
 typedef struct { unsigned __attr; } pthread_attr_t;
