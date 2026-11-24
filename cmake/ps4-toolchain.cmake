@@ -19,6 +19,14 @@ if(NOT EXISTS "${LIBCXX}/lib/libc++.a")
     message(FATAL_ERROR "libc++ for PS4 missing: run toolchain/build-libcxx.sh first")
 endif()
 execute_process(COMMAND clang -print-resource-dir OUTPUT_VARIABLE CLANG_RES OUTPUT_STRIP_TRAILING_WHITESPACE)
+# Find ld.lld: prefer the versioned one that matches the clang in PATH (e.g. ld.lld-21),
+# fall back to unversioned ld.lld, then search LLVM bin dirs.
+find_program(ML_LLD NAMES ld.lld-21 ld.lld-20 ld.lld-19 ld.lld-18 ld.lld
+    HINTS /usr/lib/llvm-21/bin /usr/lib/llvm-20/bin /usr/lib/llvm-19/bin /usr/lib/llvm-18/bin /usr/bin)
+if(NOT ML_LLD)
+    message(FATAL_ERROR "ld.lld not found — install lld (e.g. apt install lld)")
+endif()
+message(STATUS "Using linker: ${ML_LLD}")
 
 # On Windows/WSL, the OpenOrbis zip omits musl C headers (string.h etc.);
 # use the bundled copy in toolchain/musl-include/ as a fallback.
@@ -42,4 +50,4 @@ if(DEFINED ENV{GOLDHEN_SDK} AND EXISTS "$ENV{GOLDHEN_SDK}/libGoldHEN_Hook.a")
     set(ML_GOLDHEN_INCLUDE "$ENV{GOLDHEN_SDK}/include" CACHE PATH "" FORCE)
 endif()
 set(CMAKE_CXX_LINK_EXECUTABLE
-    "ld.lld <OBJECTS> -o <TARGET> -m elf_x86_64 -pie --script ${ML_ROOT}/toolchain/link_ps4.x --eh-frame-hdr -L${LIBCXX}/lib -L${OO}/lib <LINK_LIBRARIES> ${ML_GOLDHEN} ${ML_PS4_LIBS} ${OO}/lib/crt1.o")
+    "${ML_LLD} <OBJECTS> -o <TARGET> -m elf_x86_64 -pie --script ${ML_ROOT}/toolchain/link_ps4.x --eh-frame-hdr -L${LIBCXX}/lib -L${OO}/lib <LINK_LIBRARIES> ${ML_GOLDHEN} ${ML_PS4_LIBS} ${OO}/lib/crt1.o")
