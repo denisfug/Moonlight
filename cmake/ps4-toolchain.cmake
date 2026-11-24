@@ -50,4 +50,4 @@ if(DEFINED ENV{GOLDHEN_SDK} AND EXISTS "$ENV{GOLDHEN_SDK}/libGoldHEN_Hook.a")
     set(ML_GOLDHEN_INCLUDE "$ENV{GOLDHEN_SDK}/include" CACHE PATH "" FORCE)
 endif()
 set(CMAKE_CXX_LINK_EXECUTABLE
-    "${ML_LLD} <OBJECTS> -o <TARGET> -m elf_x86_64 -pie --script ${ML_ROOT}/toolchain/link_ps4.x --eh-frame-hdr -L${LIBCXX}/lib -L${OO}/lib <LINK_LIBRARIES> ${ML_GOLDHEN} ${ML_PS4_LIBS} ${OO}/lib/crt1.o")
+    "${ML_LLD} <OBJECTS> -o <TARGET> -m elf_x86_64 -pie --script ${ML_ROOT}/toolchain/link_ps4.x --eh-frame-hdr --allow-shlib-undefined -L${LIBCXX}/lib -L${OO}/lib <LINK_LIBRARIES> ${ML_GOLDHEN} ${ML_PS4_LIBS} ${OO}/lib/crt1.o")
