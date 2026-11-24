@@ -94,6 +94,7 @@ if(ML_PS4)
     add_executable(moonlight
         src/main.cpp
         src/platform/ps4/ps4_platform.cpp
+        src/platform/ps4/ps4_missing_syms.c
         src/platform/ps4/video/video_out.cpp
         src/platform/ps4/video/av_engine.cpp
         src/platform/ps4/controller/pad.cpp
