@@ -11,19 +11,82 @@ TITLE="Moonlight HB"
 TITLE_ID="MLHB00001"
 CONTENT_ID="IV0000-MLHB00001_00-MOONLIGHTHB00000"
 VERSION="$(grep -oP 'set\(ML_VERSION "\K[0-9.]+' "$ROOT/CMakeLists.txt")"
-_FSELF_SRC="$T/bin/linux/create-fself"; _GP4_SRC="$T/bin/linux/create-gp4"; _PKGTOOL_SRC="$T/bin/linux/PkgTool.Core"
+# Persistent cache for Linux toolchain binaries (survives between builds).
+# Priority: $T/bin/linux/ (native Linux install) → $HOME/.cache (downloaded) → download now.
+_OO_CACHE="$HOME/.cache/openorbis-linux-bin"
+_OO_VERSION="v0.5.4"
+_OO_RELEASE_TAR="https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/${_OO_VERSION}/toolchain-llvm-18.tar.gz"
+
+_resolve_oo_bins() {
+    local need_download=0
+    for name in create-fself create-gp4 PkgTool.Core; do
+        if [ -f "$T/bin/linux/$name" ] && [ -x "$T/bin/linux/$name" ]; then
+            :  # native install present
+        elif [ ! -f "$_OO_CACHE/$name" ] || [ ! -x "$_OO_CACHE/$name" ]; then
+            need_download=1; break
+        fi
+    done
+    if [ "$need_download" -eq 1 ]; then
+        echo ">>> OpenOrbis Linux binaries not found; downloading from GitHub release ${_OO_VERSION}..." >&2
+        echo "    (this is a one-time ~130MB download; cached in $_OO_CACHE)" >&2
+        mkdir -p "$_OO_CACHE"
+        local tmp_tar; tmp_tar="$(mktemp --suffix=.tar.gz)"
+        if command -v wget >/dev/null 2>&1; then
+            wget -q --show-progress "$_OO_RELEASE_TAR" -O "$tmp_tar" >&2
+        elif command -v curl >/dev/null 2>&1; then
+            curl -L --progress-bar "$_OO_RELEASE_TAR" -o "$tmp_tar" >&2
+        else
+            echo "ERROR: wget or curl required. Put create-fself, create-gp4, PkgTool.Core in $T/bin/linux/" >&2
+            rm -f "$tmp_tar"; exit 1
+        fi
+        # Archive structure: OpenOrbis-PS4-Toolchain/bin/linux/{create-fself,create-gp4,PkgTool.Core,...}
+        # macOS PkgTool.Core (73MB) appears before the Linux one — tar must stream past it.
+        local tmp_x; tmp_x="$(mktemp -d)"
+        tar -xf "$tmp_tar" -C "$tmp_x" \
+            "OpenOrbis-PS4-Toolchain/bin/linux/create-fself" \
+            "OpenOrbis-PS4-Toolchain/bin/linux/create-gp4" \
+            "OpenOrbis-PS4-Toolchain/bin/linux/PkgTool.Core" 2>/dev/null || \
+        tar -xf "$tmp_tar" -C "$tmp_x" --wildcards \
+            '*/bin/linux/create-fself' '*/bin/linux/create-gp4' '*/bin/linux/PkgTool.Core' 2>/dev/null || true
+        find "$tmp_x" -name "create-fself" -exec cp {} "$_OO_CACHE/create-fself" \; 2>/dev/null || true
+        find "$tmp_x" -name "create-gp4"   -exec cp {} "$_OO_CACHE/create-gp4"   \; 2>/dev/null || true
+        find "$tmp_x" -name "PkgTool.Core" -exec cp {} "$_OO_CACHE/PkgTool.Core" \; 2>/dev/null || true
+        chmod +x "$_OO_CACHE/create-fself" "$_OO_CACHE/create-gp4" "$_OO_CACHE/PkgTool.Core" 2>/dev/null || true
+        rm -rf "$tmp_tar" "$tmp_x"
+        for name in create-fself create-gp4 PkgTool.Core; do
+            if [ ! -f "$_OO_CACHE/$name" ]; then
+                echo "ERROR: Failed to extract $name. Download $_OO_RELEASE_TAR manually" >&2
+                echo "       and place bin/linux/{create-fself,create-gp4,PkgTool.Core} in $_OO_CACHE/" >&2
+                exit 1
+            fi
+        done
+        echo ">>> OpenOrbis Linux binaries cached in $_OO_CACHE" >&2
+    fi
+}
+_resolve_oo_bins
+
+# Pick the binary source: native toolchain path (if available) or cache
+_bin_src() {
+    local name="$1"
+    if [ -f "$T/bin/linux/$name" ] && [ -x "$T/bin/linux/$name" ]; then
+        echo "$T/bin/linux/$name"
+    else
+        echo "$_OO_CACHE/$name"
+    fi
+}
+_FSELF_SRC="$(_bin_src create-fself)"
+_GP4_SRC="$(_bin_src create-gp4)"
+_PKGTOOL_SRC="$(_bin_src PkgTool.Core)"
+
 # On WSL, Linux binaries on NTFS (/mnt/c/...) fail silently with exit 255.
-# Copy them to the Linux tmpfs so they execute reliably; also copy if binfmt rejects them.
+# Copy to a tmpfs directory so they execute reliably.
 _BIN_TMPDIR=""
 _need_copy=0
-[[ "$T" == /mnt/[a-zA-Z]/* ]] && _need_copy=1
-if [ "$_need_copy" -eq 0 ] && ! "$_FSELF_SRC" --version >/dev/null 2>&1 && ! "$_FSELF_SRC" -h >/dev/null 2>&1; then
-    _need_copy=1
-fi
+[[ "$_FSELF_SRC" == /mnt/[a-zA-Z]/* ]] && _need_copy=1
 if [ "$_need_copy" -eq 1 ]; then
     _BIN_TMPDIR="$(mktemp -d)"
-    cp "$_FSELF_SRC" "$_BIN_TMPDIR/create-fself"
-    cp "$_GP4_SRC"   "$_BIN_TMPDIR/create-gp4"
+    cp "$_FSELF_SRC"  "$_BIN_TMPDIR/create-fself"
+    cp "$_GP4_SRC"    "$_BIN_TMPDIR/create-gp4"
     cp "$_PKGTOOL_SRC" "$_BIN_TMPDIR/PkgTool.Core"
     chmod +x "$_BIN_TMPDIR/create-fself" "$_BIN_TMPDIR/create-gp4" "$_BIN_TMPDIR/PkgTool.Core"
 fi
