@@ -114,13 +114,9 @@ bool App::init(std::string *error)
     roots_[size_t(Section::Sources)] = makeSources(*this);
     roots_[size_t(Section::Settings)] = makeSettings(*this);
     roots_[0]->onEnter();
-    // Show animated intro only on real hardware (not in headless tests or PC host builds).
-    // 01.41: usa IntroVideoScreen (MP4 via AvEngine) no PS4 para evitar o bug do Canvas.
-    if (settings.introAnim && !settings.introAnimPlayed && platform.name() == "ps4") {
-        settings.introAnimPlayed = true;
-        stack_.push_back(makeIntroVideo(*this));
-        stack_.back()->onEnter();
-    }
+    // Intro desabilitada: 01.41 testou MP4 via AvEngine mas tela ficou preta.
+    // IntroVideoScreen e makeIntroVideo() preservados em screens_intro.cpp para uso futuro.
+    // (void)makeIntroVideo;  // suprime warning de função não usada se necessário
     crumb("abrindo o app (primeira tela)");
     now_ = last_ = startMs_ = platform.nowMs();
     if (!crashedAt_.empty()) {
