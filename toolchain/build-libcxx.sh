@@ -31,8 +31,22 @@ if [ ! -d "$W/src/.git" ]; then
   git -C "$W/src" sparse-checkout set libcxx libcxxabi libunwind runtimes cmake llvm/cmake llvm/utils/llvm-lit
 fi
 
-F="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -U__FreeBSD__ -D_DEFAULT_SOURCE -nostdinc++ \
-   -isystem $here/overlay -isystem $T/include -isystem $RES -isystem /usr/include"
+# Flags explanation:
+#   --target=x86_64-pc-freebsd12-elf  : produces PS4-compatible object files (ELF, x86-64 ABI)
+#   -nostdinc++                        : blocks host libstdc++/libc++ headers only; host C headers
+#                                        (/usr/include) remain available for pthread, stdlib, etc.
+#   /usr/include first                 : gives the real glibc features.h so __THROW/__nonnull work;
+#                                        -D__GLIBC__ enables those guards under --target=freebsd
+#   overlay/ after /usr/include        : overlay/math.h shadows OpenOrbis math.h (which has C++
+#                                        overloads clashing with libc++ 18); it must come AFTER
+#                                        /usr/include so glibc's math.h doesn't re-shadow it —
+#                                        OpenOrbis $T/include comes last and is what we want to override
+#   -U__FreeBSD__                      : prevents libc++ from taking FreeBSD-specific paths
+#                                        (xlocale.h, arc4random) that don't exist in musl
+F="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables \
+   -U__FreeBSD__ -D_DEFAULT_SOURCE -D__GLIBC__=2 -D__GLIBC_MINOR__=31 \
+   -nostdinc++ \
+   -isystem /usr/include -isystem $here/overlay -isystem $T/include -isystem $RES"
 rm -rf "$W/build" && mkdir -p "$W/build"
 cmake -S "$W/src/runtimes" -B "$W/build" -G "Unix Makefiles" \
   -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" -DCMAKE_BUILD_TYPE=Release \
