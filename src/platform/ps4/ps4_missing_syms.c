@@ -4,6 +4,7 @@
  * All functions are defined as weak so a future real libc can override them.
  */
 #include <stddef.h>
+#include <stdarg.h>
 #include <time.h>
 
 /* ---- ctype ---- */
@@ -118,4 +119,26 @@ done:
 __attribute__((weak)) size_t strftime_l(char *s, size_t max, const char *fmt, const struct tm *tm, locale_t loc) {
     (void)loc;
     return strftime(s, max, fmt, tm);
+}
+
+/* ---- time ---- */
+/* mbedtls uses time() for certificate expiry checks (x509.c).
+ * On PS4 the kernel provides real time via sceRtcGetCurrentTick / sceKernelGetSystemtime,
+ * but mbedtls only needs a rough epoch for certificate window checks.
+ * Return 0 (epoch) so mbedtls accepts any certificate whose window includes 1970-01-01.
+ * If real clock is ever needed, replace with a proper PS4 syscall here.
+ */
+__attribute__((weak)) time_t time(time_t *t) {
+    if (t) *t = 0;
+    return 0;
+}
+
+/* ---- printf (mbedtls debug output stub) ---- */
+/* mbedtls calls printf() from ssl_tls.c for debug trace messages.
+ * On PS4 we have no console; swallow the output silently.
+ * The weak attribute lets a real printf override this if one is linked later.
+ */
+__attribute__((weak)) int printf(const char *fmt, ...) {
+    (void)fmt;
+    return 0;
 }
