@@ -3,6 +3,10 @@
 # OpenOrbis samples and our earlier console-tested builds.
 # Usage: OO_PS4_TOOLCHAIN=... tools/make_pkg.sh build-ps4/moonlight out/
 set -euo pipefail
+
+# Trap ERR to show the failing line — helps diagnose silent failures
+trap 'echo "make_pkg.sh: error on line $LINENO (exit $?)" >&2' ERR
+
 ELF="${1:?ELF path}"; OUT="${2:?output dir}"
 T="${OO_PS4_TOOLCHAIN:?set OO_PS4_TOOLCHAIN}"
 export OO_PS4_TOOLCHAIN  # create-fself reads this env var internally
@@ -11,58 +15,83 @@ TITLE="Moonlight HB"
 TITLE_ID="MLHB00001"
 CONTENT_ID="IV0000-MLHB00001_00-MOONLIGHTHB00000"
 VERSION="$(grep -oP 'set\(ML_VERSION "\K[0-9.]+' "$ROOT/CMakeLists.txt")"
+
 # Persistent cache for Linux toolchain binaries (survives between builds).
 # Priority: $T/bin/linux/ (native Linux install) → $HOME/.cache (downloaded) → download now.
 _OO_CACHE="$HOME/.cache/openorbis-linux-bin"
 _OO_VERSION="v0.5.4"
 _OO_RELEASE_TAR="https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/${_OO_VERSION}/toolchain-llvm-18.tar.gz"
 
+# Check if a binary is available (native or cached). Returns 0 if found, 1 if not.
+_bin_available() {
+    local name="$1"
+    if [ -f "$T/bin/linux/$name" ] && [ -x "$T/bin/linux/$name" ]; then
+        return 0
+    elif [ -f "$_OO_CACHE/$name" ] && [ -x "$_OO_CACHE/$name" ]; then
+        return 0
+    fi
+    return 1
+}
+
+# Resolve/download OpenOrbis Linux binaries. Uses set +e internally to avoid silent abort.
 _resolve_oo_bins() {
     local need_download=0
+    local name
     for name in create-fself create-gp4 PkgTool.Core; do
-        if [ -f "$T/bin/linux/$name" ] && [ -x "$T/bin/linux/$name" ]; then
-            :  # native install present
-        elif [ ! -f "$_OO_CACHE/$name" ] || [ ! -x "$_OO_CACHE/$name" ]; then
-            need_download=1; break
+        if ! _bin_available "$name"; then
+            need_download=1
+            break
         fi
     done
-    if [ "$need_download" -eq 1 ]; then
-        echo ">>> OpenOrbis Linux binaries not found; downloading from GitHub release ${_OO_VERSION}..." >&2
-        echo "    (this is a one-time ~130MB download; cached in $_OO_CACHE)" >&2
-        mkdir -p "$_OO_CACHE"
-        local tmp_tar; tmp_tar="$(mktemp --suffix=.tar.gz)"
-        if command -v wget >/dev/null 2>&1; then
-            wget -q --show-progress "$_OO_RELEASE_TAR" -O "$tmp_tar" >&2
-        elif command -v curl >/dev/null 2>&1; then
-            curl -L --progress-bar "$_OO_RELEASE_TAR" -o "$tmp_tar" >&2
-        else
-            echo "ERROR: wget or curl required. Put create-fself, create-gp4, PkgTool.Core in $T/bin/linux/" >&2
-            rm -f "$tmp_tar"; exit 1
-        fi
-        # Archive structure: OpenOrbis-PS4-Toolchain/bin/linux/{create-fself,create-gp4,PkgTool.Core,...}
-        # macOS PkgTool.Core (73MB) appears before the Linux one — tar must stream past it.
-        local tmp_x; tmp_x="$(mktemp -d)"
-        tar -xf "$tmp_tar" -C "$tmp_x" \
-            "OpenOrbis-PS4-Toolchain/bin/linux/create-fself" \
-            "OpenOrbis-PS4-Toolchain/bin/linux/create-gp4" \
-            "OpenOrbis-PS4-Toolchain/bin/linux/PkgTool.Core" 2>/dev/null || \
-        tar -xf "$tmp_tar" -C "$tmp_x" --wildcards \
-            '*/bin/linux/create-fself' '*/bin/linux/create-gp4' '*/bin/linux/PkgTool.Core' 2>/dev/null || true
-        find "$tmp_x" -name "create-fself" -exec cp {} "$_OO_CACHE/create-fself" \; 2>/dev/null || true
-        find "$tmp_x" -name "create-gp4"   -exec cp {} "$_OO_CACHE/create-gp4"   \; 2>/dev/null || true
-        find "$tmp_x" -name "PkgTool.Core" -exec cp {} "$_OO_CACHE/PkgTool.Core" \; 2>/dev/null || true
-        chmod +x "$_OO_CACHE/create-fself" "$_OO_CACHE/create-gp4" "$_OO_CACHE/PkgTool.Core" 2>/dev/null || true
-        rm -rf "$tmp_tar" "$tmp_x"
-        for name in create-fself create-gp4 PkgTool.Core; do
-            if [ ! -f "$_OO_CACHE/$name" ]; then
-                echo "ERROR: Failed to extract $name. Download $_OO_RELEASE_TAR manually" >&2
-                echo "       and place bin/linux/{create-fself,create-gp4,PkgTool.Core} in $_OO_CACHE/" >&2
-                exit 1
-            fi
-        done
-        echo ">>> OpenOrbis Linux binaries cached in $_OO_CACHE" >&2
+    if [ "$need_download" -eq 0 ]; then
+        return 0
     fi
+    echo ">>> OpenOrbis Linux binaries not found; downloading from GitHub release ${_OO_VERSION}..." >&2
+    echo "    (this is a one-time ~130MB download; cached in $_OO_CACHE)" >&2
+    mkdir -p "$_OO_CACHE"
+    # Use mktemp without --suffix for POSIX compatibility (BusyBox, old coreutils)
+    local tmp_tar
+    tmp_tar="$(mktemp /tmp/oo-XXXXXX.tar.gz)"
+    local download_ok=0
+    if command -v wget >/dev/null 2>&1; then
+        wget -q --show-progress "$_OO_RELEASE_TAR" -O "$tmp_tar" >&2 && download_ok=1
+    fi
+    if [ "$download_ok" -eq 0 ] && command -v curl >/dev/null 2>&1; then
+        curl -L --progress-bar "$_OO_RELEASE_TAR" -o "$tmp_tar" >&2 && download_ok=1
+    fi
+    if [ "$download_ok" -eq 0 ]; then
+        rm -f "$tmp_tar"
+        echo "ERROR: download failed. Put create-fself, create-gp4, PkgTool.Core in $_OO_CACHE/" >&2
+        return 1
+    fi
+    local tmp_x
+    tmp_x="$(mktemp -d)"
+    # Try exact path first, then wildcard fallback (different tar versions)
+    tar -xf "$tmp_tar" -C "$tmp_x" \
+        "OpenOrbis-PS4-Toolchain/bin/linux/create-fself" \
+        "OpenOrbis-PS4-Toolchain/bin/linux/create-gp4" \
+        "OpenOrbis-PS4-Toolchain/bin/linux/PkgTool.Core" 2>/dev/null || \
+    tar -xf "$tmp_tar" -C "$tmp_x" --wildcards \
+        '*/bin/linux/create-fself' '*/bin/linux/create-gp4' '*/bin/linux/PkgTool.Core' 2>/dev/null || true
+    # Copy extracted binaries to cache
+    find "$tmp_x" -name "create-fself" -exec cp {} "$_OO_CACHE/create-fself" \; 2>/dev/null || true
+    find "$tmp_x" -name "create-gp4"   -exec cp {} "$_OO_CACHE/create-gp4"   \; 2>/dev/null || true
+    find "$tmp_x" -name "PkgTool.Core" -exec cp {} "$_OO_CACHE/PkgTool.Core" \; 2>/dev/null || true
+    chmod +x "$_OO_CACHE/create-fself" "$_OO_CACHE/create-gp4" "$_OO_CACHE/PkgTool.Core" 2>/dev/null || true
+    rm -rf "$tmp_tar" "$tmp_x"
+    local ok=1
+    for name in create-fself create-gp4 PkgTool.Core; do
+        if [ ! -f "$_OO_CACHE/$name" ]; then
+            echo "ERROR: Failed to extract $name from archive." >&2
+            echo "       Download $_OO_RELEASE_TAR manually" >&2
+            echo "       and place bin/linux/{create-fself,create-gp4,PkgTool.Core} in $_OO_CACHE/" >&2
+            ok=0
+        fi
+    done
+    [ "$ok" -eq 1 ] || return 1
+    echo ">>> OpenOrbis Linux binaries cached in $_OO_CACHE" >&2
 }
+
 _resolve_oo_bins
 
 # Pick the binary source: native toolchain path (if available) or cache
@@ -82,17 +111,26 @@ _PKGTOOL_SRC="$(_bin_src PkgTool.Core)"
 # Copy to a tmpfs directory so they execute reliably.
 _BIN_TMPDIR=""
 _need_copy=0
-[[ "$_FSELF_SRC" == /mnt/[a-zA-Z]/* ]] && _need_copy=1
+case "$_FSELF_SRC" in
+    /mnt/[a-zA-Z]/*) _need_copy=1 ;;
+esac
 if [ "$_need_copy" -eq 1 ]; then
     _BIN_TMPDIR="$(mktemp -d)"
-    cp "$_FSELF_SRC"  "$_BIN_TMPDIR/create-fself"
-    cp "$_GP4_SRC"    "$_BIN_TMPDIR/create-gp4"
+    cp "$_FSELF_SRC"   "$_BIN_TMPDIR/create-fself"
+    cp "$_GP4_SRC"     "$_BIN_TMPDIR/create-gp4"
     cp "$_PKGTOOL_SRC" "$_BIN_TMPDIR/PkgTool.Core"
     chmod +x "$_BIN_TMPDIR/create-fself" "$_BIN_TMPDIR/create-gp4" "$_BIN_TMPDIR/PkgTool.Core"
 fi
-FSELF="${_BIN_TMPDIR:+$_BIN_TMPDIR/create-fself}"; FSELF="${FSELF:-$_FSELF_SRC}"
-GP4="${_BIN_TMPDIR:+$_BIN_TMPDIR/create-gp4}"; GP4="${GP4:-$_GP4_SRC}"
-_PKGTOOL_BIN="${_BIN_TMPDIR:+$_BIN_TMPDIR/PkgTool.Core}"; _PKGTOOL_BIN="${_PKGTOOL_BIN:-$_PKGTOOL_SRC}"
+if [ -n "$_BIN_TMPDIR" ]; then
+    FSELF="$_BIN_TMPDIR/create-fself"
+    GP4="$_BIN_TMPDIR/create-gp4"
+    _PKGTOOL_BIN="$_BIN_TMPDIR/PkgTool.Core"
+else
+    FSELF="$_FSELF_SRC"
+    GP4="$_GP4_SRC"
+    _PKGTOOL_BIN="$_PKGTOOL_SRC"
+fi
+
 # PkgTool.Core is a .NET binary; on systems without ICU installed it needs DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 # PkgTool.Core needs libssl.so.1.1 (OpenSSL 1.1); on systems with only OpenSSL 3 we
 # look for a pre-extracted copy and add it to LD_LIBRARY_PATH automatically.
@@ -101,7 +139,10 @@ for _candidate in \
     /tmp/ssl11/extracted/usr/lib/x86_64-linux-gnu \
     /usr/lib/x86_64-linux-gnu \
     /lib/x86_64-linux-gnu; do
-    [ -f "$_candidate/libssl.so.1.1" ] && { _SSL11_PATH="$_candidate"; break; }
+    if [ -f "$_candidate/libssl.so.1.1" ]; then
+        _SSL11_PATH="$_candidate"
+        break
+    fi
 done
 PKGTOOL() {
     local _extra_ld=""
