@@ -162,10 +162,15 @@ IMG="$STAGE/image"
 mkdir -p "$IMG/sce_sys/about" "$IMG/sce_module" "$IMG/assets/fonts" "$OUT"
 
 echo ">>> create-fself: $FSELF" >&2
-echo ">>> ELF: $ELF" >&2
-echo ">>> STAGE: $STAGE" >&2
 file "$FSELF" >&2 || true
-"$FSELF" -in="$ELF" -out="$STAGE/app.oelf" --eboot "$IMG/eboot.bin" --paid "$PAID"
+ldd "$FSELF" >&2 2>&1 || true
+"$FSELF" -in="$ELF" -out="$STAGE/app.oelf" --eboot "$IMG/eboot.bin" --paid "$PAID" 2>&1 || {
+    _rc=$?
+    echo "ERROR: create-fself failed (exit $_rc)" >&2
+    echo "Trying with strace to see what's happening:" >&2
+    strace -e trace=execve,openat "$FSELF" -in="$ELF" -out="$STAGE/app.oelf" --eboot "$IMG/eboot.bin" --paid "$PAID" 2>&1 | head -40 >&2 || true
+    exit $_rc
+}
 [ "$(head -c 4 "$IMG/eboot.bin" | od -An -tx1 | tr -d ' ')" = "4f153d1d" ] || { echo "eboot.bin is not a SELF"; exit 1; }
 # Refuses a package whose eboot lost part of the initialized data (old create-fself): closes at launch.
 python3 "$(dirname "$0")/check_eboot.py" "$ELF" "$IMG/eboot.bin" || exit 1
