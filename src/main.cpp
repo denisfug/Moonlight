@@ -24,6 +24,28 @@ int main()
         platform.notify("Moonlight HB: " + err);
         for (;;) platform.sleepMs(1000);
     }
+    // 01.40 DIAG: pinta vermelho direto no backbuffer por ~2s para confirmar que
+    // present() funciona sem o Canvas. Se aparecer vermelho = Canvas/draw tem bug.
+    // Se preto = present() ou backBuffer() tem bug.
+    {
+        ml::Framebuffer fb = platform.display().backBuffer();
+        if (fb.pixels) {
+            const int npx = fb.width * fb.height;
+            for (int i = 0; i < npx; i++) fb.pixels[i] = 0xFF0000FFu; // ARGB vermelho
+        }
+        platform.display().present();
+        platform.sleepMs(100);
+        // segundo buffer
+        fb = platform.display().backBuffer();
+        if (fb.pixels) {
+            const int npx = fb.width * fb.height;
+            for (int i = 0; i < npx; i++) fb.pixels[i] = 0xFF0000FFu;
+        }
+        platform.display().present();
+        platform.sleepMs(2000);
+        platform.notify("01.40 diag ok");
+    }
+
     for (unsigned n = 0;; n++) {
         // Redraw the first frames unconditionally and then once a second, so both video buffers
         // always hold a current image even if the system drops or reorders a flip.
