@@ -133,12 +133,118 @@ __attribute__((weak)) time_t time(time_t *t) {
     return 0;
 }
 
-/* ---- printf (mbedtls debug output stub) ---- */
-/* mbedtls calls printf() from ssl_tls.c for debug trace messages.
- * On PS4 we have no console; swallow the output silently.
- * The weak attribute lets a real printf override this if one is linked later.
- */
+/* ---- printf / vfprintf (mbedtls + libc++ abort stubs) ---- */
+/* mbedtls calls printf() for debug trace. libc++ abort_message/verbose_abort
+ * call vfprintf(stderr,...). No console on PS4 — swallow silently. */
 __attribute__((weak)) int printf(const char *fmt, ...) {
     (void)fmt;
     return 0;
+}
+__attribute__((weak)) int vfprintf(void *stream, const char *fmt, __builtin_va_list ap) {
+    (void)stream; (void)fmt; (void)ap;
+    return 0;
+}
+
+/* ---- stderr (libc++ abort message needs FILE* stderr) ---- */
+/* libc++ only passes it to vfprintf which we stub out above.
+ * Provide a non-NULL pointer so the pointer-dereference in abort_message
+ * doesn't fault (libc++ checks if stream != NULL before calling vfprintf). */
+static int _stderr_dummy = 0;
+/* FILE* is void* at ABI level; expose it as a weak symbol. */
+__attribute__((weak)) void *stderr = (void*)&_stderr_dummy;
+
+/* ---- string conversions (libc++ std::stoll / stoull / stof / stold) ---- */
+#include <errno.h>
+/* strtoll / strtoull: simple sign+digit scanner, no locale */
+__attribute__((weak)) long long strtoll(const char *s, char **end, int base) {
+    int neg = 0;
+    unsigned long long v = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { neg = 1; s++; }
+    else if (*s == '+') s++;
+    if (base == 0) {
+        if (s[0] == '0' && (s[1]=='x'||s[1]=='X')) { base = 16; s += 2; }
+        else if (s[0] == '0') { base = 8; s++; }
+        else base = 10;
+    } else if (base == 16 && s[0]=='0' && (s[1]=='x'||s[1]=='X')) s += 2;
+    const char *start = s;
+    for (;;) {
+        int d;
+        if (*s >= '0' && *s <= '9') d = *s - '0';
+        else if (*s >= 'a' && *s <= 'f') d = *s - 'a' + 10;
+        else if (*s >= 'A' && *s <= 'F') d = *s - 'A' + 10;
+        else break;
+        if (d >= base) break;
+        v = v * (unsigned)base + (unsigned)d;
+        s++;
+    }
+    if (s == start) { if (end) *end = (char*)s; return 0; }
+    if (end) *end = (char*)s;
+    return neg ? -(long long)v : (long long)v;
+}
+__attribute__((weak)) unsigned long long strtoull(const char *s, char **end, int base) {
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '+') s++;
+    if (base == 0) {
+        if (s[0]=='0' && (s[1]=='x'||s[1]=='X')) { base=16; s+=2; }
+        else if (s[0]=='0') { base=8; s++; }
+        else base=10;
+    } else if (base==16 && s[0]=='0' && (s[1]=='x'||s[1]=='X')) s+=2;
+    unsigned long long v = 0;
+    const char *start = s;
+    for (;;) {
+        int d;
+        if (*s>='0'&&*s<='9') d=*s-'0';
+        else if (*s>='a'&&*s<='f') d=*s-'a'+10;
+        else if (*s>='A'&&*s<='F') d=*s-'A'+10;
+        else break;
+        if (d>=base) break;
+        v=v*(unsigned)base+(unsigned)d; s++;
+    }
+    (void)start;
+    if (end) *end=(char*)s;
+    return v;
+}
+/* strtof / strtold: delegate to strtod, cast */
+__attribute__((weak)) float strtof(const char *s, char **end) {
+    /* minimal: parse optional sign + integer + fraction + exponent */
+    while (*s==' '||*s=='\t') s++;
+    int neg=0;
+    if (*s=='-'){neg=1;s++;}else if(*s=='+')s++;
+    double v=0;
+    while (*s>='0'&&*s<='9') v=v*10+(*s++-'0');
+    if (*s=='.') {
+        s++; double f=0.1;
+        while (*s>='0'&&*s<='9'){v+=(*s++-'0')*f;f*=0.1;}
+    }
+    if (*s=='e'||*s=='E') {
+        s++; int eneg=0;
+        if (*s=='-'){eneg=1;s++;}else if(*s=='+')s++;
+        int e=0;
+        while (*s>='0'&&*s<='9') e=e*10+(*s++-'0');
+        double m=1; for(int i=0;i<e;i++) m*=10.0;
+        if(eneg) v/=m; else v*=m;
+    }
+    if (end) *end=(char*)s;
+    return (float)(neg?-v:v);
+}
+__attribute__((weak)) long double strtold(const char *s, char **end) {
+    return (long double)strtof(s, end);
+}
+
+/* ---- wcslen (mbedtls ssl_handshake_init uses MBEDTLS_SSL_VERIFY_NONE label) ---- */
+#include <stddef.h>
+__attribute__((weak)) size_t wcslen(const unsigned int *s) {
+    size_t n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+/* ---- syscall (libc++ __cxa_guard_acquire for static-local mutex) ---- */
+/* On PS4 we disable static-local constructors via build rules, so
+ * __cxa_guard_acquire should never actually run. If it does,
+ * return 1 (lock acquired) so initialisation proceeds rather than hanging. */
+__attribute__((weak)) long syscall(long number, ...) {
+    (void)number;
+    return 1;
 }
