@@ -7,3 +7,5 @@ typedef float  float_t;
 typedef double double_t;
 
 #endif /* _BITS_ALLTYPES_H */
+
+typedef struct { unsigned __opaque[4]; } mbstate_t;
