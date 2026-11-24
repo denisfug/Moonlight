@@ -73,8 +73,8 @@ __attribute__((weak)) double atan2(double y, double x) { return __builtin_atan2(
 __attribute__((weak)) float  atan2f(float y, float x)  { return __builtin_atan2f(y, x); }
 
 /* ---- strftime: minimal implementation ---- */
-/* locale_t is opaque on PS4/musl — just an integer handle */
-typedef void* locale_t;
+/* locale_t already defined in musl headers — include it */
+#include <locale.h>
 
 /* Only the formats actually used in Moonlight: %H %M %S %Y %m %d */
 __attribute__((weak)) size_t strftime(char *s, size_t max, const char *fmt, const struct tm *tm) {
