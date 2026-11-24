@@ -616,4 +616,78 @@ std::unique_ptr<Screen> makeIntro(App &app)
     return std::unique_ptr<Screen>(new IntroScreen(app));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IntroVideoScreen — toca um MP4 de intro via AvEngine (PS4), sem usar Canvas.
+// Usa updateFrame() para escrever direto no backbuffer e chama present().
+// Auto-pop quando o vídeo terminar ou após timeout, ou quando o usuário pressionar X.
+// No PC (AvEngine indisponível) faz pop imediato.
+// ─────────────────────────────────────────────────────────────────────────────
+class IntroVideoScreen : public Screen {
+public:
+    explicit IntroVideoScreen(App &a, const std::string &path)
+        : Screen(a), path_(path) {}
+    ~IntroVideoScreen() override { if (engine_) engine_->stop(); }
+
+    std::string title() const override { return ""; }
+    bool fullscreen() const override { return true; }
+    bool animating() const override { return !done_; }
+    bool busy() const override { return false; }
+
+    void onEnter() override
+    {
+        engine_ = app.platform.makeVideoEngine();
+        if (!engine_) { done_ = true; return; }   // PC ou engine indisponível: skip
+        std::string err;
+        if (!engine_->open(path_, &err)) {
+            engine_.reset();
+            done_ = true;
+            return;
+        }
+        startMs_ = app.platform.nowMs();
+    }
+
+    bool handle(uint32_t pressed) override
+    {
+        if (pressed & (BtnCross | BtnCircle | BtnOptions)) {
+            done_ = true;
+        }
+        return true;   // consume tudo
+    }
+
+    void update(float /*dt*/) override
+    {
+        if (done_) { app.pop(); return; }
+        if (!engine_) { done_ = true; return; }
+        // Timeout de segurança: 10 s
+        if (app.platform.nowMs() - startMs_ > 10000) { done_ = true; return; }
+        if (engine_->finished()) { done_ = true; return; }
+
+        // Renderiza frame diretamente no backbuffer, sem passar pelo Canvas
+        ml::Framebuffer fb = app.platform.display().backBuffer();
+        if (fb.pixels) {
+            engine_->updateFrame(fb);
+        }
+        app.platform.display().present();
+    }
+
+    void draw(Canvas &/*c*/, Rect /*area*/) override
+    {
+        // update() já fez present() — não precisa desenhar nada aqui
+    }
+
+    Hints hints() const override { return {{BtnCross, "Pular"}}; }
+
+private:
+    std::string path_;
+    std::unique_ptr<VideoEngine> engine_;
+    uint64_t startMs_ = 0;
+    bool done_ = false;
+};
+
+std::unique_ptr<Screen> makeIntroVideo(App &app)
+{
+    std::string path = app.platform.assetDir() + "/videos/intro.mp4";
+    return std::unique_ptr<Screen>(new IntroVideoScreen(app, path));
+}
+
 }  // namespace ml

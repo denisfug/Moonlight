@@ -159,7 +159,7 @@ PAID=0x3800000000000011
 
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE" "${_BIN_TMPDIR:-}"' EXIT
 IMG="$STAGE/image"
-mkdir -p "$IMG/sce_sys/about" "$IMG/sce_module" "$IMG/assets/fonts" "$OUT"
+mkdir -p "$IMG/sce_sys/about" "$IMG/sce_module" "$IMG/assets/fonts" "$IMG/assets/videos" "$OUT"
 
 echo ">>> create-fself: $FSELF" >&2
 "$FSELF" -in="$ELF" -out="$STAGE/app.oelf" --eboot "$IMG/eboot.bin" --paid "$PAID" 2>&1 || {
@@ -191,9 +191,54 @@ cp "$ROOT/sce_sys/icon0.png" "$ROOT/sce_sys/pic1.png" "$IMG/sce_sys/"
 cp "$T/src/modules/right.sprx" "$IMG/sce_sys/about/"
 cp "$T/src/modules/libc.prx" "$T/src/modules/libSceFios2.prx" "$IMG/sce_module/"
 cp "$ROOT/assets/fonts/Outfit-Regular.ttf" "$ROOT/assets/fonts/Outfit-Bold.ttf" "$ROOT/assets/fonts/OFL.txt" "$IMG/assets/fonts/"
+# intro vídeo (MP4 H.264 1920×1080, tocado pelo AvEngine na abertura)
+[ -f "$ROOT/assets/videos/intro.mp4" ] && cp "$ROOT/assets/videos/intro.mp4" "$IMG/assets/videos/"
 
-FILES="$(cd "$IMG" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')"
-(cd "$IMG" && "$GP4" -out pkg.gp4 --content-id="$CONTENT_ID" --files "$FILES" >/dev/null)
+# Gera o .gp4 manualmente para garantir que todos os arquivos apareçam em <files>.
+# create-gp4 tem um bug: lista apenas o primeiro arquivo encontrado; o PkgTool falha se
+# o <rootdir> declara um subdiretório (ex: assets/videos) sem nenhum arquivo nele.
+_GP4_TS="$(date -u +"%Y-%m-%d %H:%M:%S")"
+_GP4_FILES=""
+while IFS= read -r f; do
+    _GP4_FILES="${_GP4_FILES}
+		<file targ_path=\"${f}\" orig_path=\"${f}\" />"
+done < <(cd "$IMG" && find . -type f | sed 's|^\./||' | sort)
+# Detecta subdiretórios de assets presentes no stage para o <rootdir>
+_ASSET_DIRS=""
+for _d in $(cd "$IMG/assets" && find . -maxdepth 1 -mindepth 1 -type d | sed 's|^\./||' | sort); do
+    _ASSET_DIRS="${_ASSET_DIRS}
+			<dir targ_name=\"${_d}\" />"
+done
+cat > "$IMG/pkg.gp4" <<GENGP4
+<?xml version="1.0"?>
+<psproject xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" fmt="gp4" version="1000">
+	<volume>
+		<volume_type>pkg_ps4_app</volume_type>
+		<volume_id>PS4VOLUME</volume_id>
+		<volume_ts>${_GP4_TS}</volume_ts>
+		<package content_id="${CONTENT_ID}" passcode="00000000000000000000000000000000"
+			storage_type="digital50" app_type="full" />
+		<chunk_info chunk_count="1" scenario_count="1">
+			<chunks>
+				<chunk id="0" layer_no="0" label="Chunk #0" />
+			</chunks>
+			<scenarios default_id="0">
+				<scenario id="0" type="sp" initial_chunk_count="1" label="Scenario #0">0</scenario>
+			</scenarios>
+		</chunk_info>
+	</volume>
+	<files img_no="0">${_GP4_FILES}
+	</files>
+	<rootdir>
+		<dir targ_name="sce_sys">
+			<dir targ_name="about" />
+		</dir>
+		<dir targ_name="sce_module" />
+		<dir targ_name="assets">${_ASSET_DIRS}
+		</dir>
+	</rootdir>
+</psproject>
+GENGP4
 (cd "$IMG" && PKGTOOL pkg_build pkg.gp4 "$STAGE" >/dev/null)
 PKG="$STAGE/$CONTENT_ID.pkg"
 [ -f "$PKG" ] || { echo "pkg_build did not produce $CONTENT_ID.pkg"; exit 1; }
