@@ -5,12 +5,31 @@
 set -euo pipefail
 ELF="${1:?ELF path}"; OUT="${2:?output dir}"
 T="${OO_PS4_TOOLCHAIN:?set OO_PS4_TOOLCHAIN}"
+export OO_PS4_TOOLCHAIN  # create-fself reads this env var internally
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TITLE="Moonlight HB"
 TITLE_ID="MLHB00001"
 CONTENT_ID="IV0000-MLHB00001_00-MOONLIGHTHB00000"
 VERSION="$(grep -oP 'set\(ML_VERSION "\K[0-9.]+' "$ROOT/CMakeLists.txt")"
-FSELF="$T/bin/linux/create-fself"; GP4="$T/bin/linux/create-gp4"; _PKGTOOL_BIN="$T/bin/linux/PkgTool.Core"
+_FSELF_SRC="$T/bin/linux/create-fself"; _GP4_SRC="$T/bin/linux/create-gp4"; _PKGTOOL_SRC="$T/bin/linux/PkgTool.Core"
+# On WSL, Linux binaries on NTFS (/mnt/c/...) fail silently with exit 255.
+# Copy them to the Linux tmpfs so they execute reliably; also copy if binfmt rejects them.
+_BIN_TMPDIR=""
+_need_copy=0
+[[ "$T" == /mnt/[a-zA-Z]/* ]] && _need_copy=1
+if [ "$_need_copy" -eq 0 ] && ! "$_FSELF_SRC" --version >/dev/null 2>&1 && ! "$_FSELF_SRC" -h >/dev/null 2>&1; then
+    _need_copy=1
+fi
+if [ "$_need_copy" -eq 1 ]; then
+    _BIN_TMPDIR="$(mktemp -d)"
+    cp "$_FSELF_SRC" "$_BIN_TMPDIR/create-fself"
+    cp "$_GP4_SRC"   "$_BIN_TMPDIR/create-gp4"
+    cp "$_PKGTOOL_SRC" "$_BIN_TMPDIR/PkgTool.Core"
+    chmod +x "$_BIN_TMPDIR/create-fself" "$_BIN_TMPDIR/create-gp4" "$_BIN_TMPDIR/PkgTool.Core"
+fi
+FSELF="${_BIN_TMPDIR:+$_BIN_TMPDIR/create-fself}"; FSELF="${FSELF:-$_FSELF_SRC}"
+GP4="${_BIN_TMPDIR:+$_BIN_TMPDIR/create-gp4}"; GP4="${GP4:-$_GP4_SRC}"
+_PKGTOOL_BIN="${_BIN_TMPDIR:+$_BIN_TMPDIR/PkgTool.Core}"; _PKGTOOL_BIN="${_PKGTOOL_BIN:-$_PKGTOOL_SRC}"
 # PkgTool.Core is a .NET binary; on systems without ICU installed it needs DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 # PkgTool.Core needs libssl.so.1.1 (OpenSSL 1.1); on systems with only OpenSSL 3 we
 # look for a pre-extracted copy and add it to LD_LIBRARY_PATH automatically.
@@ -34,7 +53,7 @@ export -f PKGTOOL
 export _PKGTOOL_BIN _SSL11_PATH
 PAID=0x3800000000000011
 
-STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE" "${_BIN_TMPDIR:-}"' EXIT
 IMG="$STAGE/image"
 mkdir -p "$IMG/sce_sys/about" "$IMG/sce_module" "$IMG/assets/fonts" "$OUT"
 
