@@ -88,16 +88,17 @@ static TexBlock texAlloc(uint32_t align, uint32_t size)
 static void texFreeBlock(TexBlock &b)
 {
     if (b.vaddr) {
-#ifdef ML_AV_TEX_MALLOC
-        std::free(b.vaddr);
-#else
-        // sceKernelMunmap(void* addr, size_t len) — exact match
+#ifdef ML_AV_GPU_TEX
+        // GPU path: memory was mapped with sceKernelMapDirectMemory — unmap then release.
         sceKernelMunmap(b.vaddr, b.mappedSize);
         if (b.dmemOffset) {
-            // sceKernelReleaseDirectMemory(off_t start, size_t len) — exact match
             sceKernelReleaseDirectMemory(b.dmemOffset, b.mappedSize);
             b.dmemOffset = 0;
         }
+#else
+        // posix_memalign path (default 01.31+): dmemOffset is always 0.
+        // Must use free(), NOT sceKernelMunmap — Munmap on heap memory causes CE-34878-0.
+        std::free(b.vaddr);
 #endif
         b.vaddr = nullptr;
     }

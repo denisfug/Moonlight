@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <mutex>
 
 #include "app/app.hpp"
 #include "app/multi_fetch.hpp"
@@ -261,7 +260,7 @@ private:
     // Subsonic server search runs on a background thread (never blocks the UI).
     // serverSearchDone_: set to true by the worker; poll() drains it.
     std::atomic<bool> serverSearchDone_{false};
-    std::mutex serverSearchMtx_;
+    std::atomic_flag serverSearchLock_ = ATOMIC_FLAG_INIT; // spinlock — no std::mutex (PS4)
     std::vector<size_t> serverSearchResults_;
     std::string serverSearchError_;
     std::string serverSearchQuery_;   // query that is in-flight (guards against stale results)
@@ -560,7 +559,7 @@ private:
                     subsonic::Client cl(app.platform.http(), app.server);
                     std::vector<subsonic::Song> songs;
                     std::string e = cl.search(q, songs);
-                    std::lock_guard<std::mutex> lk(serverSearchMtx_);
+                    while (serverSearchLock_.test_and_set(std::memory_order_acquire)) {}
                     // Only commit if the query has not changed (user typed something else).
                     if (serverSearchQuery_ == q) {
                         serverSearchError_ = e;
@@ -581,6 +580,7 @@ private:
                         }
                         serverSearchDone_.store(true);
                     }
+                    serverSearchLock_.clear(std::memory_order_release);
                 });
             }
 
@@ -665,9 +665,10 @@ private:
             std::vector<size_t> res;
             std::string err;
             {
-                std::lock_guard<std::mutex> lk(serverSearchMtx_);
+                while (serverSearchLock_.test_and_set(std::memory_order_acquire)) {}
                 res = std::move(serverSearchResults_);
                 err = std::move(serverSearchError_);
+                serverSearchLock_.clear(std::memory_order_release);
             }
             serverSearchQuery_.clear();
             if (!err.empty()) {

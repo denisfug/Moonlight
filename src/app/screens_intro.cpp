@@ -245,7 +245,7 @@ private:
 
     void updateBurst(float dt)
     {
-        if (!burst_ && t_ >= kBurstTime && t_ < kBurstTime + 0.1f) {
+        if (!burstActive_ && t_ >= kBurstTime && t_ < kBurstTime + 0.1f) {
             // Spawn burst at closest-approach position
             float rx, ry;
             rocketPos(kBurstTime, rx, ry);
