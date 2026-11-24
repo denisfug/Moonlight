@@ -12,6 +12,7 @@ namespace ml::ps4 {
 class VideoOut : public Display {
 public:
     bool init(std::string *err);   // 1920x1080, two linear ARGB8888 buffers
+    void showLoadingScreen();      // clear to black + present, hides PS4 splash before app.init()
     Framebuffer backBuffer() override;
     void present() override;
 

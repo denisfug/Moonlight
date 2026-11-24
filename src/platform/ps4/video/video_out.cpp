@@ -40,6 +40,19 @@ bool VideoOut::init(std::string *err)
     return true;
 }
 
+// Clear both buffers to black and do a present() to hide the PS4 splash screen early,
+// before app.init() runs. Without this the splash stays visible for the entire (slow) init.
+void VideoOut::showLoadingScreen()
+{
+    if (handle_ < 0) return;
+    // Fill both framebuffers with black (ARGB 0xFF000000).
+    const size_t kPixels = size_t(kW) * kH;
+    for (int b = 0; b < 2; b++)
+        for (size_t i = 0; i < kPixels; i++) buf_[b][i] = 0xFF000000u;
+    // Do two presents (one per buffer) so both are shown and the flip queue is happy.
+    for (int i = 0; i < 2; i++) present();
+}
+
 Framebuffer VideoOut::backBuffer() { return {buf_[cur_], kW, kH, kW}; }
 
 void VideoOut::present()

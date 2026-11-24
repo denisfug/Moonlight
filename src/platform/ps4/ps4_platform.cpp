@@ -15,6 +15,10 @@ namespace ml::ps4 {
 bool Ps4Platform::init(std::string *err)
 {
     if (!video_.init(err)) return false;
+    // Hide the PS4 splash screen immediately so the user sees a black screen (not the splash)
+    // while app.init() runs. Without this, a slow app.init() (font loading, music scan, etc.)
+    // leaves the splash visible and makes the console appear frozen.
+    video_.showLoadingScreen();
     if (!pad_.init(err)) notify("Moonlight HB: " + *err + " (continuando)");
     httpOk_ = net_.init(&netErr_);
     if (!httpOk_) notify("Moonlight HB: internet indisponivel (" + netErr_ + ")");
