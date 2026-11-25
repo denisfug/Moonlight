@@ -138,12 +138,15 @@ else()
     # cmake -DML_WIN=1 ..   ou   make desktop
     if(ML_WIN)
         find_package(SDL2 REQUIRED)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(MPV REQUIRED mpv)
         add_library(ml_win STATIC
             src/platform/host/host_platform.cpp
             src/platform/win/win_platform.cpp
+            src/platform/win/win_video.cpp
         )
-        target_include_directories(ml_win PUBLIC src third_party)
-        target_link_libraries(ml_win PUBLIC ml_core Threads::Threads SDL2::SDL2)
+        target_include_directories(ml_win PUBLIC src third_party ${MPV_INCLUDE_DIRS})
+        target_link_libraries(ml_win PUBLIC ml_core Threads::Threads SDL2::SDL2 ${MPV_LIBRARIES})
         target_compile_definitions(ml_win PUBLIC
             ML_HOST_VERSION="${ML_VERSION}"
             ML_WIN_VERSION="${ML_VERSION}"

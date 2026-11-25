@@ -1,5 +1,6 @@
 // Windows desktop platform — SDL2 Display + Input sobre HostPlatform.
 #include "platform/win/win_platform.hpp"
+#include "platform/win/win_video.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -263,6 +264,11 @@ int WinPlatform::pollTextInput(std::string *out)
     if (imeCancelled_) { imeActive_ = false; return -1; }
     if (imeDone_)      { imeActive_ = false; if (out) *out = imeText_; return 1; }
     return 0;
+}
+
+std::unique_ptr<VideoEngine> WinPlatform::makeVideoEngine()
+{
+    return std::make_unique<WinVideoEngine>();
 }
 
 }  // namespace ml::win

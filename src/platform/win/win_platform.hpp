@@ -89,6 +89,8 @@ public:
     // Sem músicas locais no Desktop por enquanto (pode ser adicionado depois).
     std::vector<std::string> musicDirs() const override { return {}; }
 
+    std::unique_ptr<VideoEngine> makeVideoEngine() override;
+
 private:
     std::string dataDir_;
     int w_, h_;
