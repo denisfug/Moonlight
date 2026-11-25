@@ -125,6 +125,8 @@ public:
         uint64_t firstFrameMs = 25000;   // player: no picture after this -> reported as a problem
         uint64_t testWaitMs = 15000;     // video test: wait for the first picture
         uint64_t testPlayMs = 4000;      // video test: let it play a little
+        uint64_t introFirstFrameMs = 3000;   // intro video: timeout waiting for first frame
+        uint64_t introMaxDurationMs = 15000; // intro video: total safety timeout
     } tuning;
     std::string videoTestUrl = "https://raw.githubusercontent.com/denisfug/Moonlight/claude/updates/moonlight_teste.mp4";
     std::string archiveBase = "https://archive.org";   // tests point it at a local fixture server

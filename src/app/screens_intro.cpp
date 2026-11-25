@@ -640,10 +640,9 @@ std::unique_ptr<Screen> makeIntro(App &app)
 //   - Passo em que o timeout ou fallback foi acionado
 // ─────────────────────────────────────────────────────────────────────────────
 class IntroVideoScreen : public Screen {
-    // Tempo máximo aguardando o primeiro frame antes de desistir (ms).
-    static constexpr uint64_t kFirstFrameTimeoutMs = 3000;
-    // Duração máxima total do intro, mesmo que o vídeo não termine (ms).
-    static constexpr uint64_t kMaxDurationMs = 15000;
+    // Timeouts lidos de app.tuning (configuráveis para testes):
+    //   kFirstFrameTimeoutMs → app.tuning.introFirstFrameMs  (padrão 3000 ms)
+    //   kMaxDurationMs       → app.tuning.introMaxDurationMs (padrão 15000 ms)
 
 public:
     explicit IntroVideoScreen(App &a, const std::string &path)
@@ -706,9 +705,10 @@ public:
         uint64_t elapsed = app.platform.nowMs() - startMs_;
 
         // Timeout para primeiro frame: se o engine abriu mas não entrega frames
-        if (!gotFirstFrame_ && elapsed > kFirstFrameTimeoutMs) {
+        const uint64_t firstFrameTimeout = app.tuning.introFirstFrameMs;
+        if (!gotFirstFrame_ && elapsed > firstFrameTimeout) {
             appendDiag("timeout aguardando primeiro frame (" +
-                       std::to_string(kFirstFrameTimeoutMs) + " ms); " +
+                       std::to_string(firstFrameTimeout) + " ms); " +
                        "status: " + engine_->status() + "; diag: " + engine_->diagnostics());
             done_ = true;
             pop();
@@ -716,8 +716,9 @@ public:
         }
 
         // Timeout total de segurança
-        if (elapsed > kMaxDurationMs) {
-            appendDiag("timeout total (" + std::to_string(kMaxDurationMs) +
+        const uint64_t maxDuration = app.tuning.introMaxDurationMs;
+        if (elapsed > maxDuration) {
+            appendDiag("timeout total (" + std::to_string(maxDuration) +
                        " ms); frames=" + std::to_string(frameCount_));
             done_ = true;
             pop();
