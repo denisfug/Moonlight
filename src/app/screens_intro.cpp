@@ -618,15 +618,41 @@ std::unique_ptr<Screen> makeIntro(App &app)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IntroVideoScreen — toca um MP4 de intro via AvEngine (PS4), sem usar Canvas.
-// Usa updateFrame() para escrever direto no backbuffer e chama present().
-// Auto-pop quando o vídeo terminar ou após timeout, ou quando o usuário pressionar X.
-// No PC (AvEngine indisponível) faz pop imediato.
+//
+// Comportamento de fallback (todos os caminhos garantem conteúdo no framebuffer):
+//   1. Engine indisponível (PC / makeVideoEngine() == nullptr) → pop imediato.
+//   2. open() falha → registra código de erro, preenche framebuffer com preto, pop.
+//   3. Engine abriu mas não entrega frames dentro de kFirstFrameTimeoutMs → pop.
+//   4. Vídeo termina normalmente (finished()) → pop.
+//   5. Timeout total de segurança (kMaxDurationMs) → pop.
+//   6. Usuário pressiona X/O/Options → pop.
+//
+// Em todos os casos de saída antecipada, o framebuffer é preenchido com preto
+// e o Canvas normal volta a ter controle imediatamente.
+//
+// Intro desabilitado por padrão (makeIntroVideo não é chamado em app.cpp).
+// Reativar somente após confirmar frames > 0 em teste real no console.
+//
+// Diagnóstico registrado em diagLog_ (visível no ecrã de problemas):
+//   - Código de retorno de sceAvPlayerInit (via status() depois de open())
+//   - Código de retorno de sceAvPlayerAddSource (idem)
+//   - Quantidade de frames recebidos de sceAvPlayerGetVideoDataEx
+//   - Passo em que o timeout ou fallback foi acionado
 // ─────────────────────────────────────────────────────────────────────────────
 class IntroVideoScreen : public Screen {
+    // Tempo máximo aguardando o primeiro frame antes de desistir (ms).
+    static constexpr uint64_t kFirstFrameTimeoutMs = 3000;
+    // Duração máxima total do intro, mesmo que o vídeo não termine (ms).
+    static constexpr uint64_t kMaxDurationMs = 15000;
+
 public:
     explicit IntroVideoScreen(App &a, const std::string &path)
         : Screen(a), path_(path) {}
-    ~IntroVideoScreen() override { if (engine_) engine_->stop(); }
+
+    ~IntroVideoScreen() override
+    {
+        if (engine_) engine_->stop();
+    }
 
     std::string title() const override { return ""; }
     bool fullscreen() const override { return true; }
@@ -635,20 +661,38 @@ public:
 
     void onEnter() override
     {
+        startMs_      = app.platform.nowMs();
+        gotFirstFrame_ = false;
+        frameCount_    = 0;
+        diagLog_.clear();
+
         engine_ = app.platform.makeVideoEngine();
-        if (!engine_) { done_ = true; return; }   // PC ou engine indisponível: skip
-        std::string err;
-        if (!engine_->open(path_, &err)) {
-            engine_.reset();
+        if (!engine_) {
+            // PC ou engine indisponível: skip sem preencher tela (nunca chegou a assumir o display)
+            appendDiag("engine indisponivel (PC ou makeVideoEngine=null); skip imediato");
             done_ = true;
             return;
         }
-        startMs_ = app.platform.nowMs();
+
+        std::string openErr;
+        bool opened = engine_->open(path_, &openErr);
+        // Registra o status do engine após open() — contém o código de retorno
+        // de sceAvPlayerInit e sceAvPlayerAddSource (via AvEngine::log()).
+        appendDiag("open: " + (opened ? "ok" : "falhou: " + openErr));
+        appendDiag("status apos open: " + engine_->status());
+
+        if (!opened) {
+            engine_.reset();
+            fillBlack();   // framebuffer preto antes de devolver o controle
+            done_ = true;
+            return;
+        }
     }
 
     bool handle(uint32_t pressed) override
     {
         if (pressed & (BtnCross | BtnCircle | BtnOptions)) {
+            appendDiag("usuario pressionou skip; frames=" + std::to_string(frameCount_));
             done_ = true;
         }
         return true;   // consume tudo
@@ -656,32 +700,113 @@ public:
 
     void update(float /*dt*/) override
     {
-        if (done_) { app.pop(); return; }
-        if (!engine_) { done_ = true; return; }
-        // Timeout de segurança: 10 s
-        if (app.platform.nowMs() - startMs_ > 10000) { done_ = true; return; }
-        if (engine_->finished()) { done_ = true; return; }
+        if (done_) { pop(); return; }
+        if (!engine_) { done_ = true; pop(); return; }
 
-        // Renderiza frame diretamente no backbuffer, sem passar pelo Canvas
+        uint64_t elapsed = app.platform.nowMs() - startMs_;
+
+        // Timeout para primeiro frame: se o engine abriu mas não entrega frames
+        if (!gotFirstFrame_ && elapsed > kFirstFrameTimeoutMs) {
+            appendDiag("timeout aguardando primeiro frame (" +
+                       std::to_string(kFirstFrameTimeoutMs) + " ms); " +
+                       "status: " + engine_->status() + "; diag: " + engine_->diagnostics());
+            done_ = true;
+            pop();
+            return;
+        }
+
+        // Timeout total de segurança
+        if (elapsed > kMaxDurationMs) {
+            appendDiag("timeout total (" + std::to_string(kMaxDurationMs) +
+                       " ms); frames=" + std::to_string(frameCount_));
+            done_ = true;
+            pop();
+            return;
+        }
+
+        // Vídeo terminou normalmente
+        if (engine_->finished()) {
+            appendDiag("video terminou normalmente; frames=" + std::to_string(frameCount_));
+            done_ = true;
+            pop();
+            return;
+        }
+
+        // Renderiza o próximo frame diretamente no backbuffer, sem passar pelo Canvas.
+        // Se updateFrame() retornar false (sceAvPlayerGetVideoDataEx sem frame pronto),
+        // preenche com preto para garantir que o framebuffer nunca fique sem conteúdo.
         ml::Framebuffer fb = app.platform.display().backBuffer();
         if (fb.pixels) {
-            engine_->updateFrame(fb);
+            bool hadFrame = engine_->updateFrame(fb);
+            if (hadFrame) {
+                if (!gotFirstFrame_) {
+                    gotFirstFrame_ = true;
+                    appendDiag("primeiro frame recebido em " +
+                               std::to_string(elapsed) + " ms");
+                }
+                frameCount_++;
+            } else if (!gotFirstFrame_) {
+                // Ainda aguardando o primeiro frame: preenche com preto
+                fillFramebufferBlack(fb);
+            }
+            // Se já recebemos pelo menos um frame mas este ciclo não tem frame novo,
+            // mantemos o conteúdo anterior (nenhuma ação — o buffer não é limpo).
         }
         app.platform.display().present();
     }
 
     void draw(Canvas &/*c*/, Rect /*area*/) override
     {
-        // update() já fez present() — não precisa desenhar nada aqui
+        // update() já fez present() diretamente no backbuffer — Canvas não usa aqui.
+        // Quando done_=true e pop() é chamado, o App retorna ao Canvas normal.
     }
 
     Hints hints() const override { return {{BtnCross, "Pular"}}; }
 
+    // Diagnóstico acumulado — acessível externamente para testes e tela de problemas.
+    const std::string &diagLog() const { return diagLog_; }
+    int frameCount() const { return frameCount_; }
+    bool gotFirstFrame() const { return gotFirstFrame_; }
+
 private:
     std::string path_;
     std::unique_ptr<VideoEngine> engine_;
-    uint64_t startMs_ = 0;
-    bool done_ = false;
+    uint64_t startMs_      = 0;
+    bool     done_         = false;
+    bool     gotFirstFrame_= false;
+    int      frameCount_   = 0;
+    std::string diagLog_;
+
+    void appendDiag(const std::string &s)
+    {
+        if (!diagLog_.empty()) diagLog_ += '\n';
+        diagLog_ += s;
+    }
+
+    // Preenche o backbuffer com preto (ARGB 0xFF000000) antes de devolver o controle.
+    // Garante que o framebuffer nunca fique com lixo ou conteúdo parcial.
+    void fillBlack()
+    {
+        ml::Framebuffer fb = app.platform.display().backBuffer();
+        if (fb.pixels) fillFramebufferBlack(fb);
+    }
+
+    static void fillFramebufferBlack(const ml::Framebuffer &fb)
+    {
+        const size_t n = size_t(fb.height) * size_t(fb.stride);
+        for (size_t i = 0; i < n; i++) fb.pixels[i] = 0xFF000000u;
+    }
+
+    void pop()
+    {
+        // Para o engine antes de devolver o controle, para evitar
+        // que sceAvPlayer continue escrevendo em memória que o Canvas vai usar.
+        if (engine_) {
+            engine_->stop();
+            engine_.reset();
+        }
+        app.pop();
+    }
 };
 
 std::unique_ptr<Screen> makeIntroVideo(App &app)

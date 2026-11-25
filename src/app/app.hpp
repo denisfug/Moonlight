@@ -92,6 +92,7 @@ public:
     // Returns false when the app should exit (never on PS4).
     bool frame();
     bool renderedLastFrame() const { return rendered_; }
+    int stackDepth() const { return int(stack_.size()); }  // 0 = only root screen active
 
     // services
     Platform &platform;
