@@ -134,6 +134,30 @@ else()
     target_link_libraries(moonlight_host PRIVATE ml_ui ml_host)
     target_compile_definitions(moonlight_host PRIVATE ML_PLATFORM_HOST ML_VERSION="${ML_VERSION}")
 
+    # ------------------------------------------------------------ Desktop (Windows/Linux) com SDL2
+    # cmake -DML_WIN=1 ..   ou   make desktop
+    if(ML_WIN)
+        find_package(SDL2 REQUIRED)
+        add_library(ml_win STATIC
+            src/platform/host/host_platform.cpp
+            src/platform/win/win_platform.cpp
+        )
+        target_include_directories(ml_win PUBLIC src third_party)
+        target_link_libraries(ml_win PUBLIC ml_core Threads::Threads SDL2::SDL2)
+        target_compile_definitions(ml_win PUBLIC
+            ML_HOST_VERSION="${ML_VERSION}"
+            ML_WIN_VERSION="${ML_VERSION}"
+        )
+        add_executable(moonlight_win src/main_win.cpp)
+        target_link_libraries(moonlight_win PRIVATE ml_ui ml_win)
+        target_compile_definitions(moonlight_win PRIVATE
+            ML_PLATFORM_WIN
+            ML_WIN_VERSION="${ML_VERSION}"
+            ML_VERSION="${ML_VERSION}"
+        )
+        message(STATUS "Desktop build: SDL2 ${SDL2_VERSION}")
+    endif()
+
     add_executable(moonlight_tests
         tests/test_main.cpp tests/test_core.cpp tests/test_addons.cpp tests/test_music.cpp tests/test_radio.cpp tests/test_subsonic.cpp tests/test_archive.cpp tests/test_audius.cpp tests/test_deezer.cpp tests/test_jamendo.cpp tests/test_openverse.cpp tests/test_youtube.cpp tests/test_jiosaavn.cpp tests/test_ytmusic.cpp tests/test_ytauth.cpp tests/test_rank.cpp tests/test_ui.cpp tests/test_net.cpp tests/test_playback.cpp tests/test_recommend.cpp tests/test_audio_player.cpp)
     target_include_directories(moonlight_tests PRIVATE tests)
